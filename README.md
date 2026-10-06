@@ -54,3 +54,6 @@ Source map:
 - app/globals.css — responsive RMC2 theme.
 - public/rmc2-logo.png — supplied brand logo.
 
+
+## Task importance and attention
+Urgency is separate from workflow status. Red identifies high-priority or blocked tasks; amber identifies information or review needed; blue identifies draft/product work; green identifies ready or completed work; slate identifies waiting or closed work. Labels and icons accompany the colors. The dashboard counts role-owned actions, includes unfinished drafts and unverified records, sorts blocked/high-priority tasks first, and filters each next-step category. Awaiting approval is actionable for supervisors and waiting for employees.
