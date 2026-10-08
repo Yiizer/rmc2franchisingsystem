@@ -1,6 +1,6 @@
 export type Role='Employee'|'Supervisor'|'Admin';
 import type {ApprovedProposal} from './proposal-library';
-export const statusLabel=(s:string)=>(({ 'New inquiry':'Received','In progress':'To prepare','Awaiting approval':'In review','Needs revision':'Changes requested','Rejected':'Closed'} as Record<string,string>)[s]||s);
+export const statusLabel=(s:string)=>(({ 'New inquiry':'New inquiry','In progress':'To prepare','Awaiting approval':'In review','Needs revision':'Needs revision','Rejected':'Closed'} as Record<string,string>)[s]||s);
 export type Status='New inquiry'|'In progress'|'Draft'|'Awaiting approval'|'Needs revision'|'Approved'|'Sent'|'Rejected';
 export type Event={at:string;actor:string;action:string};
 export type FranchiseProfile={agent:string;agentPhone:string;clientBusiness:string;companyBusiness:string;deployedManpower:string;branch:string;division:string;sector:'Private'|'DepEd'|'Government';address:string;phone:string;contactPosition:string;addressee:string;addresseePosition:string;existingProvider:string;requestedPlan:string;payment:'Annual'|'Semiannual';dependents:number;employeeAges:string;dependentAges:string;hospitals:string;dental:string;requestDate:string;availability:'Unchecked'|'Available'|'Needs review';selectionReason:string};
