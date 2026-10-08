@@ -3,14 +3,14 @@
 A client-demo prototype branded with the supplied RMC2 logo, navy, orange and white palette.
 
 ## Open and demo
-The initial screen is the Employee Dashboard. Use **Preview as** in the sidebar to switch between Employee, Supervisor and Admin. The sign-out icon opens the demo Login screen. No password or real authentication is used.
+The initial screen is the Employee Dashboard. Use **Preview as team member** to switch among the five franchising personnel and a demo administrator. Divisions indicate primary responsibility; coordinators can prepare and send colleagues’ inquiries through Team Inquiries. The sign-out icon opens the demo Login screen. No password or real authentication is used.
 
 Suggested walkthrough:
-1. Open ABC Manufacturing or click **Simulate Gmail inquiry**.
-2. Open the sample attachments, run extraction, enter the missing start date, and verify the extracted information.
-3. Review the three fictional products and accept a recommendation. An alternative requires a selection reason.
+1. Open Sampaguita National High School (demo) or click **Simulate Gmail inquiry**.
+2. Open the sample attachments, run extraction, enter the missing start date, verify the account profile and mark account availability as Available.
+3. Review up to three eligible fictional products and accept a recommendation. An alternative requires a selection reason.
 4. Edit the proposal notes, choose a template, download a sample PDF and submit for approval.
-5. Switch to Supervisor, open the Approval Queue, and approve, return with notes, or reject.
+5. Switch to Emerson Dolf Fernandez, open the Approval Queue, and approve, return with notes, or reject.
 6. For a returned proposal, switch to Employee and start a revised version.
 7. After approval, switch to Employee, preview the final email and PDF attachments, and simulate sending.
 8. Open History and the inquiry audit trail.
@@ -48,7 +48,7 @@ A feature-detected WebMCP navigation tool is included; native WebMCP validation 
 
 Source map:
 - app/page.tsx — role navigation, dashboard, inquiry lists, history, notifications, analytics and state.
-- app/workspace.tsx — inquiry, extraction, recommendations, proposal, approval and email flow.
+- app/franchise-workspace.tsx — inquiry, extraction, recommendations, proposal, approval and email flow.
 - app/admin.tsx — editable demo administration.
 - app/model.ts — types, fictional records and PDF generation.
 - app/globals.css — responsive RMC2 theme.
@@ -57,3 +57,6 @@ Source map:
 
 ## Task importance and attention
 Urgency is separate from workflow status. Amber identifies priority attention, missing information or review needed. Red is reserved for small revision badges. Blue identifies draft/product work, green identifies ready or completed work, and slate identifies waiting or closed work. Rows and summary cards use mostly neutral surfaces. Labels and icons accompany the colors. The dashboard counts role-owned actions, includes unfinished drafts and unverified records, sorts blocked/high-priority tasks first, and filters each next-step category. Awaiting approval is actionable for supervisors and waiting for employees.
+
+## Franchise form update
+The supplied workbook was read to map account, agent, branch, business sector, addressee, payment mode, employee/dependent counts, age ranges and provider preferences. The published sample uses fictional account/contact details and retains separate source snapshots. Closure document requirements are shown separately and do not block drafts. Product eligibility filters group size and sector before ranking; missing budget is not invented. Rates and rules remain illustrative. Emerson has proposal approval permission by default; Zeo has monitoring access. This demonstration policy is editable in Users & Roles pending confirmation.

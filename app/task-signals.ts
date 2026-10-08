@@ -22,7 +22,7 @@ export function taskSignal(x:Inquiry,role:Role):TaskSignal {
  if(x.priority==='High')return signal('warning','High priority',x.status==='Approved'?'Preview & send':!x.extracted?'Review inquiry':!x.verified?'Verify information':x.product?'Complete proposal':'Choose product','Marked high priority. Work on this before routine inquiries.',true,true,1);
  if(x.status==='Approved')return signal('ready','Ready to send','Preview & send','Approved by supervisor. Prepare the final client email.',true,false,3);
  if(!x.extracted)return signal('warning','Review needed','Review inquiry','Read the inquiry and extract information from the attachments.',true,false,4);
- if(!x.verified)return signal('warning',!x.effective?'Missing information':'Verification needed','Verify information',!x.effective?'Confirm the requested start date, then verify the source fields.':'Verify the extracted fields before selecting a product.',true,false,2);
+ if(!x.verified)return signal('warning',!x.effective?'Missing information':'Verification needed','Verify information',!x.effective?'Confirm the requested start date and verify the account profile.':'Verify the extracted fields before selecting a product.',true,false,2);
  if(!x.product)return signal('working','Product needed','Choose product','Information is verified. Select a suitable product.',true,false,5);
  return signal('working','Draft in progress','Complete proposal','Finish the draft and submit it for supervisor review.',true,false,6);
 }
