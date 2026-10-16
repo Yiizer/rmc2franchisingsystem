@@ -1,25 +1,43 @@
-# RMC2 Franchising prototype
+# RMC2 Franchising System
 
-The dashboard shows four counts (New inquiries, To prepare, In supervisor review, Ready to send) and a shared inquiry list. New inquiries notify all active staff with independent read status.
+A working Next.js application for testing the inquiry-to-proposal workflow on localhost. It includes authenticated staff accounts, shared inquiries, Excel intake, Word/PDF generation from 13 supplied proposal masters, editable email autofill, versioned supervisor review, notifications and an audit history.
 
-## Inquiry flow
-1. Review the submitted form. Core fields are visible; other details and source preview can be opened as needed. There is no separate AI extraction step.
-2. Prepare a proposal from an approved source. The proposal library starts empty because real proposals have not been supplied. The demo compares the form’s client sector with user-supplied references and copies selected reference text exactly. It does not infer eligibility, invent prices or benefits, or retrieve outside information.
-3. Submit for supervisor review, handle changes, preview the approved PDF and simulate Gmail send. The selected source is retained as a snapshot. Supervisor notes and activity remain available.
+Any employee can pick up an inquiry. My Inquiries shows actual contributions. Emerson or Zeo can return a proposal for correction or approve it; one approval automatically creates the finished agent reply with the approved PDF in the local test mailbox. Conflicting edits and duplicate sends are rejected.
 
-Admin can add actual approved reference text in Proposal library. No sample proposal references are preloaded. Do not use private customer information in this demonstration. The form sample follows the supplied workbook with fictional account and contact details.
+## Start locally
 
-## Boundaries
-This is a browser-local prototype. No live AI, Gmail, authentication or database integration is active. The simplified demo uses a new local storage namespace (`rmc2-franchising-simple-v3`) so previous sample drafts and fictional plan selections are not used. Earlier demo state is retained under its old namespace.
+Requires Node.js 22.13+, npm and the private source collection. Source files are already imported on this computer.
 
-## Run
-Next.js, TypeScript, React and Tailwind with existing shadcn primitives.
-Start: npm run dev. Build: npm run build. Static output: out.
+```powershell
+npm install
+npm run dev
+```
+
+Open **http://127.0.0.1:5173/**. For the production build, use `npm run build` followed by `npm start`.
+
+Select an account on Login. Initial local accounts share the password **Rmc2Local!2026**. These credentials are for local testing.
+
+See [LOCALHOST.md](LOCALHOST.md) for account details, source import, workflow testing, storage and document conversion.
+
+See [PROJECT_GUIDE.md](PROJECT_GUIDE.md) for the detailed project handover: current features, permissions, workflows, architecture, APIs, testing, hosting options, maintenance and production milestones.
+
+## Current connections
+
+The server saves records in SQLite and private files on this computer. Data survives browser and server restarts. Gmail is a local `.eml` outbox; no external email is sent. AI assistance is simulated and uses only the form and supplied proposal sources.
+
+The original proposal masters and uploaded forms are preserved. Benefits and rates remain sourced from proposals, with no TOR/MOA blending. Submitted versions freeze the PDF, Word document, email and source master.
+
+Online deployment still needs managed hosting, persistent private storage, backups and production account configuration. Supabase is optional: a single hosted application can keep SQLite and share saved updates with all employees; the app checks for shared updates every 10 seconds. Live Gmail and AI integrations need separate implementation. The previous hosted static demo is separate from this server-enabled version.
 
 ## Validation
-Checked the empty-library behavior, absence of an extraction step and invented recommendations, exact preservation of approved source text, shared preparation, supervisor approval, simulated send, mobile layout and runtime errors.
 
-## Shared pickup and history
-Inquiries is the full shared list. My Inquiries is based on recorded participation, never assignment or viewing. Start working, form edits and workflow actions add the actor to handledBy. Multiple staff can contribute. Existing owner fields are cleared when browser data is normalized.
+```powershell
+npm run build
+npm run test:workflow
+node scripts/test-browser.mjs
+node scripts/test-controls.mjs
+```
 
-Records keep ISO createdAt and updatedAt timestamps. Lists show received time, inquiry age, contributors and last update in Manila time. Open ages refresh every 30 seconds; closed ages stop at closure. Every actual edit records a named activity with a timestamp; consecutive typing in the same field is grouped into one edit entry over a 30-second interval. Original submitted values remain unchanged. Legacy demo dates are normalized where recoverable; unavailable old times are shown as unrecorded.
+Run workflow/browser checks against an isolated QA server on port 5190 with its own `RMC2_DATA_DIR`; see [LOCALHOST.md](LOCALHOST.md#checks) for setup. Do not point tests at the working database. They create test inquiries and never send external email. The control check temporarily disables Zeo and restores the original permissions to verify that the last approving supervisor cannot be removed.
+
+Private source documents, test output, database files and local configuration are excluded from Git.

@@ -1,0 +1,29 @@
+.ops-simple-workspace .ops-proposal-choice.selected,.ops-template-browser-card.selected{background:#f0f8f3;border:1px solid #73ae8c;border-left:4px solid #378359;box-shadow:0 0 0 1px #73ae8c12}
+.ops-simple-workspace .ops-proposal-choice.selected .ops-option-number{background:#dcefe2;color:#267447}
+.ops-template-browser{margin-top:22px;border:1px solid #dbe5f1;border-radius:7px;background:#fff;overflow:clip}
+.ops-template-browser-trigger{display:flex;align-items:center;gap:12px;width:100%;padding:15px 17px;text-align:left;background:#f8faff;border:0;color:#2b527c;cursor:pointer}
+.ops-template-browser-trigger>svg{flex:none}
+.ops-template-browser-trigger>span{flex:1;min-width:0}
+.ops-template-browser-trigger b{display:block;font-size:14px;color:#183c63}
+.ops-template-browser-trigger small{display:block;font-size:11px;color:#667d99;margin-top:4px;line-height:1.5}
+.ops-template-browser-trigger .open{transform:rotate(180deg)}
+.ops-template-browser-trigger:focus-visible,.ops-template-families button:focus-visible{outline:2px solid #739bd1;outline-offset:-3px}
+.ops-template-browser-body{border-top:1px solid #dbe5f1;padding:17px}
+.ops-template-families{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px}
+.ops-template-families button{display:flex;align-items:center;gap:7px;min-height:36px;padding:7px 10px;font-size:12px;line-height:1.4;color:#536c8a;background:#fff;border:1px solid #dbe5f1;border-radius:5px;cursor:pointer}
+.ops-template-families button[aria-pressed=true]{color:#244f82;border-color:#8eafd5;background:#edf4fd;font-weight:600}
+.ops-template-families button span{font-size:10px;background:#eef2f7;border-radius:4px;padding:1px 5px}
+.ops-template-browser-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:stretch}
+.ops-template-browser-card{display:flex;flex-direction:column;min-width:0;padding:16px;background:#fff;border:1px solid #dbe5f1;border-radius:6px}
+.ops-template-browser-card-heading{display:flex;align-items:flex-start;gap:9px;flex-wrap:wrap}
+.ops-template-browser-card h3{font-size:14px;line-height:1.55;color:#183958;flex:1;min-width:150px;overflow-wrap:anywhere}
+.ops-template-selected-mark{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#267447;font-weight:600}
+.ops-template-selected-mark svg{flex:none}
+.ops-template-browser-source{font-size:11px;line-height:1.5;color:#6a809b;margin-bottom:15px}
+.ops-template-browser-actions{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-top:auto}
+.ops-template-browser .ops-template-browser-actions .ops-btn{min-height:34px;font-size:11px!important;padding:7px 9px;gap:5px}
+.ops-template-browser .ops-template-select{color:#29557e;background:#eff5fc;border-color:#c7d8ed}
+.ops-template-browser .selected .ops-template-select{color:#267447;background:#e5f2e9;border-color:#a3cbb2}
+.ops-template-browser .ops-template-browser-customize{display:inline-flex;align-items:center;gap:5px;align-self:flex-start;font-size:11px;color:#8c602e;margin-top:11px;min-height:25px}
+@media(max-width:1000px){.ops-template-stage.has-ai-notes .ops-template-browser-grid{grid-template-columns:1fr}}
+@media(max-width:600px){.ops-template-browser-grid{grid-template-columns:1fr}.ops-template-browser-body{padding:12px}.ops-template-browser-trigger{padding:14px}.ops-template-families button{font-size:11px;min-height:36px}.ops-template-browser-card{padding:14px}}

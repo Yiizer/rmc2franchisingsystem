@@ -45,3 +45,7 @@ next-env.d.ts
 /outputs/
 /work/
 *.tsbuildinfo
+/.data/
+/test-results/
+/resources/private/
+!/.env.example

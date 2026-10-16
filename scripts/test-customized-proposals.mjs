@@ -1,0 +1,61 @@
+import assert from 'node:assert/strict';
+import {mkdir,writeFile,readFile} from 'node:fs/promises';
+import {createHash,randomUUID} from 'node:crypto';
+import {chromium} from 'playwright-core';
+import PizZip from 'pizzip';
+const base='http://127.0.0.1:5190',out='test-results/custom-proposals';
+await mkdir(out,{recursive:true});
+const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+const errors=[],checks=[];let page;
+const pass=name=>{checks.push(name);console.log('PASS '+name);};
+async function login(who){const ctx=await browser.newContext({viewport:{width:1540,height:1000}});ctx.setDefaultTimeout(120000);const res=await ctx.request.post(base+'/api/operations/login',{data:{email:who+'@rmc2.local',password:'Rmc2Local!2026'}});assert.ok(res.ok());return ctx;}
+async function record(ctx,id){return (await(await ctx.request.get(base+'/api/operations/bootstrap')).json()).inquiries.find(r=>r.id===id);}
+async function open(ctx,r){const p=await ctx.newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto(base);await p.getByRole('button',{name:'Inquiries',exact:true}).click();await p.getByRole('link',{name:'Open '+r.fields.company,exact:true}).filter({hasText:r.id}).click();if(['New inquiry','Preparing proposal','Needs correction','Waiting for agent details'].includes(r.status)){await p.getByRole('button',{name:'Start handling',exact:true}).click();await p.getByText('You’re handling this inquiry',{exact:true}).waitFor();}return p;}
+const payload=r=>({revision:r.revision,fields:r.fields,templateId:r.templateId,customization:r.customization?{id:r.customization.id,edits:r.customization.edits}:null,notes:r.notes,email:r.email,emailOverrides:r.emailOverrides});
+try{
+  const employee=await login('cryssa'),supervisor=await login('zeo'),admin=await login('admin');
+  const source=await(await employee.request.get(base+'/api/operations/sample-form')).body();
+  const intake=await employee.request.post(base+'/api/operations/intake',{multipart:{sender:'custom.agent@example.com',file:{name:'custom-form.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:source}}});assert.equal(intake.status(),201);let r=(await intake.json()).inquiry;
+  const denied=await admin.request.post(base+'/api/operations/inquiries/'+r.id+'/customize',{data:{revision:r.revision,templateId:'d023'}});assert.equal(denied.status(),403);
+  const standardPreview=await employee.request.post(base+'/api/operations/custom-document',{data:{inquiryId:r.id,templateId:'d023',fields:r.fields,edits:{}}});assert.equal(standardPreview.status(),409);pass('Only preparers can create customized copies; standard inquiries cannot use custom editing');
+  page=await open(employee,r);await page.getByRole('button',{name:/Choose template/}).click();await page.screenshot({path:out+'/colored-templates.png'});
+  await page.locator('.ops-proposal-choice').first().getByRole('button',{name:'Customize',exact:true}).click();await page.locator('[data-custom-block]').first().waitFor();
+  r=await record(employee,r.id);assert.ok(r.customization);assert.equal(r.templateId,'d023');
+  const modelResponse=await employee.request.post(base+'/api/operations/custom-document',{data:{inquiryId:r.id,templateId:r.templateId,fields:r.fields,edits:{}}});assert.ok(modelResponse.ok());const model=await modelResponse.json();
+  const rate=model.blocks.find(b=>b.original.includes('ANNUAL PREMIUM FOR PRINCIPAL'));
+  const benefit=model.blocks.find(b=>b.label.startsWith('Table cell')&&/120,\s*000/.test(b.original));assert.ok(rate);assert.ok(benefit);
+  assert.ok(await page.locator('[data-custom-block][contenteditable="true"]').count()>100);
+  const rateText='ANNUAL PREMIUM FOR PRINCIPAL: PHP 4,500.00';
+  const benefitText='Php 125,000.00';
+  await page.locator('[data-custom-block="'+rate.id+'"]').first().fill(rateText);
+  await page.getByRole('button',{name:'Bold paragraph',exact:true}).click();
+  await page.locator('[data-custom-block="'+benefit.id+'"]').first().fill(benefitText);
+  await page.getByRole('button',{name:'Save details',exact:true}).click();await page.getByRole('button',{name:'Save details',exact:true}).waitFor();
+  r=await record(employee,r.id);assert.equal(r.customization.edits[rate.id].text,rateText);assert.equal(r.customization.edits[rate.id].bold,true);assert.equal(r.customization.edits[benefit.id].text,benefitText);
+  await page.locator('[data-custom-block="'+benefit.id+'"]').first().scrollIntoViewIfNeeded();await page.screenshot({path:out+'/inline-rate-and-benefit.png'});pass('Rates and benefit-table cells edit directly in the document, with formatting and durable save');
+  const bad=await employee.request.post(base+'/api/operations/inquiries/'+r.id+'/save',{data:{...payload(r),customization:{id:r.customization.id,edits:{...r.customization.edits,'not-a-section':{text:'invalid'}}}}});assert.equal(bad.status(),409);
+  assert.equal((await record(employee,r.id)).revision,r.revision);pass('Invalid document section edits are rejected without changing the inquiry');
+  await page.reload();await page.getByRole('button',{name:'Inquiries',exact:true}).click();await page.getByRole('link',{name:'Open '+r.fields.company,exact:true}).filter({hasText:r.id}).click();await page.getByRole('button',{name:/Start handling|Continue in this tab/}).click();await page.getByText('You’re handling this inquiry',{exact:true}).waitFor();await page.getByRole('button',{name:'Edit document',exact:true}).click();await page.locator('[data-custom-block="'+rate.id+'"]').first().waitFor();assert.equal(await page.locator('[data-custom-block="'+rate.id+'"]').first().innerText(),rateText);
+  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(400);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:out+'/custom-mobile.png'});await page.setViewportSize({width:1540,height:1000});pass('Customized content survives reload and remains contained on phones');
+  await page.getByRole('button',{name:'PDF preview',exact:true}).click();await page.locator('.ops-doc-preview[aria-busy="false"]').waitFor();assert.equal(await page.locator('.ops-doc-preview [role="alert"]').count(),0);await page.locator('.ops-doc-page').first().scrollIntoViewIfNeeded();await page.screenshot({path:out+'/custom-pdf.png'});
+  await page.getByRole('button',{name:'Prepare PDF & email',exact:true}).click();await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='Send to supervisor for approval'&&!b.disabled));
+  r=await record(employee,r.id);assert.ok(r.generated.customization);assert.equal(r.generated.customization.changes.length,2);assert.ok(r.generated.filename.includes('CUSTOMIZED'));
+  const master=await(await employee.request.get(base+'/api/operations/file/'+r.id+'/master')).body(),word=await(await employee.request.get(base+'/api/operations/file/'+r.id+'/docx')).body();await writeFile(out+'/customized.docx',word);const pdf=await(await employee.request.get(base+'/api/operations/file/'+r.id+'/pdf')).body();await writeFile(out+'/customized.pdf',pdf);
+  const originalZip=new PizZip(master),customZip=new PizZip(word),sha=b=>createHash('sha256').update(b).digest('hex');
+  for(const [name,entry] of Object.entries(originalZip.files))if(!entry.dir&&!/^word\/(document|header\d+|footer\d+|footnotes|endnotes)\.xml$/.test(name))assert.equal(sha(customZip.file(name).asNodeBuffer()),sha(entry.asNodeBuffer()),name);
+  const generatedText=customZip.file('word/document.xml').asText().replace(/<[^>]+>/g,'');assert.ok(generatedText.includes(rateText));assert.ok(generatedText.includes(benefitText));assert.ok(!generatedText.includes('rmc2_document'));pass('Export contains the customized rates and benefits while original artwork, styles and assets remain intact');
+  await page.getByRole('button',{name:'Send to supervisor for approval',exact:true}).click();await page.getByRole('heading',{name:'Awaiting supervisor approval',exact:true}).waitFor();r=await record(employee,r.id);const frozen=JSON.stringify(r.submissions[0]);
+  const locked=await employee.request.post(base+'/api/operations/inquiries/'+r.id+'/save',{data:payload(r)});assert.equal(locked.status(),409);
+  const noAck=await supervisor.request.post(base+'/api/operations/inquiries/'+r.id+'/decision',{data:{revision:r.revision,version:1,action:'approve',note:'',flags:[]}});assert.equal(noAck.status(),400);pass('Submitted content is locked, and the server requires explicit customized-content review');
+  const review=await open(supervisor,r);await review.getByRole('button',{name:/Preview & approval/}).click();await review.getByRole('region',{name:'Customized proposal review'}).waitFor();const approve=review.getByRole('button',{name:'Approve & email agent',exact:true});assert.ok(await approve.isDisabled());
+  await review.getByLabel('Flag for correction',{exact:false}).first().check();await review.getByLabel('I reviewed the customized content, including rates, benefits and conditions.').check();assert.ok(await approve.isDisabled());await review.screenshot({path:out+'/supervisor-changes.png',fullPage:true});
+  await review.getByRole('button',{name:'Return for correction',exact:true}).click();await review.getByLabel('Supervisor notes',{exact:true}).fill('Please correct the customized premium.');await review.getByRole('button',{name:'Send correction request',exact:true}).click();
+  r=await record(employee,r.id);assert.equal(r.status,'Needs correction');assert.ok(r.returnFlags.some(flag=>flag.startsWith('Custom edit ')));pass('Supervisor sees before/after content, flags a specific edit, and returns it for correction');
+  assert.ok((await employee.request.post(base+'/api/operations/inquiries/'+r.id+'/activity',{data:{tab:randomUUID(),action:'start'}})).ok());
+  const returned=structuredClone(r.submissions[0]);r.customization.edits[rate.id]={text:'ANNUAL PREMIUM FOR PRINCIPAL: PHP 4,350.00',bold:true};
+  let res=await employee.request.post(base+'/api/operations/inquiries/'+r.id+'/save',{data:payload(r)});assert.ok(res.ok());r=(await res.json()).inquiry;
+  res=await employee.request.post(base+'/api/operations/inquiries/'+r.id+'/generate',{data:{revision:r.revision}});assert.ok(res.ok());r=(await res.json()).inquiry;
+  res=await employee.request.post(base+'/api/operations/inquiries/'+r.id+'/submit',{data:{revision:r.revision}});assert.ok(res.ok());r=(await res.json()).inquiry;assert.deepEqual(r.submissions[0],returned);assert.equal(r.submissions.length,2);
+  res=await supervisor.request.post(base+'/api/operations/inquiries/'+r.id+'/decision',{data:{revision:r.revision,version:2,action:'approve',note:'Reviewed customized benefit and premium edits.',flags:[],customizationReviewed:true}});assert.ok(res.ok());r=(await res.json()).inquiry;assert.equal(r.status,'Sent');assert.equal(r.submissions[1].decision.customizationReviewed,true);assert.ok(r.submissions[1].generated.customization.changes.some(c=>c.after.includes('4,350')));assert.deepEqual(r.submissions[0],returned);pass('A corrected customized version can be approved and emailed locally while the first version stays frozen');
+  assert.deepEqual(errors,[]);pass('No client JavaScript errors');await writeFile(out+'/checks.json',JSON.stringify({checks,errors,recordId:r.id},null,2));
+}catch(error){if(page)await page.screenshot({path:out+'/failure.png'});throw error;}finally{await browser.close();}

@@ -1,0 +1,12 @@
+/* The document owns its scrolling. Form controls stay beside it. */
+.ops-doc-editor .ops-doc-document-area{height:max(360px,var(--ops-doc-available-height,700px));overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;align-self:start;min-width:0;scrollbar-color:#97a9bf #edf0f5;scrollbar-width:auto}
+.ops-doc-editor .ops-doc-document-area:focus-visible{outline:2px solid #739bd1;outline-offset:-2px}
+.ops-doc-editor .ops-doc-document-area>.ops-doc-preview,.ops-doc-editor.embedded>.ops-doc-layout .ops-doc-document-area>.ops-doc-preview{overflow:visible}
+.ops-doc-editor .ops-doc-document-area .ops-custom-canvas{overflow:visible}
+.ops-doc-editor .ops-doc-document-area .ops-custom-format{top:0}
+.ops-doc-editor .ops-doc-preview-status{white-space:normal;flex-wrap:wrap}
+.ops-doc-scroll-hint{color:#3b5d86}
+@media(max-width:760px){
+  .ops-doc-editor .ops-doc-document-area{height:65dvh;min-height:380px}
+  .ops-doc-editor .ops-doc-document-area .ops-custom-format{position:sticky;top:0}
+}
