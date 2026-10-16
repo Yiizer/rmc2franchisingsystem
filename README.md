@@ -33,9 +33,12 @@ Online deployment still needs managed hosting, persistent private storage, backu
 
 ```powershell
 npm run build
+npm run typecheck
+node scripts/test-proposal-fields.mjs
+node scripts/test-form-viewer.mjs
+node scripts/test-custom-document-integrity.mjs
 npm run test:workflow
-node scripts/test-browser.mjs
-node scripts/test-controls.mjs
+node scripts/test-customized-proposals.mjs
 ```
 
 Run workflow/browser checks against an isolated QA server on port 5190 with its own `RMC2_DATA_DIR`; see [LOCALHOST.md](LOCALHOST.md#checks) for setup. Do not point tests at the working database. They create test inquiries and never send external email. The control check temporarily disables Zeo and restores the original permissions to verify that the last approving supervisor cannot be removed.
