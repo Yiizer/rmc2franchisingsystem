@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+const base=process.env.RMC2_TEST_URL||'http://127.0.0.1:5190';
+if(!base.includes(':5190'))throw new Error('Use the isolated 5190 test instance.');
+const cookies={};
+async function call(user,route,body){const response=await fetch(base+'/api/operations/'+route,{method:body===undefined?'GET':'POST',headers:{...(cookies[user]?{Cookie:cookies[user]}:{}),...(body===undefined?{}:{'Content-Type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body)});assert.ok(response.ok,route+' returned '+response.status);if(route==='login')cookies[user]=response.headers.get('set-cookie').split(';')[0];return response.headers.get('content-type').includes('json')?response.json():Buffer.from(await response.arrayBuffer());}
+for(const user of ['cryssa','zeo'])await call(user,'login',{email:user+'@rmc2.local',password:'Rmc2Local!2026'});
+const state=await call('cryssa','bootstrap');
+const ready=state.inquiries.find(record=>record.status==='Preparing proposal'&&record.generated&&record.fields.agentName==='Editor Test Agent');
+assert.ok(ready,'Run the document editor browser test before this check.');
+const pdf=await call('cryssa','file/'+ready.id+'/pdf'),word=await call('cryssa','file/'+ready.id+'/docx');
+assert.equal(pdf.subarray(0,5).toString(),'%PDF-');assert.ok(word.length>10000);
+let record=(await call('cryssa','inquiries/'+ready.id+'/submit',{revision:ready.revision})).inquiry;
+assert.equal(record.status,'Awaiting approval');const version=record.submissions.at(-1);
+assert.equal(version.fields.agentName,'Editor Test Agent');assert.deepEqual(version.fields,record.generated.fields);
+assert.ok((await call('zeo','bootstrap')).notifications.some(notice=>notice.inquiryId===record.id&&notice.title.includes('approval')));
+console.log('PASS Editor details and original-layout proposal are frozen for supervisor approval');
+record=(await call('zeo','inquiries/'+record.id+'/decision',{revision:record.revision,version:version.version,action:'approve',note:'Document editor workflow verified.',flags:[]})).inquiry;
+assert.equal(record.status,'Sent');assert.equal(record.submissions.at(-1).decision.actorId,'zeo');
+assert.equal(createHash('sha256').update(await call('zeo','file/'+record.id+'/pdf?version='+version.version)).digest('hex'),createHash('sha256').update(pdf).digest('hex'));
+const eml=(await call('zeo','file/'+record.id+'/eml?version='+version.version)).toString();
+assert.ok(eml.includes('Content-Type: application/pdf'));const attachment=eml.split('Content-Type: application/pdf')[1].split('\r\n\r\n')[1].split('\r\n--')[0];
+assert.deepEqual(Buffer.from(attachment.replace(/\s/g,''),'base64'),pdf);
+console.log('PASS Zeo approval automatically prepares the local reply with the exact edited proposal PDF');

@@ -1,0 +1,56 @@
+import { chromium } from 'playwright-core';
+import assert from 'node:assert/strict';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+
+const base=process.env.RMC2_TEST_URL;
+assert.ok(base?.includes(':5190'), 'Use the isolated QA server on port 5190. This check creates test inquiries.');
+const fixture=JSON.parse(await readFile('test-results/workflow.json','utf8')).generated[0];
+const original=await readFile('.data/'+fixture.pdf),sha=bytes=>createHash('sha256').update(bytes).digest('hex');
+const browser=await chromium.launch({executablePath:process.env.RMC2_BROWSER_EXECUTABLE||'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+const checks=[],errors=[],pass=name=>{checks.push(name);console.log('PASS '+name);};await mkdir('test-results',{recursive:true});
+async function account(id){const context=await browser.newContext({viewport:{width:1540,height:1000}});assert.ok((await context.request.post(base+'/api/operations/login',{data:{email:id+'@rmc2.local',password:'Rmc2Local!2026'}})).ok());const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));await page.goto(base);await page.getByRole('heading',{name:'Dashboard',exact:true}).waitFor();return {context,page};}
+try{
+  const {context,page}=await account('cryssa');
+  await page.getByRole('button',{name:'Import agent form',exact:true}).click();
+  assert.ok((await page.getByLabel('Filled franchise form',{exact:true}).getAttribute('accept')).includes('.pdf'));
+  await page.getByLabel('Agent sender email',{exact:true}).fill('agent.pdf@example.com');
+  await page.getByLabel('Filled franchise form',{exact:true}).setInputFiles({name:'Agent submitted request.pdf',mimeType:'application/pdf',buffer:original});
+  await page.getByRole('button',{name:'Create inquiry',exact:true}).click();await page.getByRole('heading',{name:'Review the agent’s form',exact:true}).waitFor();
+  let state=await (await context.request.get(base+'/api/operations/bootstrap')).json(),record=state.inquiries.find(inquiry=>inquiry.source.filename==='Agent submitted request.pdf');assert.ok(record);
+  assert.equal(record.source.format,'pdf');assert.equal(record.fields.agentEmail,'agent.pdf@example.com');assert.equal(record.fields.company,undefined);assert.equal(record.handledBy.length,0);pass('Actual PDF intake retains the attachment and does not invent extracted fields');
+  assert.equal(await page.locator('.ops-simple-workspace>aside').count(),0);
+  assert.equal(await page.locator('.ops-simple-workspace>section input').count(),0);
+  assert.ok(await page.getByRole('button',{name:'View submitted form',exact:true}).isVisible());pass('Initial workspace shows the prominent submitted form and a short summary');
+  await page.screenshot({path:'test-results/workspace-simple-pdf.png',fullPage:true});
+  await page.getByRole('button',{name:'View submitted form',exact:true}).click();await page.getByRole('dialog',{name:'Agent submitted form',exact:true}).waitFor();
+  assert.ok((await page.getByTitle('Agent submitted PDF',{exact:true}).getAttribute('src')).includes('/file/'+record.id+'/source'));
+  const source=await context.request.get(base+'/api/operations/file/'+record.id+'/source');assert.equal(source.headers()['content-type'],'application/pdf');assert.ok(source.headers()['content-disposition'].startsWith('inline'));assert.equal(sha(await source.body()),sha(original));pass('Submitted PDF preview serves the exact agent attachment inline');
+  const download=await context.request.get(base+'/api/operations/file/'+record.id+'/source?download=1');assert.ok(download.headers()['content-disposition'].startsWith('attachment'));assert.equal(sha(await download.body()),sha(original));pass('Original PDF download returns identical bytes');
+  await page.screenshot({path:'test-results/submitted-pdf-preview.png',fullPage:true});await page.getByRole('button',{name:'Close dialog',exact:true}).click();
+  const anonymous=await browser.newContext();assert.equal((await anonymous.request.get(base+'/api/operations/file/'+record.id+'/source')).status(),401);await anonymous.close();pass('Original submitted PDFs require staff authentication');
+  const rejected=await context.request.post(base+'/api/operations/intake',{multipart:{sender:'agent.pdf@example.com',file:{name:'bad.pdf',mimeType:'application/pdf',buffer:Buffer.from('Not a PDF')}}});assert.equal(rejected.status(),400);pass('Invalid PDF attachments are rejected');
+  await page.getByRole('button',{name:'Edit details',exact:true}).click();
+  const company='PDF workflow '+new Date().toISOString();
+  await page.getByLabel('Account name',{exact:true}).fill(company);await page.getByLabel('Sector',{exact:true}).selectOption('Private');await page.getByLabel('Address',{exact:true}).fill('Antipolo City, Rizal');await page.getByLabel('Request date',{exact:true}).fill('2026-10-11');
+  await page.getByRole('tab',{name:'Agent and contact',exact:true}).click();
+  await page.getByLabel('Agent name',{exact:true}).fill('Andrea Mendoza');await page.getByLabel('Agent phone',{exact:true}).fill('09171234567');await page.getByLabel('Proposal addressee',{exact:true}).fill('Ariana Santos');await page.getByLabel('Addressee position',{exact:true}).fill('HR Manager');
+  await page.getByRole('tab',{name:'Requested coverage',exact:true}).click();
+  await page.getByLabel('Requested plan',{exact:true}).fill('Total CorpoShield');await page.getByLabel('Payment schedule',{exact:true}).selectOption('Annual');await page.getByLabel('Regular employees',{exact:true}).fill('10');await page.getByLabel('Dependents',{exact:true}).fill('0');await page.getByLabel('Employee age range',{exact:true}).fill('25–58');
+  await page.getByRole('button',{name:'Save details',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});assert.ok(await page.getByRole('heading',{name:company,exact:true}).isVisible());pass('Tabbed detail editing saves PDF intake preparation fields');
+  assert.equal(sha(await (await context.request.get(base+'/api/operations/file/'+record.id+'/source')).body()),sha(original));pass('Editing working details leaves the original PDF unchanged');
+  await page.getByRole('button',{name:'Choose a proposal',exact:true}).click();await page.getByLabel('Proposal template',{exact:true}).selectOption('d094');
+  await page.screenshot({path:'test-results/workspace-simple-selection.png',fullPage:true});
+  await page.getByRole('button',{name:'Generate proposal',exact:true}).click();await page.getByRole('heading',{name:'Prepared proposal',exact:true}).waitFor();
+  assert.ok(await page.getByTitle('Generated proposal PDF',{exact:true}).isVisible());await page.getByRole('tab',{name:'Email to agent',exact:true}).click();assert.ok(await page.getByText('agent.pdf@example.com',{exact:true}).isVisible());pass('One generation creates the proposal and a separate email preview');
+  assert.equal(await page.getByRole('button',{name:'Edit email',exact:true}).count(),1);await page.getByRole('button',{name:'Edit email',exact:true}).click();await page.getByLabel('Email subject',{exact:true}).fill('Reviewed PDF request');await page.getByRole('button',{name:'Save email',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});pass('Email remains editable through a single focused action');
+  await page.getByRole('button',{name:'Send to supervisor for approval',exact:true}).click();await page.getByRole('region',{name:'Proposal approval status'}).getByRole('heading',{name:'Waiting for approval',exact:true}).waitFor();
+  const supervisor=await account('zeo');await supervisor.page.getByRole('button',{name:/^Approval Queue/}).click();await supervisor.page.getByRole('link',{name:'Open '+company,exact:true}).click();await supervisor.page.getByRole('heading',{name:'Supervisor decision',exact:true}).waitFor();
+  await supervisor.page.screenshot({path:'test-results/workspace-simple-supervisor.png',fullPage:true});await supervisor.page.getByRole('button',{name:'Approve & email agent',exact:true}).click();await supervisor.page.getByText('Approved reply saved to the local test mailbox',{exact:true}).waitFor();pass('Supervisor approval still automatically saves the agent reply');
+  state=await (await context.request.get(base+'/api/operations/bootstrap')).json();record=state.inquiries.find(inquiry=>inquiry.id===record.id);assert.equal(record.status,'Sent');assert.equal(record.email.subject,'Reviewed PDF request');
+  const generated=await context.request.get(base+'/api/operations/file/'+record.id+'/pdf?version=1');assert.notEqual(sha(await generated.body()),sha(original));assert.equal(sha(await (await context.request.get(base+'/api/operations/file/'+record.id+'/source')).body()),sha(original));pass('Agent attachment and generated proposal remain separate retained documents');
+  await page.reload();await page.getByRole('heading',{name:'Dashboard',exact:true}).waitFor();await page.getByRole('button',{name:'Inquiries',exact:true}).click();await page.getByRole('link',{name:'Open '+company,exact:true}).click();await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'1 Review form',exact:false}).click();
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));assert.ok(await page.getByRole('button',{name:'View submitted form',exact:true}).isVisible());await page.screenshot({path:'test-results/workspace-simple-mobile.png',fullPage:true});pass('Phone workspace keeps the submitted document visible without horizontal overflow');
+  assert.deepEqual(errors,[]);pass('No client JavaScript errors');
+  await writeFile('test-results/submitted-pdf.json',JSON.stringify({at:new Date().toISOString(),checks,errors,inquiry:record.id},null,2));console.log('\n'+checks.length+' checks passed.');
+}finally{await browser.close();}
