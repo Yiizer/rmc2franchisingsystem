@@ -10,6 +10,7 @@
 .ops-submission-status p{margin:0}
 .ops-submission-sub{font-size:12px;line-height:1.5;color:var(--ops-muted-text)}
 .ops-submission-status .ops-submission-body{margin-top:8px;font-size:13px;line-height:1.55;color:var(--ops-ink)}
+.ops-submission-status .ops-submission-reason{margin-top:6px;font-size:12px;line-height:1.5;color:var(--ops-error);font-weight:600;overflow-wrap:anywhere}
 .ops-submission-note{display:flex;flex-direction:column;gap:4px;margin:12px 0 0;padding:10px 12px;border-left:3px solid var(--ops-hold);background:var(--ops-hold-tint);border-radius:0 6px 6px 0;font-size:12px;line-height:1.5;color:var(--ops-ink);overflow-wrap:anywhere}
 .ops-submission-note small{color:var(--ops-muted-text);font-size:12px}
 .ops-submission-meta{display:grid;align-content:start;gap:8px;margin:0;font-size:12px}

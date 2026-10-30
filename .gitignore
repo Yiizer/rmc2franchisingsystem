@@ -49,3 +49,4 @@ next-env.d.ts
 /test-results/
 /resources/private/
 !/.env.example
+!/.env.mail.test.example

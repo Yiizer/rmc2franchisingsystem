@@ -8,6 +8,8 @@ import { synchronizeInquiryIndex, matchingInquiries } from './inquiry-index';
 import { clientState } from './client-rules';
 import { packageRenderers } from './package-rendering';
 import { conversionName } from './document-renderer';
+import { mailStatus } from './mail-config';
+import { recoverStuckMail } from './service';
 import { nextWorkAction, unfinishedWork } from './work-progress';
 import type { InquiryRecord, InquirySummary, Notice, PageInfo, Staff, WorkspaceUpdate } from './types';
 
@@ -59,12 +61,14 @@ export function inquiryDetails(id:string) {
 export function workspaceView(user: Staff, params: URLSearchParams): WorkspaceUpdate | {unchanged:true;cursor:string} {
   const query = querySchema.parse(Object.fromEntries(params));
   const emptyPage = {page:1,pageSize:25,total:0,pages:1};
+  const mail = mailStatus();
   if (user.mustChangePassword) return {
-    user, users:[user], templates:[], integrations:{database:'',gmail:'',ai:'',documents:''},
+    mail, user, users:[user], templates:[], integrations:{database:'',gmail:'',ai:'',documents:''},
     inquiries:[],clientStates:{},packageRenderers:{},activity:[],notifications:[],
     cursor:'activate:'+user.id, metadataVersion:'activate', pagination:emptyPage,noticePagination:emptyPage,
     unreadCount:0,pendingCount:0,divisions:[],stats:{},attention:[],attentionCount:0,resume:[],
   };
+  recoverStuckMail();
   const now = Date.now(), revision = versions(), data = collection(revision.inquiries, now);
   const activity = activeInquiryActivity();
   const metadataVersion = epoch + ':' + revision.metadata;
@@ -132,7 +136,7 @@ export function workspaceView(user: Staff, params: URLSearchParams): WorkspaceUp
     }
   }
   return {
-    user, ...(query.metadataVersion===metadataVersion?{}:{users,templates:templates.map(template=>({...template,file:''})),integrations:{database:'SQLite · shared server storage',gmail:'Local test mailbox · no real Gmail sends',ai:'Simulated · supplied proposal sources only',documents:conversionName()}}),
+    mail, user, ...(query.metadataVersion===metadataVersion?{}:{users,templates:templates.map(template=>({...template,file:''})),integrations:{database:'SQLite · shared server storage',gmail:mail.mode==='local'?'Local test mailbox · no real Gmail sends':mail.label,ai:'Simulated · supplied proposal sources only',documents:conversionName()}}),
     cursor, metadataVersion, inquiries:listing.items, pagination:listing.pagination,
     ...(current?{current}:{}), packageRenderers:renderers,
     clientStates:Object.fromEntries([...visibleIds].filter(id=>data.states[id]).map(id=>[id,data.states[id]])),

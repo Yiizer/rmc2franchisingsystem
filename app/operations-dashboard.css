@@ -16,7 +16,7 @@
 .ops-dashboard .ops-card-head{padding:18px 20px}
 .ops-dashboard .ops-card-head p{font-size:12px;margin:4px 0 0;color:#526780}
 .ops-dashboard .ops-count{background:#eef2f7;color:#3d536e;height:20px;min-width:20px}
-.dash-queue-scroll{overflow:auto}
+.dash-queue-scroll{overflow:auto;position:relative}
 .dash-queue{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
 .dash-queue th{background:#f7f9fc;text-align:left;padding:18px 20px;color:#4b627d;font-size:11px;letter-spacing:.04em;text-transform:uppercase;font-weight:500}
 .dash-queue th:first-child{width:31%}.dash-queue th:nth-child(2){width:23%}.dash-queue th:nth-child(3){width:20%}.dash-queue th:nth-child(4){width:13%}

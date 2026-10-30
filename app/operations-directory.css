@@ -105,3 +105,7 @@
 .dir-side-panel .dir-agent-more:focus-visible{outline:3px solid #be7d16;outline-offset:2px}
 @media(pointer:coarse){.dir-agent-more{min-height:44px;min-width:44px}}
 @media(max-width:480px){.dir-client-summary{grid-template-columns:1fr;gap:8px}.dir-side-panel .dir-client-summary>.dir-stat{display:flex;align-items:center;justify-content:space-between;gap:12px}.dir-client-summary dt{margin:0;flex:none}.dir-side-panel .dir-client-summary dd{text-align:right}.dir-age-band{display:inline;margin-left:6px}}
+/* Tablet widths keep the sidebar, so the list toolbar must wrap; and absolutely positioned
+   cells (sr-only labels) must stay inside the scrolling table instead of widening the page. */
+.dir-table-scroll{position:relative}
+@media(max-width:1100px){.dir-full-page .dir-toolbar{flex-wrap:wrap}}
