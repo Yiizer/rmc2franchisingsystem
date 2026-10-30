@@ -50,3 +50,6 @@ next-env.d.ts
 /resources/private/
 !/.env.example
 !/.env.mail.test.example
+
+# graphify local code graph (rebuilt with: graphify update .)
+/graphify-out/

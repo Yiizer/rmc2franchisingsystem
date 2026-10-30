@@ -5,9 +5,10 @@ import { randomUUID, randomBytes, scryptSync, createHash, timingSafeEqual } from
 import type { CatalogTemplate, InquiryRecord, Notice, Staff } from './types';
 import { defaultEmail } from './types';
 import { installWorkspaceIndexes } from './workspace-schema';
+import { dataRoot, resourceFile, demoSeedAllowed } from './paths';
 
-// Runtime records are not deployment assets and must never be bundled by Next.js.
-export const dataRoot = path.resolve(/* turbopackIgnore: true */ process.env.RMC2_DATA_DIR || path.join(process.cwd(),'.data'));
+export { dataRoot };
+
 export const LOCAL_PASSWORD='Rmc2Local!2026';
 type DatabaseGlobal = typeof globalThis & { rmc2Database?: DatabaseSync };
 export function db() {
@@ -29,7 +30,7 @@ export function db() {
     CREATE TABLE IF NOT EXISTS file_access (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, inquiry_id TEXT NOT NULL, kind TEXT NOT NULL, at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, inquiry_id TEXT NOT NULL, version INTEGER NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL, UNIQUE(inquiry_id,version,kind));`);
   shared.rmc2Database=database;
-  if(!(database.prepare('SELECT id FROM users LIMIT 1').get())) seed(database);
+  if(!(database.prepare('SELECT id FROM users LIMIT 1').get())) { if(demoSeedAllowed())seed(database); else console.warn('[rmc2] Empty database and demo seed disabled: nobody can sign in. Set RMC2_SEED_DEMO=1 for test data.'); }
   installWorkspaceIndexes(database);
   return database;
 }
@@ -46,12 +47,12 @@ export function persist(record:InquiryRecord, expected?:number) {
 export function transaction<T>(run:()=>T):T { const database=db();database.exec('BEGIN IMMEDIATE');try{const result=run();database.exec('COMMIT');return result;}catch(error){database.exec('ROLLBACK');throw error;} }
 export function audit(record:InquiryRecord, staff:Staff, action:string, changes?:{field:string;before:string;after:string}[]) { const at=new Date().toISOString();record.updatedAt=at;record.revision++;record.handledBy=[...new Set([...record.handledBy,staff.id])];record.history.push({id:randomUUID(),at,actorId:staff.id,actor:staff.name,action,changes}); }
 export function notify(record:InquiryRecord,title:string,message:string,recipientIds:string[]) { const notice:Notice={id:randomUUID(),inquiryId:record.id,title,message,at:new Date().toISOString(),recipientIds:[...new Set(recipientIds)],readBy:[]};db().prepare('INSERT INTO notifications(id,data) VALUES (?,?)').run(notice.id,JSON.stringify(notice)); }
-export function catalog():CatalogTemplate[] { const file=path.join(process.cwd(),'resources','private','catalog.json');const base:CatalogTemplate[]=existsSync(file)?JSON.parse(readFileSync(file,'utf8')):[];
+export function catalog():CatalogTemplate[] { const file=resourceFile('catalog.json');const base:CatalogTemplate[]=existsSync(file)?JSON.parse(readFileSync(file,'utf8')):[];
   const overrides=(db().prepare('SELECT data FROM template_overrides').all() as {data:string}[]).map(row=>JSON.parse(row.data) as CatalogTemplate);
   const merged=new Map(base.map(template=>[template.id,{...template,active:['D091','D092','D093'].includes(template.sourceId)?false:template.active}]));
   for(const template of overrides)merged.set(template.id,template);
   return [...merged.values()]; }
-export function sourceFile(template:CatalogTemplate) { return template.storage?safeStorage(template.storage):path.join(process.cwd(),'resources','private',path.basename(template.file)); }
+export function sourceFile(template:CatalogTemplate) { return template.storage?safeStorage(template.storage):resourceFile(path.basename(template.file)); }
 export function safeStorage(relative:string) { const full=path.resolve(dataRoot,relative);if(!full.startsWith(dataRoot+path.sep))throw new AppError('Invalid stored file path',400);return full; }
 export class AppError extends Error { constructor(message:string,public status=400){super(message);} }
 

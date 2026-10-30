@@ -1,14 +1,14 @@
 import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { historicalSchemaFile } from './paths';
 import { AppError, audit, db, inquiry, persist, transaction, notify, allUsers } from './database';
 import { clientIdentity, clientIdentityKeys, normalizeClient } from './client-rules';
 import type { Staff, InquiryRecord } from './types';
 import {projectHistorical,manilaToday,statusStyles,type RegisterEntry,type HistoricalData,type DirectoryListing} from './directory-model';
 export function historicalIdentity(record:InquiryRecord){return JSON.stringify([clientIdentity(record),record.fields.agentName||'',record.fields.agentEmail||'',record.fields.agentPhone||'']);}
 let installed=false;
-export function historicalSchema(){if(installed)return;db().exec(readFileSync(path.join(process.cwd(),'lib/operations/historical-schema.sql'),'utf8'));installed=true;}
+export function historicalSchema(){if(installed)return;db().exec(readFileSync(historicalSchemaFile(),'utf8'));installed=true;}
 export function historicalMatchCounts():Map<string,number>{historicalSchema();return new Map((db().prepare("SELECT k.inquiry_id,count(DISTINCT h.id) n FROM inquiry_keys k JOIN historical_accounts h ON k.kind='company' AND k.value=h.account_key GROUP BY k.inquiry_id").all() as {inquiry_id:string;n:number}[]).map(row=>[row.inquiry_id,Number(row.n)]));}
 type Row={id:string;batch:string;sheet:string;source_row:number;account:string;account_key:string;agent:string;branch:string;status:string;data:string};
 // Historical source records are immutable outside the importer. Its report changes on re-import.

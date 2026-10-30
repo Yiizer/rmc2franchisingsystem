@@ -594,7 +594,7 @@ The default recipient is the **agent reply email**. The client's contact email i
 | Customized browser editor | `docx-preview` plus editable document blocks |
 | Browser checks | Playwright Core with Edge/Chromium |
 
-The localhost port is 5173, but the active app is Next.js. Older Vite/Vinext and static-demo support files still exist in the checkout; they are not the current operations entry point. `app/page.tsx` renders `OperationsApp`.
+The localhost port is 5173 and the app is Next.js; the older Vite/Vinext and Cloudflare support files were removed (October 31, 2026). `app/page.tsx` renders `OperationsApp`.
 
 ```mermaid
 flowchart TD
@@ -688,7 +688,7 @@ Runtime data, private source documents, test output and local environment files 
 | `file_access` | Staff ID, inquiry/template reference, file kind and retrieval time |
 | `outbox` | Version-specific local delivery state and message metadata |
 
-The app stores much of its business record as JSON. The presence of Drizzle packages in the repository does not mean the active operations database has already been migrated to a managed relational schema.
+The app stores much of its business record as JSON in SQLite. The move to a managed Postgres schema (Supabase) is planned in `MIGRATION_PLAN.md`; the unused Drizzle stubs were removed.
 
 ### Main record relationships
 
@@ -706,7 +706,7 @@ These controls describe the local implementation, not a completed production sec
 
 ## Database and record dictionary
 
-The active database is SQLite. `db/schema.ts` is an empty starter schema for an alternative toolchain, not the active operations schema. `lib/operations/database.ts` creates the current tables using `CREATE TABLE IF NOT EXISTS` when the database opens. There is no separate completed Postgres/Supabase migration or ordered operations migration framework in this milestone.
+The active database is SQLite. `lib/operations/database.ts` creates the current tables using `CREATE TABLE IF NOT EXISTS` when the database opens. There is no separate completed Postgres/Supabase migration or ordered operations migration framework in this milestone.
 
 SQLite uses WAL journaling and a 5-second busy timeout. Workflow transactions use `BEGIN IMMEDIATE` where atomic changes are needed. Much of the business record is JSON inside a row, with an explicit revision used for conflict checks.
 

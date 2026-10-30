@@ -42,7 +42,7 @@ async function seedViaApp() {
   const nextBin = path.join(root, 'node_modules', 'next', 'dist', 'bin', 'next');
   if (!existsSync(path.join(root, '.next', 'BUILD_ID'))) fail('no production build found; run "npm run build" first.');
   const child = spawn(process.execPath, [nextBin, 'start', '--hostname', '127.0.0.1', '--port', String(port)], {
-    cwd: root, env: { ...process.env, RMC2_DATA_DIR: dataDir }, stdio: 'ignore', windowsHide: true,
+    cwd: root, env: { ...process.env, RMC2_DATA_DIR: dataDir, RMC2_SEED_DEMO: '1' }, stdio: 'ignore', windowsHide: true,
   });
   let ready = false;
   try {

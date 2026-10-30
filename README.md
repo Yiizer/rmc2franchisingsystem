@@ -13,7 +13,7 @@ npm install
 npm run dev
 ```
 
-Open **http://127.0.0.1:5173/**. For the production build, use `npm run build` followed by `npm start`.
+Open **http://127.0.0.1:5173/**. For the production build, use `npm run build` followed by `npm start`. On a new, empty data directory production mode creates no demo accounts; set `RMC2_SEED_DEMO=1` to get the local test accounts.
 
 Sign in with your username or email. Initial local accounts share the password **Rmc2Local!2026**. These credentials are for local testing.
 

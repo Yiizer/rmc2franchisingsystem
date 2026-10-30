@@ -44,6 +44,10 @@ Format: **Decision** — why — where it applies.
 - **Test sender changed to the PO's own personal Gmail** (2026-10-30; address kept out of git, see `.env.mail.test`) — chosen by the PO instead of a
   dedicated account, for testing only. Test mail is also redirected to that address. Its app password lives
   only in `.env.mail.test` on this PC and must be revoked when testing ends.
+- **Migration decisions** (2026-10-31, see `MIGRATION_PLAN.md`): the PO owns and pays for the Vercel and Supabase
+  accounts during building/testing and transfers them to the client **before any real client data is imported**;
+  PDFs via LibreOffice in a Vercel container with the "export from Word and upload" fallback (no CloudConvert);
+  Supabase Auth for sign-in, as its own phase after the data move; phase 0 (cleanup + portable config) approved.
 - **Target hosting remains Vercel + Supabase** (2026-10-30) — needs a migration first (SQLite → Postgres, files →
   Supabase Storage, LibreOffice → container/CloudConvert, mail polling → scheduled job). Plan with architect +
   database engineer before coding; Vercel Hobby is non-commercial (verify terms). Inbound email (reading the
@@ -113,5 +117,9 @@ Format: **Decision** — why — where it applies.
 ## Process
 
 - Team roles live in `~/.claude/agents/`; playbook: `D:/AI-Skills/AI_TEAM_PLAYBOOK.md`.
+- **Use the graphify code graph for context** (2026-10-31): `graphify update .` (code only, offline, respects
+  `.gitignore`, output in the gitignored `graphify-out/`), then `graphify query "<question>" --budget 1500`,
+  `graphify path "A" "B"` or `graphify explain "X"` before broad greps. Re-run `update` after large changes, and
+  tell specialist agents to query it first.
 - Plan → Product Owner approval → implement with file ownership → QA + code review → report.
 - Specialists' "done" is not verification; the lead checks evidence (diffs, test output, screenshots).
