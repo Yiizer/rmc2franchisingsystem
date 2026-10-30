@@ -26,6 +26,12 @@ function prepareProfile() {
   });
 }
 
+// Unix: also look for soffice/libreoffice on PATH (after the fixed locations below).
+function pathExecutables(): string[] {
+  if (process.platform === 'win32') return [];
+  return (process.env.PATH || '').split(path.delimiter).filter(Boolean)
+    .flatMap(dir => ['soffice', 'libreoffice'].map(name => path.join(dir, name)));
+}
 function officePath() {
   return [process.env.RMC2_OFFICE_EXECUTABLE,
     path.join(process.cwd(), '../.rmc2-tools/office-extracted/SourceDir/LibreOffice/program/soffice.com'),
@@ -33,7 +39,7 @@ function officePath() {
     path.join(process.cwd(), '.data/tools/libreoffice/program/soffice.com'),
     path.join(process.cwd(), '.data/tools/libreoffice/program/soffice.exe'),
     'C:/Program Files/LibreOffice/program/soffice.com',
-    'C:/Program Files/LibreOffice/program/soffice.exe', '/usr/bin/libreoffice', '/usr/bin/soffice']
+    'C:/Program Files/LibreOffice/program/soffice.exe', '/usr/bin/libreoffice', '/usr/bin/soffice', ...pathExecutables()]
     .find((candidate): candidate is string => !!candidate && existsSync(candidate));
 }
 export const conversionName = () => officePath() ? 'LibreOffice · original Word layout' : 'Document converter needs setup';

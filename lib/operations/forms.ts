@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { AppError, dataRoot } from './database';
+import { resourceFile } from './paths';
 import type { FormFields, SourceForm } from './types';
 
 const mapping:Record<string,string>={agentName:'C7',requestDate:'J7',branch:'D8',agentPhone:'J8',company:'B10',industry:'J11',address:'C12',contactName:'D14',contactEmail:'B17',contactPhone:'J16',contactPosition:'C18',existingProvider:'J18',addressee:'B21',addresseePosition:'G21',requestedPlan:'D22',payment:'G23',employees:'D25',dependents:'J24',employeeAges:'C26',dependentAges:'J26',hospitals:'C29',dental:'I29'};
@@ -40,7 +41,7 @@ export async function preservePdfForm(bytes:Buffer,filename:string,sender:string
 }
 export async function sampleForm(fields?:FormFields):Promise<Buffer> {
   const workbook=new ExcelJS.Workbook();
-  await workbook.xlsx.load(await readFile(path.join(process.cwd(),'resources/private/franchise-form.xlsx')) as unknown as ExcelJS.Buffer);
+  await workbook.xlsx.load(await readFile(resourceFile('franchise-form.xlsx')) as unknown as ExcelJS.Buffer);
   const sheet=workbook.worksheets[0];
   const fake:FormFields={agentName:'Andrea Mendoza',requestDate:new Date().toISOString().slice(0,10),branch:'Antipolo',agentPhone:'09171234567',company:'Sampaguita National High School',industry:'DepEd',address:'Antipolo City, Rizal',contactName:'Ariana Santos',contactEmail:'school.contact@example.com',contactPhone:'09981234567',contactPosition:'HR Manager',existingProvider:'None',addressee:'Ariana Santos',addresseePosition:'HR Manager',requestedPlan:'DepEd plan',payment:'Annual',employees:'10',dependents:'0',employeeAges:'25–58',dependentAges:'',hospitals:'For confirmation',dental:'For confirmation'};
   const values=fields??fake;

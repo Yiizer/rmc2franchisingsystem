@@ -33,6 +33,7 @@ if (Test-Path $envFile) {
 # so pin an inert non-empty value instead.
 foreach ($name in "CLOUDCONVERT_API_KEY", "OPENAI_API_KEY") { [Environment]::SetEnvironmentVariable($name, "disabled-in-staging", "Process") }
 $env:RMC2_DATA_DIR = $dataFull
+$env:RMC2_SEED_DEMO = "1"   # next start sets NODE_ENV=production, which would otherwise skip the demo seed
 
 # ---- Mail (phase 1 real email, test inbox only) ----
 # Next.js never lets .env.local override a variable already in the process environment, but on Windows

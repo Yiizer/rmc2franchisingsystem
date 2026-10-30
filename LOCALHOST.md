@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Open http://127.0.0.1:5173/. Production-mode local testing uses `npm run build` followed by `npm start`. Both modes use the same database directory.
+Open http://127.0.0.1:5173/. Production-mode local testing uses `npm run build` followed by `npm start`. Both modes use the same database directory. On a new, empty data directory, `npm start` creates no demo accounts unless `RMC2_SEED_DEMO=1` is set.
 
 ### Reconnected local setup (October 17, 2026)
 
