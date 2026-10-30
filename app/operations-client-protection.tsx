@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { Archive, ArrowUpRight, CheckCircle2, Clock3, FileText, LockKeyhole, RefreshCw, ShieldCheck, TriangleAlert } from 'lucide-react';
+import { Archive, ArrowUpRight, CheckCircle2, Clock3, FileText, Info, LockKeyhole, RefreshCw, ShieldCheck, TriangleAlert } from 'lucide-react';
 
 import { toast } from 'sonner';
 
@@ -57,6 +57,12 @@ export function ClientProtectionSummary({state,onOpen}:{state:ClientState;onOpen
 
 
 
+// Informational, non-blocking note for registrations that overlap another one. Always visible to all staff; mount it outside any collapsed protection body.
+export function ClientOverlapNote({state,onOpenRelated}:{state:ClientState;onOpenRelated:(id:string)=>void}){
+  if(!state.overlaps?.length)return null;
+  return <section className="ops-client-overlap" role="note" aria-label="Also registered"><Info size={18} aria-hidden="true"/><div><b>Also registered on {state.overlaps.map((o,i)=><span key={o.inquiryId}>{i>0&&', '}<button className="ops-link" onClick={()=>onOpenRelated(o.inquiryId)}>{o.inquiryId}<ArrowUpRight size={13}/></button></span>)}</b><p>For information only. Nothing is blocked. {state.overlaps.map(o=>o.company+' · '+o.agentName).join('; ')}</p></div></section>;
+}
+
 export default function ClientProtectionPanel({record,state,user,users,locked,onChange,onRefresh,onOpenRelated}:{record:InquiryRecord;state:ClientState;user:Staff;users:Staff[];locked:boolean;onChange:(record:InquiryRecord)=>void;onRefresh:()=>Promise<void>;onOpenRelated:(id:string)=>void}){
 
   const [now,setNow]=useState(()=>Date.now()),[reportOpen,setReportOpen]=useState(false),[reviewOpen,setReviewOpen]=useState(false),[reviewKind,setReviewKind]=useState<'distinct'|'reassign-expired'>('distinct'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[note,setNote]=useState(''),[confirmed,setConfirmed]=useState(false);
@@ -100,12 +106,13 @@ export default function ClientProtectionPanel({record,state,user,users,locked,on
 
   return <>
 
+    <ClientOverlapNote state={state} onOpenRelated={onOpenRelated}/>
     {record.closure?<section className="ops-card ops-archive-reason"><h2><Archive size={18}/> {record.closure.kind==='declined'?'Request declined':'Client transferred'} · Archived</h2><p>{record.closure.reason}</p><small>{manilaTime(record.closure.at)} · {staffName(users,record.closure.by)}</small>{record.closure.relatedId&&<button className="ops-link" onClick={()=>onOpenRelated(record.closure!.relatedId!)}>Open related inquiry <ArrowUpRight size={15}/></button>}</section>:state.state==='duplicate'?<ConflictCard title={resolved?'Match resolved':'On hold · Already registered to '+(selected?.agentName||'another agent')} subtitle={selected?.inquiryId} matches={seenMatches.map(m=>({id:m.inquiryId,label:m.inquiryId+' · '+m.agentName,resolved:!state.matches.some(active=>active.inquiryId===m.inquiryId)}))} selected={selected?.inquiryId||''} onSelect={setSelectedMatch} actions={!resolved&&selected?<RegistrationActions record={record} state={state} user={user} selectedMatchId={selected.inquiryId} locked={locked||busy} onChange={onChange} onRefresh={onRefresh} renderActions={actions=>{
  const canApproveExpiry=user.role==='Supervisor'&&user.canApprove&&state.matches.length>0&&state.matches.every(m=>m.expired&&!m.sameAgent);
  const suggested=selected.sameAgent?'existing':selected.expired?(canApproveExpiry?'approve-expiry':actions.some(a=>a.id==='expiry')?'expiry':'existing'):'decline';
  const all=[{id:'existing',label:'Open existing inquiry',run:()=>onOpenRelated(selected.inquiryId),tone:'primary',disabled:false},...actions,...(canApproveExpiry?[{id:'approve-expiry',label:'Approve new agent after expiry',run:openExpiry,tone:'primary',disabled:locked||busy}]:[])];
  const primary=all.find(a=>a.id===suggested)!;
- return <><div className="ops-conflict-options"><button className={'ops-conflict-suggested '+(suggested==='decline'?'danger':'')} disabled={primary.disabled} onClick={primary.run}><small>Suggested step</small><b>{primary.label}</b></button>{all.filter(a=>a.id!==suggested&&a.id!=='existing'&&a.id!=='decline').map(a=><button className="ops-btn" key={a.id} disabled={a.disabled} onClick={a.run}>{a.label}</button>)}</div><div className="ops-conflict-secondary"><button className="ops-btn" disabled={busy||locked} onClick={openDistinct}>Confirm different clients</button>{suggested!=='decline'&&actions.filter(a=>a.id==='decline').map(a=><button className="ops-conflict-decline" key={a.id} disabled={a.disabled} onClick={a.run}>Decline request</button>)}</div>{state.matches.length>1&&<p className="ops-conflict-hint">Review the other matches before requesting a transfer.</p>}</>;
+ return <><div className="ops-conflict-options"><button className={'ops-conflict-suggested '+(suggested==='decline'?'danger':'')} disabled={primary.disabled} onClick={primary.run}><small>Suggested step</small><b>{primary.label}</b></button>{all.filter(a=>a.id!==suggested&&a.id!=='existing'&&a.id!=='decline').map(a=><button className="ops-btn" key={a.id} disabled={a.disabled} onClick={a.run}>{a.label}</button>)}</div><div className="ops-conflict-secondary"><button className="ops-btn" disabled={busy||locked||(!(user.role==='Supervisor'&&user.canApprove)&&state.matches.some(m=>!m.expired))} title={!(user.role==='Supervisor'&&user.canApprove)&&state.matches.some(m=>!m.expired)?'An approving supervisor must confirm different clients while the existing registration is active.':undefined} onClick={openDistinct}>Confirm different clients</button>{suggested!=='decline'&&actions.filter(a=>a.id==='decline').map(a=><button className="ops-conflict-decline" key={a.id} disabled={a.disabled} onClick={a.run}>Decline request</button>)}</div>{state.matches.length>1&&<p className="ops-conflict-hint">Review the other matches before requesting a transfer.</p>}</>;
  }}/>:undefined}>
  {selected&&<ClientComparison record={record} match={selected} onOpen={onOpenRelated} busy={busy||locked} onRecheck={()=>{void review('recheck');}}/>}
 

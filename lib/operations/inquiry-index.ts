@@ -21,6 +21,10 @@ export function inquirySummary(record: InquiryRecord): InquirySummary {
 // Only identifying data and registration rules belong in this projection.
 // Full history, document versions, source cells, emails and edited content are
 // read from the authoritative inquiry only when its workspace is opened.
+// Keep only the approved decisions so isRegistered() also holds for approved-but-undelivered records.
+function registeredSubmissions(record: InquiryRecord) {
+  return record.submissions.filter(item => item.decision?.action === 'approve').map(item => ({version: item.version, decision: item.decision})) as unknown as InquiryRecord['submissions'];
+}
 function clientProjection(record: InquiryRecord): InquiryRecord {
   const keys = ['company', 'contactName', 'addressee', 'agentName', 'agentEmail', 'agentPhone'];
   const fields = (values: Record<string, string>) => Object.fromEntries(keys.map(key => [key, values[key] || '']));
@@ -30,7 +34,7 @@ function clientProjection(record: InquiryRecord): InquiryRecord {
     fields: fields(record.fields), source: {...record.source, cells: [], fields: fields(record.source.fields)},
     closure: record.closure, protection: protectionFor(record) || undefined, clientReview: record.clientReview,
     email: {to: '', subject: '', body: ''}, emailOverrides: [], templateId: '',
-    handledBy: [], submissions: [], history: [], chat: [], detailRequests: [],
+    handledBy: [], submissions: registeredSubmissions(record), history: [], chat: [], detailRequests: [],
     notes: '', returnNote: '', returnFlags: [],
   };
 }

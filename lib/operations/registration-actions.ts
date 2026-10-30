@@ -11,7 +11,7 @@ import { z } from 'zod';
 
 import { allUsers, AppError, audit, db, inquiry, notify, persist, safeStorage, transaction } from './database';
 
-import { clientIdentity, clientState, reviewClient, sameAgent } from './client-rules';
+import { clientIdentity, clientState, isRegistered, protectionFor, reviewClient, sameAgent } from './client-rules';
 
 import type { Staff } from './types';
 
@@ -26,6 +26,7 @@ function available(id:string,user:Staff){
 
 }
 
+function blocksOthers(record:ReturnType<typeof inquiry>){return matchingInquiries(record).some(other=>other.id!==record.id&&clientState(other,matchingInquiries(other)).matches.some(match=>match.inquiryId===record.id));}
 export function declineInquiry(id:string,user:Staff,input:unknown){
 
   const body=z.object({revision:z.number().int(),reason:z.string().trim().min(10).max(3000)}).strict().parse(input);
@@ -41,6 +42,8 @@ export function declineInquiry(id:string,user:Staff,input:unknown){
     if(['Sent','Approved — sending','Approved — email failed'].includes(record.status))throw new AppError('An approved or sent proposal cannot be declined as a new request.',409);
 
     if(['Awaiting approval','Supervisor editing'].includes(record.status)&&!(user.role==='Supervisor'&&user.canApprove))throw new AppError('An approving supervisor must decide a submitted request.',403);
+
+    if(!(user.role==='Supervisor'&&user.canApprove)&&(isRegistered(record)||protectionFor(record)||blocksOthers(record)))throw new AppError('An approving supervisor must decline a request that holds, or is blocking, a client registration.',403);
 
     available(id,user);
 

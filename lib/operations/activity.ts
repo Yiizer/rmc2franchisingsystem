@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { assertClientReady } from './client-service';
-import { isClientArchived } from './client-rules';
+import { isClientArchived, isRegistered } from './client-rules';
 import { AppError, allUsers, db, inquiry, transaction } from './database';
 import { canPrepareProposal, canEditInquiry } from './types';
 import type { InquiryActivity, Staff } from './types';
@@ -18,7 +18,7 @@ export function activeInquiryActivity():InquiryActivity[]{
     DELETE FROM inquiry_activity WHERE user_id <> (SELECT b.user_id FROM inquiry_activity b WHERE b.inquiry_id=inquiry_activity.inquiry_id ORDER BY b.started_at,b.user_id LIMIT 1);`);
   for(const row of db().prepare('SELECT DISTINCT inquiry_id FROM inquiry_activity').all() as {inquiry_id:string}[]){
     const record=inquiry(row.inquiry_id);
-    if(isClientArchived(record,Date.parse(now))||record.clientReview?.state==='duplicate')db().prepare('DELETE FROM inquiry_activity WHERE inquiry_id=?').run(record.id);
+    if(isClientArchived(record,Date.parse(now))||record.clientReview?.state==='duplicate'&&!isRegistered(record))db().prepare('DELETE FROM inquiry_activity WHERE inquiry_id=?').run(record.id);
   }
   const rows=db().prepare(`SELECT a.inquiry_id AS inquiryId,a.user_id AS userId,MIN(a.started_at) AS startedAt,MAX(a.seen_at) AS seenAt
     FROM inquiry_activity a JOIN inquiries i ON i.id=a.inquiry_id JOIN users u ON u.id=a.user_id

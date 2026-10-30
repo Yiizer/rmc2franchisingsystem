@@ -4,6 +4,7 @@ import {Search,Columns3,RefreshCw,X,ChevronLeft,ChevronRight,SlidersHorizontal} 
 import {api} from './operations-common';
 import {directoryGroups,statusStyles,statusGroup,displayDate,manilaToday,type StatusKey,type ClientListing,type DirectoryClient} from '@/lib/operations/directory-model';
 import {DirectoryPanel,DirectoryStatus} from './operations-directory-panel';
+import {AgentMore} from './operations-agent-list';
 import './operations-directory.css';
 export function HistoricalStatus({status,evidence}:{status:StatusKey;evidence?:string}){return <span title={evidence}><DirectoryStatus client={{group:statusGroup(status),statusLabel:statusStyles[status].label}}/></span>;}
 export function HistoricalRecord({id,onClose,onOpenInquiry}:{id:string;onClose:()=>void;onOpenInquiry?:(id:string)=>void}){return <DirectoryPanel id={id} onClose={onClose} onOpenInquiry={onOpenInquiry}/>;}
@@ -11,7 +12,7 @@ const defaults=['status','agent','activity'];
 const baseColumns=[{key:'status',label:'Status'},{key:'agent',label:'Agent · Branch'},{key:'branch',label:'Branch / division'},{key:'activity',label:'Last activity'},{key:'protection',label:'Protection'},{key:'source',label:'Source / records'},{key:'plan',label:'Plan'},{key:'remarks',label:'Remarks'}];
 function Cell({entry,column}:{entry:DirectoryClient;column:string}){
  if(column==='status')return <DirectoryStatus client={entry}/>;
- if(column==='agent')return <>{entry.agent||'Not recorded'}<small>{entry.branch||'Branch not recorded'}</small>{entry.agents.length>1&&<span className="dir-agent-warning" title={entry.agents.join(', ')}>+{entry.agents.length-1} agent{entry.agents.length>2?'s':''}</span>}</>;
+ if(column==='agent')return <>{entry.agent||'Not recorded'}<small>{entry.branch||'Branch not recorded'}</small><AgentMore agents={entry.agents} primary={entry.agent}/></>;
  if(column==='activity')return <>{entry.recordedDate||'Not recorded'}<small>{entry.age!==null?entry.age+(entry.age===1?' day':' days'):entry.dateIssue}{entry.source==='historical'?' · Account date':''}</small></>;
  if(column==='protection')return entry.source==='historical'?<span className="dir-muted">—</span>:entry.protectionDays===null?'Not started':<><span>{entry.protectionDays} days left</span><meter min={0} max={30} value={entry.protectionDays} aria-label="Protection days remaining"/></>;
  if(column==='source')return <span className="dir-source-badge">{entry.source==='both'?'Live + Historical':entry.source==='live'?'Live':'Historical'} · {entry.recordCount}</span>;

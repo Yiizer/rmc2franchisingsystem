@@ -5,11 +5,11 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { endpoint } from './operations-common';
 import { DocumentPage } from './operations-document-editor';
 import './operations-saved-pdf.css';
-import { useProposalDetailCheck, ProposalCheckButton, ProposalCheckResults, type ProposalCheckInputs } from './operations-proposal-checks';
+import { useProposalDetailCheck, ProposalCheckButton, ProposalCheckResults, type ProposalCheckInputs, type ProposalCheckState } from './operations-proposal-checks';
 
-export default function SavedProposalPdf({src,title,legacy=false,onCurrentLayout,checkInput}:{checkInput?:ProposalCheckInputs;src:string;title:string;legacy?:boolean;onCurrentLayout?:()=>void}){
+export default function SavedProposalPdf({src,title,legacy=false,onCurrentLayout,checkInput,check,hideChecker=false,hideDownload=false}:{checkInput?:ProposalCheckInputs;check?:ProposalCheckState;hideChecker?:boolean;hideDownload?:boolean;src:string;title:string;legacy?:boolean;onCurrentLayout?:()=>void}){
   const [pdf,setPdf]=useState<PDFDocumentProxy|null>(null),[ready,setReady]=useState(false),[error,setError]=useState(''),[retry,setRetry]=useState(0),[zoom,setZoom]=useState('fit'),[width,setWidth]=useState(760);
-  const detailCheck=useProposalDetailCheck(checkInput);
+  const ownCheck=useProposalDetailCheck(check?undefined:checkInput),detailCheck=check||ownCheck,hasCheck=!!check||!!checkInput;
   const viewport=useRef<HTMLDivElement>(null);
   useEffect(()=>{const element=viewport.current;if(!element)return;const observer=new ResizeObserver(([entry])=>setWidth(Math.max(160,entry.contentRect.width-40)));observer.observe(element);return()=>observer.disconnect();},[]);
   useEffect(()=>{
@@ -22,8 +22,8 @@ export default function SavedProposalPdf({src,title,legacy=false,onCurrentLayout
     return()=>{active=false;controller.abort();void task?.destroy();};
   },[src,retry]);
   return <div className="ops-saved-pdf" role="region" aria-label={title}>
-    <div className="ops-saved-pdf-toolbar"><span><FileText size={17}/>{legacy?'Earlier saved PDF':'Submitted PDF'}</span><div>{checkInput&&<div className="ops-saved-check-control"><div className="ops-checker-label"><b>AI proposal checker</b><small>Simulated AI · staff review required</small></div><ProposalCheckButton check={detailCheck}/></div>}<label>Zoom<select aria-label="Proposal zoom" value={zoom} onChange={event=>setZoom(event.target.value)}><option value="fit">Fit width</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option></select></label><a className="ops-link" href={src} download><Download size={15}/>{legacy?'Download saved PDF':'Download PDF'}</a></div></div>
-    {checkInput&&<ProposalCheckResults check={detailCheck}/>}
+    <div className="ops-saved-pdf-toolbar"><span><FileText size={17}/>{legacy?'Earlier saved PDF':'Submitted PDF'}</span><div>{hasCheck&&!hideChecker&&<div className="ops-saved-check-control"><div className="ops-checker-label"><b>AI proposal checker</b><small>Simulated AI · staff review required</small></div><ProposalCheckButton check={detailCheck}/></div>}<label>Zoom<select aria-label="Proposal zoom" value={zoom} onChange={event=>setZoom(event.target.value)}><option value="fit">Fit width</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option></select></label>{!hideDownload&&<a className="ops-link" href={src} download><Download size={15}/>{legacy?'Download saved PDF':'Download PDF'}</a>}</div></div>
+    {hasCheck&&<ProposalCheckResults check={detailCheck}/>}
     {legacy&&<div className="ops-saved-pdf-legacy" role="note"><span><b>Earlier PDF layout</b>Saved before the latest layout updates.</span>{onCurrentLayout&&<button className="ops-btn" onClick={onCurrentLayout}>Preview current layout</button>}</div>}
     <div className="ops-doc-preview ops-saved-pdf-pages" ref={viewport} role="region" aria-label="Scrollable proposal document" tabIndex={0} aria-busy={!ready&&!error}>
       <div className="ops-doc-preview-status" role="status">{error?<span role="alert">{error}<a className="ops-btn secondary" href={src} target="_blank" rel="noreferrer">Open PDF</a><button className="ops-btn secondary" onClick={()=>setRetry(value=>value+1)}>Retry preview</button></span>:ready?<><Check size={14}/>{legacy?'Earlier saved version':'Submitted version'} · {pdf?.numPages} pages</>:<><RefreshCw size={14} className="ops-spin"/>Opening saved PDF…</>}</div>

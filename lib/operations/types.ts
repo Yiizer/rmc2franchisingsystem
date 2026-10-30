@@ -13,7 +13,7 @@ export type DuplicateClientMatch = { inquiryId:string; company:string; agentName
 export type ClientReview = { state:'clear'|'duplicate'|'identify'; identity:string; matches:DuplicateClientMatch[]; exceptions?:{inquiryId:string;identity:string}[]; reviewedBy?:string; reviewedAt?:string; note?:string };
 export type ClientProtection = { startedAt:string; activityAt:string; expiresAt:string; agentName:string; agentEmail:string; agentPhone:string; activityKind:'proposal'|'details'|'progress-report' };
 export type AgentProgressReport = { id:string; sentAt:string; recordedAt:string; recordedBy:string; sender:string; summary:string; reference:string; attachment?:{storage:string;filename:string;mime:string} };
-export type ClientState = { state:'clear'|'duplicate'|'identify'|'archived'; matches:DuplicateClientMatch[]; protection:ClientProtection|null };
+export type ClientState = { state:'clear'|'duplicate'|'identify'|'archived'; matches:DuplicateClientMatch[]; protection:ClientProtection|null; overlaps?:DuplicateClientMatch[] };
 export const isSampleForm=(source:SourceForm)=>source.kind==='sample'||(!source.storage&&source.filename==='Sample franchise form.xlsx');
 export type ProposalRenderer='native-word'|'native-word-v2'|'native-word-legacy'|'browser-print'|'unknown';
 export type AuditEntry = { id: string; at: string; actorId: string; actor: string; action: string; changes?: { field: string; before: string; after: string }[] };

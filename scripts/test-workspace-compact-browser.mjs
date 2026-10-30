@@ -26,7 +26,7 @@ try {
  assert.match(await page.locator('.ops-rail-details').innerText(),/\d{2}\/\d{2}\/\d{4}/);
  const handling=page.getByRole('region',{name:'Inquiry activity'});
  const doneBox=await handling.getByRole('button',{name:'Release to queue',exact:true}).boundingBox();
- const nextBox=await page.locator('.ops-main-action .primary').boundingBox();
+ const nextBox=await page.locator('.ops-action-bar .ops-next-main').boundingBox();
  assert.ok(Math.abs(doneBox.width-nextBox.width)<1);
  assert.ok((await handling.getByRole('status').boundingBox()).y<doneBox.y);
  assert.equal(await page.locator('.ops-more-actions').count(),0);
