@@ -1,21 +1,22 @@
 'use client';
+import { manilaTime } from '@/lib/operations/types';
 import { useEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react';
 import { Download, FileText, RefreshCw, RotateCcw, Check, Eye, Sparkles } from 'lucide-react';
 import CustomDocument from './operations-custom-document';
 import type { CatalogTemplate, FormFields, CustomizedProposal, CustomEdit, GeneratedPackage } from '@/lib/operations/types';
-import { documentIssues } from '@/lib/operations/types';
-import { addresseeName, philippinePhone, proposalChecks, proposalTitles } from '@/lib/operations/proposal-fields';
+import { addresseeName, philippinePhone, proposalTitles } from '@/lib/operations/proposal-fields';
 import type { PDFDocumentProxy, RenderTask, TextLayer } from 'pdfjs-dist';
 import { endpoint } from './operations-common';
 import ProposalAiNotes from './operations-ai-notes';
-import ProposalDetailChecks from './operations-proposal-checks';
+import ProposalDetailChecks, { useProposalDetailCheck, ProposalCheckButton, ProposalCheckResults } from './operations-proposal-checks';
 import { sameProposalFields, sameProposalEdits } from '@/lib/operations/proposal-state';
 import './operations-document.css';
+import './operations-document-controls.css';
 
 const slots=['proposalDate','addresseeTitle','addressee','addresseePosition','company','address','agentName','agentPhone'] as const;
 const slotLabels:Record<string,string>={proposalDate:'Proposal date',addresseeTitle:'Title',addressee:'Client / addressee',addresseePosition:'Position / designation',company:'Account name',address:'Account address',agentName:'Agent name',agentPhone:'Agent contact number'};
-export default function ProposalDocumentEditor({template,fields,originalFields,editable,busy,onField,onSave,onChoose,onClose,savedAt,embedded=false,externalAssistance=false,helpVisible=false,onDismissHelp,helpContent,customization,inquiryId,onCustomEdit,prepared,previewOnly=false}:{
-  customization?:CustomizedProposal;previewOnly?:boolean;prepared?:GeneratedPackage;inquiryId?:string;onCustomEdit?:(id:string,edit:CustomEdit|null)=>void;
+export default function ProposalDocumentEditor({template,fields,originalFields,editable,busy,onField,onSave,onChoose,onClose,savedAt,embedded=false,externalAssistance=false,helpVisible=false,onDismissHelp,helpContent,customization,inquiryId,onCustomEdit,prepared,previewOnly=false,dirty=true}:{
+  dirty?:boolean;customization?:CustomizedProposal;previewOnly?:boolean;prepared?:GeneratedPackage;inquiryId?:string;onCustomEdit?:(id:string,edit:CustomEdit|null)=>void;
   template:CatalogTemplate;fields:FormFields;originalFields:FormFields;editable:boolean;busy:boolean;
   onField:(key:string,value:string)=>void;onSave:()=>Promise<boolean>;onChoose?:()=>void;onClose?:()=>void;savedAt:string;embedded?:boolean;externalAssistance?:boolean;helpVisible?:boolean;onDismissHelp?:()=>void;helpContent?:ReactNode;
 }){
@@ -27,7 +28,8 @@ export default function ProposalDocumentEditor({template,fields,originalFields,e
   const updating=loading||(!error&&pdf!==renderedPdf),outdated=!sameProposalFields(fields,snapshotValues.fields)||!sameProposalEdits(customization?.edits,snapshotValues.customEdits);
   const savedPdf=inquiryId&&prepared?endpoint+'/file/'+inquiryId+'/pdf?package='+prepared.id:'';
   const useSavedPdf=!!inquiryId&&!!prepared&&!original&&prepared.templateId===template.id&&prepared.sourceHash===template.sourceHash&&prepared.customization?.id===customization?.id&&sameProposalFields(snapshotValues.fields,prepared.fields)&&sameProposalEdits(snapshotValues.customEdits,prepared.customization?.edits);
-  const checks=proposalChecks(fields,originalFields,customization?undefined:template),missing=documentIssues(fields,template,!!customization);
+  const detailCheck=useProposalDetailCheck({fields,originalFields,template,customization});
+  const checks=detailCheck.stale ? [] : detailCheck.snapshot?.checks || [];
   useEffect(()=>{const element=viewport.current;if(!element)return;const observer=new ResizeObserver(([entry])=>setWidth(Math.max(160,entry.contentRect.width-40)));observer.observe(element);return()=>observer.disconnect();},[]);
   useEffect(()=>{
     const root=editor.current,bar=toolbar.current;if(!root||!bar)return;
@@ -48,7 +50,7 @@ export default function ProposalDocumentEditor({template,fields,originalFields,e
   useEffect(()=>{if(helpVisible){setChecked(false);setLocalTemplateHelp(false);}},[helpVisible]);
   useEffect(()=>{
     let active=true,settled=false;const controller=new AbortController();let documentTask:{destroy:()=>Promise<void>}|undefined;
-    setLoading(true);setError('');
+    setLoading(true);setError('');setRenderedPdf(null);
     async function load(){try{
       const response=await fetch(useSavedPdf?savedPdf:endpoint+'/proposal-preview',useSavedPdf?{signal:controller.signal,cache:'no-store'}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({templateId:template.id,fields:JSON.parse(snapshot).fields,original,...(customization?{inquiryId,customEdits:JSON.parse(snapshot).customEdits}:{})}),signal:controller.signal,cache:'no-store'});
       if(!response.ok){const failure=await response.json() as {error?:string};throw new Error(failure.error||'The preview could not be prepared.');}
@@ -57,7 +59,7 @@ export default function ProposalDocumentEditor({template,fields,originalFields,e
       if(active){settled=true;const previous=activePdf.current;activePdf.current=result;setPdf(result);setLoading(false);void previous?.loadingTask.destroy();}else await result.loadingTask.destroy();
     }catch(failure){if(active){setError((failure as Error).message);setLoading(false);}}}
     void load();return()=>{active=false;controller.abort();if(!settled)void documentTask?.destroy();};
-  },[template.id,snapshot,original,retry,useSavedPdf,savedPdf]);
+  },[template.id,template.sourceHash,snapshot,original,retry,useSavedPdf,savedPdf]);
   useEffect(()=>()=>{void activePdf.current?.loadingTask.destroy();},[]);
   function updatePreview(){setOriginal(false);setSnapshot(JSON.stringify({fields,customEdits:customization?.edits}));setRetry(value=>value+1);}
   async function save(){setLocalSaving(true);try{if(await onSave()&&!embedded)onClose?.();}finally{setLocalSaving(false);}}
@@ -65,20 +67,29 @@ export default function ProposalDocumentEditor({template,fields,originalFields,e
   function closeNotes(){setChecked(false);setLocalTemplateHelp(false);onDismissHelp?.();}
   function toggleNotes(){if(notesOpen)closeNotes();else if(helpContent)setLocalTemplateHelp(true);else setChecked(true);}
   return <div ref={editor} className={'ops-doc-editor'+(embedded?' embedded':'')+(geometry.available<620?' compact':'')+(geometry.available<500?' short':'')} style={{'--ops-doc-sticky-top':geometry.top+'px','--ops-doc-toolbar-top':geometry.toolbarTop+'px','--ops-doc-available-height':geometry.available+'px'} as CSSProperties}>
-    <div ref={toolbar} className="ops-doc-toolbar">{customization&&<div className="ops-custom-view-tabs"><span className="ops-badge customized">Customized</span><button className="ops-btn" aria-pressed={customEditing} disabled={!editable} onClick={()=>setCustomEditing(true)}>Edit document</button><button className="ops-btn" aria-pressed={!customEditing} onClick={()=>{updatePreview();setCustomEditing(false);}}>PDF preview</button></div>}<div><FileText size={18}/><b>{template.sourceId}</b><span>{template.variant}</span></div><div><button className="ops-btn" aria-pressed={original} onClick={()=>{setOriginal(!original);if(customization)setCustomEditing(false);}}><Eye size={15}/>{original?'Show filled proposal':'Show blank template'}</button><label>Zoom<select aria-label="Proposal zoom" value={zoom} onChange={e=>setZoom(e.target.value)}><option value="fit">Fit width</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option></select></label><a className="ops-link" href={endpoint+'/source/'+template.id}><Download size={15}/>Blank Word template</a>{useSavedPdf&&!outdated&&<a className="ops-link" href={savedPdf} download><Download size={15}/>Download PDF</a>}{!externalAssistance&&<button className="ops-btn ops-ai-toggle" aria-expanded={notesOpen} onClick={toggleNotes}><Sparkles size={15}/>AI notes</button>}</div></div>
+    <div ref={toolbar} className="ops-doc-toolbar">{customization&&<div className="ops-custom-view-tabs">{!embedded&&<span className="ops-badge customized">Customized</span>}<button className="ops-btn" aria-pressed={customEditing} disabled={!editable} onClick={()=>setCustomEditing(true)}>Edit document</button><button className="ops-btn" aria-pressed={!customEditing} onClick={()=>{updatePreview();setCustomEditing(false);}}>PDF preview</button></div>}<div><FileText size={18}/><b>{template.sourceId}</b><span>{template.variant}</span></div><div><button className="ops-btn" aria-pressed={original} onClick={()=>{setOriginal(!original);if(customization)setCustomEditing(false);}}><Eye size={15}/>{original?'Show filled proposal':'Show blank template'}</button><label>Zoom<select aria-label="Proposal zoom" value={zoom} onChange={e=>setZoom(e.target.value)}><option value="fit">Fit width</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option></select></label><a className="ops-link" href={endpoint+'/source/'+template.id}><Download size={15}/>Blank Word template</a>{useSavedPdf&&!outdated&&<a className="ops-link" href={savedPdf} download><Download size={15}/>Download PDF</a>}{!externalAssistance&&<button className="ops-btn ops-ai-toggle" aria-expanded={notesOpen} onClick={toggleNotes}><Sparkles size={15}/>AI notes</button>}</div></div>
     <div className={'ops-doc-layout'+(notesOpen?' has-ai-notes':'')}>
       <div className="ops-doc-sidebar-column"><aside ref={sidebar} className="ops-doc-fields">
-        <div className="ops-doc-fields-intro"><h3>{editable?'Fill proposal details':'Proposal details'}</h3><p>{editable?<>From the form. Click <b>Update preview</b> after edits.</>:<>This version is read-only.</>}</p></div>
+        <div className="ops-doc-fields-scroll" role="region" aria-label="Proposal fields" tabIndex={0}><div className="ops-doc-fields-intro"><h3>{editable?'Fill proposal details':'Proposal details'}</h3><p>{editable?<>From the form. Click <b>Update preview</b> after edits.</>:<>This version is read-only.</>}</p></div>
         <div className="ops-doc-field-grid">{slots.map(key=>{const check=checks.find(c=>c.field===key),value=fields[key]||'';return <label key={key} className={'ops-doc-field'+(['address','addressee','addresseePosition','company'].includes(key)?' wide':'')}>
           <span className="ops-doc-field-label"><span>{key==='agentPhone'?'Agent phone':key==='addresseePosition'?'Position':key==='addressee'?'Client name':slotLabels[key]}</span>{check&&<span className="ops-edited">{check.kind==='error'?'Check':'Changed'}</span>}{editable&&check&&key!=='addresseeTitle'&&<button type="button" className="ops-doc-restore" aria-label={'Restore '+slotLabels[key]+' from form'} title="Use submitted form value" disabled={busy||localSaving} onClick={()=>onField(key,originalFields[key==='proposalDate'?'requestDate':key]||'')}><RotateCcw size={12}/></button>}</span>
           {key==='addresseeTitle'?<select aria-label="Addressee title" value={value} disabled={!editable||busy||localSaving} onChange={e=>onField(key,e.target.value)}>{proposalTitles.map(title=><option key={title} value={title}>{title||'No title'}</option>)}</select>:key==='address'?<textarea rows={2} aria-label={slotLabels[key]} value={value} disabled={!editable||busy||localSaving} onChange={e=>onField(key,e.target.value)}/>:<input aria-label={slotLabels[key]} type={key==='proposalDate'?'date':'text'} value={value} disabled={!editable||busy||localSaving} onChange={e=>onField(key,e.target.value)} onBlur={()=>{if(key==='agentPhone'&&editable){const phone=philippinePhone(value);if(phone.valid&&phone.display!==value)onField(key,phone.display);}}}/>}
           {key==='agentPhone'&&value&&<small className={philippinePhone(value).valid?'':'ops-field-error'}>{philippinePhone(value).valid?'PDF: '+philippinePhone(value).display.replace(' ',''):'Check the Philippine contact number.'}</small>}
         </label>;})}</div>
         <p className="ops-doc-salutation"><b>Greeting:</b> Dear {addresseeName(fields)||'[Client]'}:</p>
-        {editable&&<div className="ops-doc-field-actions"><button className="ops-btn primary" disabled={busy||updating} onClick={updatePreview}><RefreshCw size={15}/>Update preview</button><button className="ops-btn" disabled={busy||localSaving} onClick={save}>{localSaving?'Saving…':'Save details'}</button></div>}
-        {outdated&&!original&&<p className="ops-preview-pending ops-doc-pending" role="status">Preview has pending edits.</p>}
-        {!externalAssistance&&<button className="ops-link ops-check-proposal" aria-expanded={notesOpen&&checked} onClick={()=>{setChecked(true);setLocalTemplateHelp(false);onDismissHelp?.();}}><Sparkles size={15}/><span>AI · Check proposal details</span>{(checks.length>0||missing.length>0)&&<span className="ops-count">{checks.length+missing.length}</span>}</button>}
         <p className="ops-doc-field-note">{customization?(editable?"Edit text, rates and benefits directly in the document. Check PDF preview before submitting.":"Saved customized proposal · view only"):"Template benefits and artwork stay unchanged."}</p>
+        </div>
+        <div className="ops-doc-action-dock">
+        <ProposalCheckResults check={detailCheck}/>
+        <footer className="ops-doc-controls" aria-label="Proposal editing controls">
+          {editable && <div className="ops-doc-field-actions">
+            <button className="ops-btn ops-save-changes" disabled={busy||localSaving||!dirty} onClick={save}>{localSaving?'Saving…':'Save changes'}</button>
+            <button className="ops-btn" disabled={busy||localSaving||updating} onClick={updatePreview}><RefreshCw size={15}/>Update preview</button>
+          </div>}
+          <div className="ops-checker-label"><b>AI proposal checker</b><small>Simulated AI · staff review required</small></div><ProposalCheckButton check={detailCheck} disabled={busy||localSaving}/>
+          <small className="ops-doc-control-status" role="status">{editable && (busy||localSaving ? 'Please wait · ' : dirty ? 'Unsaved changes · ' : 'All changes saved · ')}{outdated&&!original?'Preview needs updating':'Compare with the submitted form'}</small>
+        </footer>
+        </div>
       </aside></div>
       <div className="ops-doc-document-area" role="region" tabIndex={0} aria-label="Scrollable proposal document">
       {customization&&customEditing&&inquiryId&&<CustomDocument zoom={zoom} key={customization.id+":"+retry} inquiryId={inquiryId} templateId={template.id} fields={JSON.parse(snapshot).fields} customization={customization} editable={editable&&!busy} onEdit={onCustomEdit||(()=>{})}/>}
@@ -91,7 +102,7 @@ export default function ProposalDocumentEditor({template,fields,originalFields,e
         {!checked&&helpContent?helpContent:<ProposalDetailChecks fields={fields} originalFields={originalFields} template={template} customization={customization}/>}
       </ProposalAiNotes></div>}
     </div>
-    {!embedded&&<div className="ops-doc-footer"><p>{previewOnly?'Current layout preview':'Original template layout.'}<small>{previewOnly?'Preview only · not the saved submission':<>Saved {new Intl.DateTimeFormat('en-PH',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Manila'}).format(new Date(savedAt))}</>}</small></p><button className="ops-btn" onClick={onClose}>Close</button>{onChoose&&<button className="ops-btn primary" onClick={onChoose}>Use this template</button>}</div>}
+    {!embedded&&<div className="ops-doc-footer"><p>{previewOnly?'Current layout preview':'Original template layout.'}<small>{previewOnly?'Preview only · not the saved submission':<>Saved {manilaTime(savedAt)}</>}</small></p><button className="ops-btn" onClick={onClose}>Close</button>{onChoose&&<button className="ops-btn primary" onClick={onChoose}>Use this template</button>}</div>}
   </div>;
 }
 

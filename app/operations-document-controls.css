@@ -1,0 +1,37 @@
+/* Bounded field pane: only fields and requested results scroll; controls stay visible. */
+.ops-app .ops-doc-editor .ops-doc-sidebar-column > .ops-doc-fields {
+  display:flex;flex-direction:column;padding:0;height:max(310px,var(--ops-doc-available-height,700px));min-height:0;
+}
+.ops-doc-fields-scroll { flex:1;min-height:100px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:14px 12px; }
+.ops-doc-controls { flex:none;padding:10px 12px;border-top:1px solid #d2dce8;background:#fff;position:relative; }
+.ops-app .ops-doc-editor .ops-doc-field-actions { display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0 0 7px; }
+.ops-app .ops-doc-editor .ops-doc-controls .ops-btn,
+.ops-app .ops-doc-editor .ops-doc-controls .ops-doc-field-actions .ops-btn { min-height:44px;height:auto;font-size:11px;line-height:1.35;padding:7px;white-space:normal;justify-content:center; }
+.ops-app .ops-doc-editor .ops-doc-controls .ops-check-proposal { width:100%;border:1px solid #b6c6dc;background:#f2f6fc;color:#17375e; }
+.ops-app .ops-doc-controls .ops-save-changes { background:#187344;color:white;border-color:#187344; }
+.ops-app .ops-doc-controls .ops-save-changes:hover:not(:disabled) { background:#115c35; }
+.ops-app .ops-doc-controls .ops-btn:disabled { background:#e8ecf0;color:#566477;border-color:#cbd3de;opacity:1;cursor:not-allowed; }
+.ops-doc-control-status { display:block;color:#526077;font-size:10px;line-height:1.4;margin-top:6px; }
+.ops-app .ops-doc-action-dock > .ops-proposal-checks { flex:0 1 auto;min-height:70px;max-height:min(180px,25dvh);overflow:auto;margin:0;padding:12px;border:0;border-top:1px solid #d2dce8;border-radius:0;overscroll-behavior:contain; }
+.ops-doc-fields-scroll:focus-visible,.ops-proposal-checks:focus-visible { outline:2px solid #2459a6;outline-offset:-2px; }
+@media(max-width:760px) {
+ .ops-app .ops-doc-editor .ops-doc-sidebar-column > .ops-doc-fields { height:clamp(340px,calc(100dvh - 230px),650px); }
+ .ops-doc-fields-scroll { padding:12px; }
+ .ops-app .ops-doc-editor .ops-doc-fields .ops-doc-field-grid .ops-doc-field :is(input,select,textarea) { min-height:44px; }
+ .ops-app .ops-doc-editor .ops-doc-restore { min-height:24px;min-width:24px; }
+}
+
+.ops-doc-action-dock { flex:none;position:sticky;bottom:0;z-index:2;background:#fff;display:flex;flex-direction:column;max-height:65%; }
+
+/* Fields follow page scrolling; the PDF retains its own viewport. */
+.ops-app .ops-doc-editor .ops-doc-sidebar-column > .ops-doc-fields { height:auto; }
+.ops-doc-fields-scroll { flex:none;overflow:visible;min-height:0; }
+.ops-doc-action-dock { position:static;max-height:none; }
+.ops-doc-sidebar-column { align-self:start; }
+.ops-template-advisor.compact { margin-top:16px;padding:14px 16px;border:1px solid var(--ops-line); }
+
+.ops-app .ops-doc-editor .ops-doc-sidebar-column > .ops-doc-fields { position:static; }
+.ops-app .ops-doc-editor .ops-doc-document-area { position:sticky;top:var(--ops-doc-sticky-top,130px);max-height:var(--ops-doc-available-height,700px);overflow:auto;align-self:start; }
+@media(max-width:760px){.ops-app .ops-doc-editor .ops-doc-document-area{position:static;max-height:70dvh}.ops-app .ops-doc-editor .ops-doc-fields-scroll{overflow:visible;height:auto}}
+
+.ops-template-advisor.compact .ops-advisor-heading>div:first-child{margin-right:auto}

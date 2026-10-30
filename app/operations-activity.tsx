@@ -48,13 +48,57 @@ export function useInquiryActivity(inquiryId:string,enabled:boolean){
   return {state,error,pending,canEdit:enabled&&!!state?.handling&&!error&&!pending,start:()=>control.current?.start()||Promise.resolve(),poll:()=>control.current?.poll()||Promise.resolve(),release:()=>control.current?.release()||Promise.resolve()};
 }
 
-export default function InquiryActivityNotice({activity,user,users,enabled,busy,onDone}:{activity:ReturnType<typeof useInquiryActivity>;user:Staff;users:Staff[];enabled:boolean;busy:boolean;onDone:()=>void}){
+export default function InquiryActivityNotice({activity,user,users,enabled,busy,onDone,compact=false,editingVersion,hideStart=false}:{activity:ReturnType<typeof useInquiryActivity>;user:Staff;users:Staff[];enabled:boolean;busy:boolean;onDone:()=>void;compact?:boolean;editingVersion?:number;hideStart?:boolean}){
   if(!enabled)return null;
   const {state,error,pending}=activity,owner=state?.activity[0],other=owner&&owner.userId!==user.id,ownElsewhere=!state?.handling&&owner?.userId===user.id;
   const title=error?'Handling status unavailable':!state?'Checking who is handling this…':other?staffName(users,owner.userId)+' is handling this inquiry':state.handling?'You’re handling this inquiry':ownElsewhere?'You’re handling this in another tab':'Available to pick up';
+  if(compact){
+    // Colored handling card: blue = available, green = you, amber = a colleague. The main button sits below it.
+    const tone=error||other?'other':state?.handling?'mine':'avail';
+    const Icon=state?.handling?CheckCircle2:other||error?LockKeyhole:Users;
+    const heading=error?'Handling status unavailable':!state?'Checking availability…':state.handling?'You’re handling this inquiry':other?staffName(users,owner.userId)+' is handling this inquiry':ownElsewhere?'Open in your other tab':'Available to pick up';
+    const detail=error?'View only until the status can be checked.':!state?'':state.handling?(editingVersion?'Editing a copy of version '+editingVersion+'. Others can view only.':'Your draft saves when you release it. Others can view only.'):other?'View only until they release it.':ownElsewhere?'You’re handling it in another tab. Continue here instead?':'No one is handling this yet.';
+    return <section className={'ops-handling-card '+tone} aria-label="Inquiry activity">
+      <div role="status"><Icon size={18} aria-hidden="true"/><span><b>{heading}</b>{detail&&<small>{detail}</small>}</span></div>
+      {error?<button className="ops-btn secondary" onClick={()=>void activity.poll()}><RefreshCw size={14}/>Check again</button>:state?.handling?<button className="ops-btn ops-handling-done" disabled={busy} onClick={onDone}>Release to queue</button>:other?null:hideStart&&!ownElsewhere?null:<button className="ops-btn ops-handling-start" disabled={!state||pending||busy} onClick={()=>void activity.start()}>{pending?'Starting…':ownElsewhere?'Continue in this tab':'Start handling'}</button>}
+    </section>;
+  }
   return <section className={'ops-activity-notice '+(error||other||ownElsewhere?'occupied':state?.handling?'handling':'available')} aria-label="Inquiry activity">
     {state?.handling?<CheckCircle2 size={19}/>:other?<LockKeyhole size={19}/>:<Users size={19}/>}
     <div role="status"><b>{title}</b><p>{error?'View only until the handling status can be checked.':other?'View only. Editing unlocks when they finish or their session expires.':state?.handling?'Only you can edit. Others can view the inquiry and its saved proposal.':ownElsewhere?'Use that tab, or continue here with the same account.':'Start handling to unlock editing. Others will have view-only access.'}</p></div>
-    {error?<button className="ops-btn" onClick={()=>void activity.poll()}><RefreshCw size={14}/>Check again</button>:state?.handling?<button className="ops-btn" disabled={busy} onClick={onDone}>Done for now</button>:other?<span className="ops-badge amber"><LockKeyhole size={13}/>View only</span>:<button className="ops-btn" disabled={!state||pending||busy} onClick={()=>void activity.start()}>{pending?'Starting…':ownElsewhere?'Continue in this tab':'Start handling'}</button>}
+    {error?<button className="ops-btn" onClick={()=>void activity.poll()}><RefreshCw size={14}/>Check again</button>:state?.handling?<button className="ops-btn ops-handling-done" disabled={busy} onClick={onDone}>Release to queue</button>:other?<span className="ops-badge amber"><LockKeyhole size={13}/>View only</span>:<button className="ops-btn ops-handling-start" disabled={!state||pending||busy} onClick={()=>void activity.start()}>{pending?'Starting…':ownElsewhere?'Continue in this tab':'Start handling'}</button>}
   </section>;
 }
+
+// Inquiry page (mockup layout): a full-width banner while you're not the handler,
+// and a compact "Handling: you · Release to queue" pair in the page header while you are.
+export function HandlingBanner({activity,user,users,enabled,busy,showAction=true}:{activity:ReturnType<typeof useInquiryActivity>;user:Staff;users:Staff[];enabled:boolean;busy:boolean;showAction?:boolean}){
+  if(!enabled)return null;
+  const {state,error,pending}=activity,owner=state?.activity[0],other=owner&&owner.userId!==user.id,ownElsewhere=!state?.handling&&owner?.userId===user.id;
+  if(state?.handling)return null;
+  const title=error?'Handling status unavailable':!state?'Checking who is handling this inquiry…':other?staffName(users,owner.userId)+' is handling this inquiry':ownElsewhere?'You’re handling this in another tab':'Nobody is handling this inquiry';
+  const detail=error?'View only until the handling status can be checked.':!state?'':other?'View only until they release it to the queue.':ownElsewhere?'Use that tab, or continue here with the same account.':'Start handling to edit. Everyone else can still view it.';
+  return <section className={'ops-handling-banner'+(other||error?' other':'')} aria-label="Inquiry activity">
+    {other||error?<LockKeyhole size={18} aria-hidden="true"/>:<Users size={18} aria-hidden="true"/>}
+    <div role="status"><b>{title}</b>{detail&&<p>{detail}</p>}</div>
+    {showAction&&(error?<button className="ops-btn secondary" onClick={()=>void activity.poll()}><RefreshCw size={14}/>Check again</button>:other||!state?null:<button className="ops-btn primary" disabled={pending||busy} onClick={()=>void activity.start()}>{pending?'Starting…':ownElsewhere?'Continue in this tab':'Start handling'}</button>)}
+  </section>;
+}
+export function HandlingHeader({activity,enabled,busy,onRelease,editingVersion,showRelease=true}:{activity:ReturnType<typeof useInquiryActivity>;enabled:boolean;busy:boolean;onRelease:()=>void;editingVersion?:number;showRelease?:boolean}){
+  if(!enabled||!activity.state?.handling||activity.error)return null;
+  return <div className="ops-handling-header" aria-label="Your handling status">
+    <span className="ops-handling-pill" title={editingVersion?'Editing a copy of version '+editingVersion:undefined}><span className="ops-dot" aria-hidden="true"/>Handling: <strong className="ops-handling-you">you</strong></span>
+    {showRelease&&<button className="ops-btn secondary" disabled={busy} onClick={onRelease}>Release to queue</button>}
+  </div>;
+}
+
+// The footer is the single place to claim or release editing; the banner explains the state.
+export function HandlingControl({activity,user,enabled,busy,onRelease}:{activity:ReturnType<typeof useInquiryActivity>;user:Staff;enabled:boolean;busy:boolean;onRelease:()=>void}){
+  if(!enabled)return null;
+  const {state,error,pending}=activity,owner=state?.activity[0];
+  if(error)return <button className="ops-btn secondary" disabled={busy} onClick={()=>void activity.poll()}><RefreshCw size={15}/>Check handling status</button>;
+  if(state?.handling)return <button className="ops-btn ops-handling-done" disabled={busy} onClick={onRelease}>Release to queue</button>;
+  if(owner&&owner.userId!==user.id)return <span className="ops-footer-viewonly"><LockKeyhole size={15}/>View only · handled by a colleague</span>;
+  return <button className="ops-btn primary ops-footer-handle-start" disabled={!state||pending||busy} onClick={()=>void activity.start()}>{pending?'Starting…':owner?.userId===user.id?'Continue in this tab':'Start handling'}</button>;
+}
+

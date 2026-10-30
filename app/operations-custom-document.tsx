@@ -19,6 +19,25 @@ export default function CustomDocument({inquiryId,templateId,fields,customizatio
       const renderer=await import('docx-preview'),bytes=Uint8Array.from(atob(data.docx),(char)=>char.charCodeAt(0));
       await renderer.renderAsync(bytes,root.current!,styles.current!,{className:'customdoc',inWrapper:true,ignoreHeight:true,ignoreLastRenderedPageBreak:false,renderAltChunks:false,useBase64URL:true});
       if(!alive)return;
+      root.current!.querySelectorAll<HTMLElement>('section.customdoc').forEach(paper=>{
+        const pageWidth=paper.clientWidth;
+        // The HTML renderer expands some legacy VML group coordinates into
+        // multi-metre images. Keep those unsupported decorative layers in the
+        // native PDF, rather than letting them cover the editable text.
+        paper.querySelectorAll<SVGElement>('svg').forEach(shape=>{if(shape.getBoundingClientRect().width>pageWidth*2)shape.style.display='none';});
+      });
+      // Word's auto-fit table sizing differs from HTML's minimum-content sizing.
+      // Fit an oversized table to its native page content box, keeping relative
+      // column widths. These DOM styles never change the saved Word document.
+      root.current!.querySelectorAll<HTMLTableElement>('section.customdoc table').forEach(table=>{
+        const available=table.parentElement!.clientWidth;
+        if(available&&table.getBoundingClientRect().width>available){
+          const columns=[...table.querySelectorAll<HTMLTableColElement>(':scope > colgroup > col')];
+          const widths=columns.map(col=>parseFloat(getComputedStyle(col).width)||1),total=widths.reduce((sum,width)=>sum+width,0);
+          columns.forEach((col,index)=>col.style.width=(100*widths[index]/total)+'%');
+          table.style.width=available+'px';table.style.maxWidth='100%';table.style.tableLayout='fixed';
+        }
+      });
       const byAnchor=new Map<string,EditableBlock>(data.blocks.map((block:EditableBlock)=>[block.anchor,block]));
       root.current!.querySelectorAll<HTMLElement>('[id^="rmc2_"]').forEach(anchor=>{
         const block=byAnchor.get(anchor.id),paragraph=anchor.closest('p');if(!block||!paragraph)return;
@@ -33,7 +52,7 @@ export default function CustomDocument({inquiryId,templateId,fields,customizatio
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[retry]);
   useEffect(()=>{root.current?.querySelectorAll<HTMLElement>('[data-custom-block]').forEach(el=>el.contentEditable=String(editable));},[editable]);
-  useEffect(()=>{const host=root.current;if(!host||loading)return;const resize=()=>{host.querySelectorAll<HTMLElement>('section.customdoc').forEach(paper=>{const nativeWidth=parseFloat(getComputedStyle(paper).width)||794;paper.style.zoom=String(zoom==='fit'?Math.min(1.25,(host.clientWidth-40)/nativeWidth):Number(zoom));});};const observer=new ResizeObserver(resize);observer.observe(host);resize();return()=>observer.disconnect();},[loading,zoom]);
+  useEffect(()=>{const host=root.current;if(!host||loading)return;const resize=()=>{host.querySelectorAll<HTMLElement>('section.customdoc').forEach(paper=>{const nativeWidth=parseFloat(getComputedStyle(paper).width)||794;paper.style.zoom=String(zoom==='fit'?Math.max(.15,Math.min(1.25,(host.clientWidth-40)/nativeWidth)):Number(zoom));});};const observer=new ResizeObserver(resize);observer.observe(host);resize();return()=>observer.disconnect();},[loading,zoom]);
   const current=customization.edits[selected];
   function capture(element:HTMLElement){const id=element.dataset.customBlock!;const text=element.innerText.replace(/\r/g,'').replace(/\n$/,'');const before=blocks.current.find(block=>block.id===id);const edit={...(latest.current.customization.edits[id]||{}),text};element.classList.toggle('custom-edited',text!==before?.original||Object.keys(edit).length>1);latest.current.onEdit(id,text===before?.original&&Object.keys(edit).length===1?null:edit);}
   function format(values:Partial<CustomEdit>){const element=active.current;if(!element||!editable)return;const id=element.dataset.customBlock!,edit={...(customization.edits[id]||{}),text:element.innerText.replace(/\n$/,''),...values};

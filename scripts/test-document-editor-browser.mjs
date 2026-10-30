@@ -1,3 +1,4 @@
+import {navigate} from './revamp-navigation.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright-core';
 import { mkdir,writeFile } from 'node:fs/promises';
@@ -12,7 +13,7 @@ async function login(context,user='cryssa'){
   const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
   await page.goto(base);await page.getByLabel('Staff account').selectOption(user+'@rmc2.local');await page.getByLabel('Password',{exact:true}).fill('Rmc2Local!2026');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.getByRole('heading',{name:'Dashboard',exact:true}).waitFor();return page;
 }
-async function open(page,company){await page.getByRole('button',{name:'Inquiries',exact:true}).click();await page.getByRole('link',{name:'Open '+company,exact:true}).click();await page.getByRole('button',{name:/Prepare proposal/}).click();}
+async function open(page,company){await navigate(page,'Inquiries');await page.getByRole('link',{name:'Open '+company,exact:true}).click();await page.getByRole('button',{name:/Prepare proposal/}).click();}
 async function preview(page){await page.locator('.ops-doc-preview[aria-busy="false"]').waitFor({timeout:90000});await page.locator('.ops-doc-text-layer').first().getByText('RMC2',{exact:false}).first().waitFor({timeout:20000}).catch(()=>{});assert.ok(await page.locator('.ops-doc-paper canvas').count()>1);assert.equal(await page.locator('.ops-doc-preview [role="alert"]').count(),0);}
 try{
   let company='Meridian Packaging Co.';

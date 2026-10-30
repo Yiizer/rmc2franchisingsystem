@@ -1,10 +1,12 @@
 import { requireInquiryHandler } from './activity';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
+import { assertClientReady, startClientProtection, updateClientReview } from './client-service';
+import { protectionFor } from './client-rules';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { AppError, allUsers, audit, catalog, dataRoot, db, inquiry, notify, persist, safeStorage, sourceFile, transaction } from './database';
-import { canPrepareProposal, documentIssues, defaultEmail, editableStatus, LABELS } from './types';
+import { canEditInquiry, canPrepareProposal, documentIssues, defaultEmail, editableStatus, LABELS } from './types';
 import type { CatalogTemplate, FormFields, InquiryRecord, MailDraft, Notice, Staff, Submission } from './types';
 import { proposalChecks, proposalFields } from './proposal-fields';
 import { nextWorkAction } from './work-progress';
@@ -17,12 +19,16 @@ import { getProposalHelp, PROPOSAL_HELP_PROMPTS, suggestTemplates } from './sugg
 export function checkRevision(record:InquiryRecord,revision:unknown) { if(record.revision!==revision)throw new AppError('This inquiry changed in another session. Reload before continuing.',409); }
 function canPrepare(user:Staff) { if(!canPrepareProposal(user))throw new AppError('Use an Employee or Supervisor account to prepare and submit proposals.',403); }
 function canReview(user:Staff) { if(user.role!=='Supervisor'||!user.canApprove)throw new AppError('This account does not have proposal approval permission.',403); }
-export function chosen(record:InquiryRecord):CatalogTemplate|undefined { return catalog().find(t=>t.id===record.templateId&&t.active); }
+export function chosen(record:InquiryRecord):CatalogTemplate|undefined {
+  const template=catalog().find(t=>t.id===record.templateId&&(t.active||!!record.supervisorEdit));
+  const snapshot=record.supervisorEdit?record.submissions.find(item=>item.version===record.supervisorEdit!.version)?.generated:undefined;
+  return template&&snapshot?.sourceDocx?{...template,sourceHash:snapshot.sourceHash,storage:snapshot.sourceDocx,sourceName:snapshot.sourceName||template.sourceName,active:true}:template;
+}
 const draftSchema=z.object({customization:z.object({id:z.string().uuid(),edits:customEditsSchema}).strict().nullable().optional(),revision:z.number().int(),fields:z.record(z.string().max(3000)),templateId:z.string().max(100),notes:z.string().max(10000),email:z.object({to:z.string().max(254),subject:z.string().max(250),body:z.string().max(20000)}),emailOverrides:z.array(z.enum(['to','subject','body'])).max(3),checkpoint:z.object({step:z.number().int().min(0).max(2),paused:z.boolean()}).optional()});
 const mailSchema=z.object({to:z.string().email(),subject:z.string().min(1).max(250).refine(v=>!/[\r\n]/.test(v),'Email subject must be one line'),body:z.string().min(1).max(20000)});
 
 function workReminder(record:InquiryRecord,user:Staff,paused:boolean){
-  const rows=db().prepare('SELECT id,data FROM notifications').all() as {id:string;data:string}[];
+  const rows=db().prepare("SELECT id,data FROM notifications WHERE json_extract(data,'$.inquiryId')=? AND json_extract(data,'$.title')='Pick up where you left off'").all(record.id) as {id:string;data:string}[];
   const existing=rows.filter(row=>{const n=JSON.parse(row.data) as Notice;return n.inquiryId===record.id&&n.title==='Pick up where you left off'&&n.recipientIds.includes(user.id);});
   if(!paused){for(const row of existing)db().prepare('DELETE FROM notifications WHERE id=?').run(row.id);return;}
   const message=`${record.fields.company||record.id} · ${nextWorkAction(record,chosen(record))}. Your draft is saved.`;
@@ -33,9 +39,9 @@ function preparationIssues(record:InquiryRecord,template?:CatalogTemplate){retur
 
 export function customize(id:string,user:Staff,input:unknown){
   canPrepare(user);const body=z.object({revision:z.number().int(),templateId:z.string().max(100)}).parse(input);
-  return transaction(()=>{const record=inquiry(id);checkRevision(record,body.revision);if(!editableStatus(record.status))throw new AppError('Return this proposal for correction before customizing it.',409);requireInquiryHandler(id,user);
+  return transaction(()=>{const record=inquiry(id);checkRevision(record,body.revision);assertClientReady(record);if(record.supervisorEdit)throw new AppError('Edit the supervisor copy already opened for this submission.',409);if(!canEditInquiry(user,record))throw new AppError('Return this proposal for correction before customizing it.',409);requireInquiryHandler(id,user);
     const template=catalog().find(t=>t.id===body.templateId&&t.active);if(!template)throw new AppError('Choose an available proposal template.');
-    if(record.customization?.templateId===template.id)return record;
+    if(record.customization?.templateId===template.id&&record.customization.sourceHash===template.sourceHash)return record;
     if(record.customization)record.customizationArchive=[...(record.customizationArchive||[]),structuredClone(record.customization)];
     const at=new Date().toISOString();record.templateId=template.id;record.customization={id:randomUUID(),templateId:template.id,sourceHash:template.sourceHash,edits:{},createdAt:at,createdBy:user.id,updatedAt:at,updatedBy:user.id};record.status='Preparing proposal';
     const automatic=defaultEmail(record.fields,template,user.name);for(const key of ['to','subject','body'] as const)if(!record.emailOverrides.includes(key))record.email[key]=automatic[key];
@@ -46,14 +52,16 @@ export function customize(id:string,user:Staff,input:unknown){
 export function saveDraft(id:string,user:Staff,input:unknown) {
   canPrepare(user);const body=draftSchema.parse(input);
   return transaction(()=>{
-    const record=inquiry(id);checkRevision(record,body.revision);
-    if(!editableStatus(record.status))throw new AppError('This version is locked for review or has already been approved.',409);requireInquiryHandler(id,user);
+    const record=inquiry(id);checkRevision(record,body.revision);assertClientReady(record,true);
+    const registered=protectionFor(record);if(registered&&body.fields.agentEmail?.trim().toLowerCase()!==registered.agentEmail.trim().toLowerCase())throw new AppError('The registered agent cannot be changed during the client protection period.',409);
+    if(!canEditInquiry(user,record))throw new AppError('This version is locked for review or has already been approved.',409);requireInquiryHandler(id,user);
     const unknown=Object.keys(body.fields).filter(key=>!(key in LABELS));if(unknown.length)throw new AppError('Unknown form fields: '+unknown.join(', '));
-    if(body.templateId&&!catalog().some(t=>t.id===body.templateId&&t.active))throw new AppError('Choose an available proposal master.');
+    if(record.supervisorEdit&&body.templateId!==record.templateId)throw new AppError('Keep the submitted template during supervisor edits. Return the proposal to change plans.',409);
+    if(body.templateId&&!catalog().some(t=>t.id===body.templateId&&(t.active||!!record.supervisorEdit)))throw new AppError('Choose an available proposal template.');
     const revision=record.revision;
     const customizationChanges:{field:string;before:string;after:string}[]=[];
     if(body.customization){
-      const custom=record.customization,master=catalog().find(t=>t.id===body.templateId);
+      const custom=record.customization,master=chosen(record);
       if(!custom||custom.id!==body.customization.id||custom.templateId!==body.templateId||!master||custom.sourceHash!==master.sourceHash)throw new AppError("Reload the customized copy before saving edits.",409);
       customDocument(readFileSync(sourceFile(master)),body.customization.edits);
       for(const key of new Set([...Object.keys(custom.edits),...Object.keys(body.customization.edits)])){const before=custom.edits[key],after=body.customization.edits[key];if(JSON.stringify(before)!==JSON.stringify(after))customizationChanges.push({field:"Customized content · "+key,before:before?JSON.stringify(before):"Original template content",after:after?JSON.stringify(after):"Restored template content"});}
@@ -71,24 +79,25 @@ export function saveDraft(id:string,user:Staff,input:unknown) {
     const automatic=defaultEmail(record.fields,chosen(record),user.name);
     record.email=Object.fromEntries((['to','subject','body'] as const).map(key=>[key,record.emailOverrides.includes(key)?body.email[key]:automatic[key]])) as MailDraft;
     if(record.status==='New inquiry'||record.status==='Waiting for agent details')record.status='Preparing proposal';
+    updateClientReview(record,user);
     audit(record,user,body.checkpoint?.paused?'Paused preparation — draft saved':changes.length?'Updated inquiry details':'Started / saved proposal preparation',changes.length?changes:undefined);persist(record,revision);workReminder(record,user,!!body.checkpoint?.paused);return record;
   });
 }
 export async function generate(id:string,user:Staff,revision:number) {
-  canPrepare(user);const record=inquiry(id);checkRevision(record,revision);
-  if(!editableStatus(record.status))throw new AppError('The submitted version cannot be regenerated.',409);requireInquiryHandler(id,user);
+  canPrepare(user);const record=inquiry(id);checkRevision(record,revision);assertClientReady(record);
+  if(!canEditInquiry(user,record))throw new AppError('The submitted version cannot be regenerated.',409);requireInquiryHandler(id,user);
   const template=chosen(record);const issues=preparationIssues(record,template);if(issues.length)throw new AppError('Complete these before generating: '+issues.join('; '));
   const generated=await generatePackage(id,template!,record.fields,user.id,record.customization);
-  return transaction(()=>{const fresh=inquiry(id);checkRevision(fresh,revision);if(!editableStatus(fresh.status))throw new AppError('This proposal was submitted while generation was running.',409);requireInquiryHandler(id,user);fresh.generated=generated;fresh.status='Preparing proposal';const automatic=defaultEmail(fresh.fields,template,user.name);for(const key of ['to','subject','body'] as const)if(!fresh.emailOverrides.includes(key))fresh.email[key]=automatic[key];audit(fresh,user,'Generated '+(fresh.customization?'CUSTOMIZED ':'')+'proposal PDF, Word document and agent email from '+template!.sourceId);persist(fresh,revision);return fresh;});
+  return transaction(()=>{const fresh=inquiry(id);checkRevision(fresh,revision);assertClientReady(fresh);if(!canEditInquiry(user,fresh))throw new AppError('This proposal was submitted while generation was running.',409);requireInquiryHandler(id,user);fresh.generated=generated;if(!fresh.supervisorEdit)fresh.status='Preparing proposal';const automatic=defaultEmail(fresh.fields,template,user.name);for(const key of ['to','subject','body'] as const)if(!fresh.emailOverrides.includes(key))fresh.email[key]=automatic[key];audit(fresh,user,'Generated '+(fresh.customization?'CUSTOMIZED ':'')+'proposal PDF, Word document and agent email from '+template!.sourceId);persist(fresh,revision);return fresh;});
 }
 export function submit(id:string,user:Staff,revision:number) {
   canPrepare(user);
-  return transaction(()=>{const record=inquiry(id);checkRevision(record,revision);if(!editableStatus(record.status))throw new AppError('This proposal has already been submitted.',409);requireInquiryHandler(id,user);const template=chosen(record),issues=preparationIssues(record,template);if(issues.length)throw new AppError('Resolve these before submission: '+issues.join('; '));if(!record.generated||record.generated.fingerprint!==fingerprint(record.fields,template!,record.customization))throw new AppError('Generate an updated proposal before submitting.');if(['browser-print','native-word-legacy'].includes(packageRenderer(record.generated)))throw new AppError('Update the PDF & email before submitting this earlier layout.');mailSchema.parse(record.email);if(record.email.to!==record.fields.agentEmail&&!record.emailOverrides.includes('to'))throw new AppError('Confirm the agent reply recipient.');const warnings=[...(record.customization?["CUSTOMIZED proposal — review all content edits against the original master"]:[]),...template!.warnings,...(record.customization?documentIssues(record.fields,template).filter(issue=>!documentIssues(record.fields,template,true).includes(issue)):[]),...proposalChecks(record.fields,record.source.fields,template).filter(check=>check.kind==='changed').map(check=>'Verify '+(LABELS[check.field]||check.field)+': '+(check.original||'(blank)')+' → '+(check.current||'(blank)')),...record.emailOverrides.map(key=>'Edited email '+key)];const version=record.submissions.length+1;record.submissions.push({version,at:new Date().toISOString(),submittedBy:user.id,fields:{...record.fields},email:{...record.email},emailOverrides:[...record.emailOverrides],generated:{...record.generated},notes:record.notes,warnings});record.status='Awaiting approval';for(const staff of allUsers())workReminder(record,staff,false);record.returnNote='';record.returnFlags=[];audit(record,user,'Submitted proposal v'+version+' to Emerson and Zeo');persist(record,revision);db().prepare('DELETE FROM inquiry_activity WHERE inquiry_id=?').run(id);notify(record,record.customization?'Customized proposal awaiting approval':'Proposal awaiting approval',`${user.name} submitted ${record.fields.company} · v${version}.`,allUsers().filter(u=>u.active&&u.canApprove&&u.role==='Supervisor').map(u=>u.id));return record;});
+  return transaction(()=>{const record=inquiry(id);checkRevision(record,revision);assertClientReady(record);if(!canEditInquiry(user,record))throw new AppError('This proposal has already been submitted.',409);requireInquiryHandler(id,user);const template=chosen(record),issues=preparationIssues(record,template);if(issues.length)throw new AppError('Resolve these before submission: '+issues.join('; '));if(!record.generated||record.generated.fingerprint!==fingerprint(record.fields,template!,record.customization))throw new AppError('Generate an updated proposal before submitting.');if(['browser-print','native-word-legacy'].includes(packageRenderer(record.generated)))throw new AppError('Update the PDF & email before submitting this earlier layout.');mailSchema.parse(record.email);if(record.email.to!==record.fields.agentEmail&&!record.emailOverrides.includes('to'))throw new AppError('Confirm the agent reply recipient.');const warnings=[...(record.customization?["CUSTOMIZED proposal — review all content edits against the original template"]:[]),...template!.warnings,...(record.customization?documentIssues(record.fields,template).filter(issue=>!documentIssues(record.fields,template,true).includes(issue)):[]),...proposalChecks(record.fields,record.source.fields,template).filter(check=>check.kind==='changed').map(check=>'Verify '+(LABELS[check.field]||check.field)+': '+(check.original||'(blank)')+' → '+(check.current||'(blank)')),...record.emailOverrides.map(key=>'Edited email '+key)];const version=record.submissions.length+1,reviewEdit=record.supervisorEdit,originalSubmitter=reviewEdit?record.submissions.at(-1)!.submittedBy:user.id;if(reviewEdit)record.submissions.at(-1)!.supersededBy=version;record.submissions.push({... (reviewEdit?{supervisorRevision:{by:user.id,fromVersion:reviewEdit.version}}:{}),version,at:new Date().toISOString(),submittedBy:originalSubmitter,fields:{...record.fields},email:{...record.email},emailOverrides:[...record.emailOverrides],generated:{...record.generated},notes:record.notes,warnings});delete record.supervisorEdit;record.status='Awaiting approval';for(const staff of allUsers())workReminder(record,staff,false);record.returnNote='';record.returnFlags=[];audit(record,user,'Submitted proposal v'+version+' to Emerson and Zeo');persist(record,revision);db().prepare('DELETE FROM inquiry_activity WHERE inquiry_id=?').run(id);notify(record,record.customization?'Customized proposal awaiting approval':'Proposal awaiting approval',`${user.name} submitted ${record.fields.company} · v${version}.`,allUsers().filter(u=>u.active&&u.canApprove&&u.role==='Supervisor').map(u=>u.id));return record;});
 }
 export async function decide(id:string,user:Staff,input:unknown) {
   canReview(user);const body=z.object({revision:z.number().int(),version:z.number().int(),action:z.enum(['approve','return']),note:z.string().max(10000),flags:z.array(z.string().max(150)).max(30),failSend:z.boolean().optional(),customizationReviewed:z.boolean().optional()}).parse(input);
   const result=transaction(()=>{
-    const record=inquiry(id);checkRevision(record,body.revision);const latest=record.submissions.at(-1);
+    const record=inquiry(id);checkRevision(record,body.revision);assertClientReady(record);const latest=record.submissions.at(-1);
     if(record.status!=='Awaiting approval'||!latest||latest.version!==body.version||latest.decision)throw new AppError('Another reviewer has already decided this proposal. Refresh the queue.',409);
     if(body.action==='approve'&&latest.generated.customization&&!body.customizationReviewed)throw new AppError('Review and acknowledge the customized content before approving.');
     if(body.action==='approve'&&latest.generated.customization&&body.flags.some(flag=>flag.startsWith('Custom edit ')))throw new AppError('Return flagged customized edits for correction before approving.');
@@ -108,15 +117,16 @@ async function deliver(id:string,version:number,user:Staff,fail=false) {
   if(running.has(row.id))throw new AppError('This approved reply is already being delivered.',409);
   running.add(row.id);
   try{
+    assertClientReady(inquiry(id));
     const mail=JSON.parse(row.data);const file='outbox/'+row.id+'.eml';
     if(fail)throw new Error('Local delivery failure requested for testing. The approved package is preserved.');
     // A stable outbox id/file is reused on recovery; a lost HTTP response cannot create a second local reply.
     if(!existsSync(safeStorage(file)))writeMail(file,mail.email,readFileSync(safeStorage(mail.pdf)),mail.filename+'.pdf',row.id);
-    transaction(()=>{const record=inquiry(id),revision=record.revision,latest=record.submissions.find(s=>s.version===version);if(!latest||latest.decision?.action!=='approve')throw new AppError('No approval exists for this package.',409);if(latest.delivery)return;latest.delivery={id:row.id,at:new Date().toISOString(),mode:'local-test',file};record.status='Sent';audit(record,user,'Approved proposal v'+version+' delivered to the local test mailbox');persist(record,revision);db().prepare('UPDATE outbox SET status=?,data=? WHERE id=?').run('sent',JSON.stringify({...mail,file,error:''}),row.id);notify(record,'Approved reply sent — local test',`${latest.email.to} · proposal v${version}. No real Gmail message was sent.`,[latest.submittedBy]);});
+    transaction(()=>{const record=inquiry(id),revision=record.revision,latest=record.submissions.find(s=>s.version===version);if(!latest||latest.decision?.action!=='approve')throw new AppError('No approval exists for this package.',409);if(latest.delivery)return;assertClientReady(record);startClientProtection(record,new Date().toISOString(),'proposal',latest.fields);latest.delivery={id:row.id,at:new Date().toISOString(),mode:'local-test',file,sentBy:user.id};record.status='Sent';audit(record,user,'Approved proposal v'+version+' delivered to the local test mailbox');persist(record,revision);db().prepare('UPDATE outbox SET status=?,data=? WHERE id=?').run('sent',JSON.stringify({...mail,file,error:''}),row.id);notify(record,'Approved reply sent — local test',`${latest.email.to} · proposal v${version}. No real Gmail message was sent.`,[latest.submittedBy]);});
   }catch(error){transaction(()=>{const record=inquiry(id),revision=record.revision,latest=record.submissions.find(s=>s.version===version);if(latest?.delivery)return;record.status='Approved — email failed';audit(record,user,'Approved email could not be delivered: '+(error as Error).message);persist(record,revision);db().prepare('UPDATE outbox SET status=?,data=? WHERE id=?').run('failed',JSON.stringify({...JSON.parse(row.data),error:(error as Error).message}),row.id);if(latest)notify(record,'Approved email needs attention',(error as Error).message,[latest.submittedBy]);});
   }finally{running.delete(row.id);}
 }
-export async function retry(id:string,user:Staff,revision:number) { const record=inquiry(id);checkRevision(record,revision);if(!['Approved — email failed','Approved — sending'].includes(record.status))throw new AppError('There is no failed or unfinished approved reply to retry.',409);await deliver(id,record.submissions.at(-1)!.version,user);return inquiry(id); }
+export async function retry(id:string,user:Staff,revision:number) { const record=inquiry(id);checkRevision(record,revision);if(!['Approved — email failed','Approved — sending'].includes(record.status))throw new AppError('There is no failed or unfinished approved reply to retry.',409);assertClientReady(record);await deliver(id,record.submissions.at(-1)!.version,user);return inquiry(id); }
 function writeMail(relative:string,email:MailDraft,pdf?:Buffer,filename?:string,messageId:string=randomUUID()) {
   mailSchema.parse(email);mkdirSync(path.join(dataRoot,'outbox'),{recursive:true});
   const boundary='rmc2-'+messageId;
@@ -126,7 +136,7 @@ function writeMail(relative:string,email:MailDraft,pdf?:Buffer,filename?:string,
 }
 export function requestDetails(id:string,user:Staff,input:unknown) {
   canPrepare(user);const body=z.object({revision:z.number().int(),body:z.string().min(1).max(20000)}).parse(input);
-  return transaction(()=>{const record=inquiry(id);checkRevision(record,body.revision);if(!editableStatus(record.status))throw new AppError('The submitted proposal is locked.',409);requireInquiryHandler(id,user);const file='outbox/'+randomUUID()+'.eml';writeMail(file,{to:record.fields.agentEmail,subject:'Details needed — '+record.fields.company,body:body.body});record.detailRequests.push({at:new Date().toISOString(),actorId:user.id,to:record.fields.agentEmail,body:body.body,file});record.status='Waiting for agent details';audit(record,user,'Requested missing information from the agent — local test mailbox');persist(record,body.revision);return record;});
+  return transaction(()=>{const record=inquiry(id);checkRevision(record,body.revision);assertClientReady(record);if(record.supervisorEdit||!canEditInquiry(user,record))throw new AppError('The submitted proposal is locked.',409);requireInquiryHandler(id,user);const file='outbox/'+randomUUID()+'.eml';writeMail(file,{to:record.fields.agentEmail,subject:'Details needed — '+record.fields.company,body:body.body});startClientProtection(record,new Date().toISOString(),'details');record.detailRequests.push({at:new Date().toISOString(),actorId:user.id,to:record.fields.agentEmail,body:body.body,file});record.status='Waiting for agent details';audit(record,user,'Requested missing information from the agent — local test mailbox');persist(record,body.revision);return record;});
 }
 export async function intake(user:Staff,file:File,sender:string) {
   if(user.role==='Supervisor')throw new AppError('Use an employee or admin account to import an inquiry.',403);
@@ -134,7 +144,9 @@ export async function intake(user:Staff,file:File,sender:string) {
   const filename=file.name.toLowerCase(),bytes=Buffer.from(await file.arrayBuffer());
   if(!filename.endsWith('.xlsx')&&!filename.endsWith('.pdf'))throw new AppError('Upload the agent’s submitted form as an Excel (.xlsx) or PDF (.pdf) attachment.');
   const source=filename.endsWith('.pdf')?await preservePdfForm(bytes,file.name,sender):await parseForm(bytes,file.name,sender);
-  return transaction(()=>{const max=inquiriesMax(),at=new Date().toISOString();const record:InquiryRecord={id:'INQ-'+new Date().getFullYear()+'-'+String(max+1).padStart(5,'0'),revision:1,status:'New inquiry',createdAt:at,updatedAt:at,fields:{...source.fields},source,email:defaultEmail(source.fields),emailOverrides:[],templateId:'',submissions:[],handledBy:[],history:[{id:randomUUID(),at,actorId:user.id,actor:user.name,action:'Imported agent email form. All active staff notified.'}],chat:[],notes:'',returnNote:'',returnFlags:[],detailRequests:[]};persist(record);notify(record,'New inquiry',`${record.fields.company||'Agent request'} is ready for form review.`,allUsers().filter(u=>u.active).map(u=>u.id));return record;});
+  source.sourceHash=createHash('sha256').update(bytes).digest('hex');
+  return transaction(()=>{const max=inquiriesMax(),at=new Date().toISOString();const record:InquiryRecord={id:'INQ-'+new Date().getFullYear()+'-'+String(max+1).padStart(5,'0'),revision:1,status:'New inquiry',createdAt:at,updatedAt:at,fields:{...source.fields},source,email:defaultEmail(source.fields),emailOverrides:[],templateId:'',submissions:[],handledBy:[],history:[{id:randomUUID(),at,actorId:user.id,actor:user.name,action:'Imported agent email form. All active staff notified.'}],chat:[],notes:'',returnNote:'',returnFlags:[],detailRequests:[]};updateClientReview(record,user);
+    persist(record);notify(record,record.closure?'Request declined — previous registration expired':record.clientReview?.state==='duplicate'?'Duplicate import received — on hold':record.clientReview?.state==='identify'?'Client details needed':'New inquiry',`${record.fields.company||'Agent request'} is ready for form review.`,allUsers().filter(u=>u.active).map(u=>u.id));return record;});
 }
 function inquiriesMax() { const rows=db().prepare('SELECT id FROM inquiries').all() as {id:string}[];return Math.max(129,...rows.map(r=>Number(r.id.split('-').at(-1))||0)); }
 export function alternatives(record:InquiryRecord) { return suggestTemplates(record.fields,catalog()).map(option=>option.template); }

@@ -31,16 +31,16 @@ try{
   let initial=(await state(cryssa)).inquiries.find(r=>r.id==='INQ-2026-00129');
   page=await opened(cryssa,initial);await page.getByRole('button',{name:'Start handling',exact:true}).waitFor();
   assert.deepEqual((await state(cryssa)).activity,[]);pass('Opening an inquiry alone does not claim it or change its contributor history');
-  await page.getByRole('button',{name:'Start handling',exact:true}).click();await page.getByText('You’re handling this inquiry',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Start handling',exact:true}).click();await page.getByText('Handling: you',{exact:true}).waitFor();
   const before=await state(cryssa);assert.equal(before.inquiries.find(r=>r.id===initial.id).revision,initial.revision);assert.equal(before.activity[0].userId,'cryssa');
   const other=await jefferson.newPage();await other.goto(base);await other.getByText('Handling now · Cryssa Kate Aban',{exact:true}).waitFor();
   await other.getByRole('link',{name:'Open '+initial.fields.company,exact:true}).click();await other.getByText('Cryssa Kate Aban is handling this inquiry',{exact:true}).waitFor();
-  await other.getByRole('button',{name:'Help alongside',exact:true}).click();await other.getByRole('button',{name:'Done for now',exact:true}).waitFor();
+  await other.getByRole('button',{name:'Help alongside',exact:true}).click();await other.getByRole('button',{name:'Release to queue',exact:true}).waitFor();
   await page.getByText('Jefferson Silot is handling this inquiry',{exact:true}).waitFor();
   assert.equal((await state(cryssa)).activity.length,2);assert.equal((await state(cryssa)).inquiries.find(r=>r.id===initial.id).revision,initial.revision);
   await other.screenshot({path:out+'/live-handling.png'});pass('Two staff accounts see live handling notices and can explicitly help without an assignment or lock');
-  await other.getByRole('button',{name:'Done for now',exact:true}).click();await until(async()=>!(await state(cryssa)).activity.some(a=>a.userId==='jefferson'));
-  await page.getByRole('button',{name:'Done for now',exact:true}).click();await until(async()=>!(await state(cryssa)).activity.length);pass('Leaving releases activity and does not change inquiry revisions');
+  await other.getByRole('button',{name:'Release to queue',exact:true}).click();await until(async()=>!(await state(cryssa)).activity.some(a=>a.userId==='jefferson'));
+  await page.getByRole('button',{name:'Release to queue',exact:true}).click();await until(async()=>!(await state(cryssa)).activity.length);pass('Leaving releases activity and does not change inquiry revisions');
   const tab=randomUUID(),secondTab=randomUUID();
   assert.equal((await activity(admin,initial.id,randomUUID(),'start')).status(),403);
   assert.equal((await activity(cryssa,'not-found',randomUUID(),'start')).status(),404);
@@ -71,6 +71,6 @@ try{
   await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();await page.locator('.ops-proposal-choice').first().getByRole('button',{name:'Customize',exact:true}).click();await page.locator('[data-custom-block]').first().waitFor();
   await page.getByRole('region',{name:'Scrollable proposal document',exact:true}).evaluate(e=>e.scrollTop=0);await page.locator('.ops-doc-toolbar').evaluate(e=>window.scrollBy(0,e.getBoundingClientRect().top-64));await independentScroll(page);
   const tool=await page.locator('.ops-custom-format').boundingBox(),doc=await page.getByRole('region',{name:'Scrollable proposal document',exact:true}).boundingBox();assert.ok(Math.abs(tool.y-doc.y)<3,JSON.stringify({tool,doc}));pass('Customized document uses the same scroll pane and keeps its formatting toolbar pinned');
-  await page.getByRole('button',{name:'Done for now',exact:true}).click();await until(async()=>!(await state(cryssa)).activity.length);
+  await page.getByRole('button',{name:'Release to queue',exact:true}).click();await until(async()=>!(await state(cryssa)).activity.length);
   assert.deepEqual(errors,[]);pass('No browser JavaScript errors');await writeFile(out+'/checks.json',JSON.stringify({checks,errors},null,2));
 }catch(error){if(page)await page.screenshot({path:out+'/failure.png'});throw error;}finally{await browser.close();}

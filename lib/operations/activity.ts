@@ -1,6 +1,8 @@
 import { z } from 'zod';
+import { assertClientReady } from './client-service';
+import { isClientArchived } from './client-rules';
 import { AppError, allUsers, db, inquiry, transaction } from './database';
-import { canPrepareProposal, editableStatus } from './types';
+import { canPrepareProposal, canEditInquiry } from './types';
 import type { InquiryActivity, Staff } from './types';
 
 export const ACTIVITY_TTL_MS=90000;
@@ -12,17 +14,22 @@ export function activeInquiryActivity():InquiryActivity[]{
   const now=new Date().toISOString(),cutoff=new Date(Date.now()-ACTIVITY_TTL_MS).toISOString();
   db().prepare('DELETE FROM inquiry_activity WHERE seen_at < ? OR session NOT IN (SELECT token FROM sessions WHERE expires > ?)').run(cutoff,now);
   db().exec(`DELETE FROM inquiry_activity WHERE user_id NOT IN (SELECT id FROM users WHERE json_extract(data,'$.active')=1 AND json_extract(data,'$.role') IN ('Employee','Supervisor'))
-    OR inquiry_id NOT IN (SELECT id FROM inquiries WHERE json_extract(data,'$.status') IN ('New inquiry','Preparing proposal','Waiting for agent details','Needs correction'));
+    OR inquiry_id NOT IN (SELECT id FROM inquiries WHERE json_extract(data,'$.status') IN ('New inquiry','Preparing proposal','Waiting for agent details','Needs correction','Supervisor editing'));
     DELETE FROM inquiry_activity WHERE user_id <> (SELECT b.user_id FROM inquiry_activity b WHERE b.inquiry_id=inquiry_activity.inquiry_id ORDER BY b.started_at,b.user_id LIMIT 1);`);
+  for(const row of db().prepare('SELECT DISTINCT inquiry_id FROM inquiry_activity').all() as {inquiry_id:string}[]){
+    const record=inquiry(row.inquiry_id);
+    if(isClientArchived(record,Date.parse(now))||record.clientReview?.state==='duplicate')db().prepare('DELETE FROM inquiry_activity WHERE inquiry_id=?').run(record.id);
+  }
   const rows=db().prepare(`SELECT a.inquiry_id AS inquiryId,a.user_id AS userId,MIN(a.started_at) AS startedAt,MAX(a.seen_at) AS seenAt
     FROM inquiry_activity a JOIN inquiries i ON i.id=a.inquiry_id JOIN users u ON u.id=a.user_id
     WHERE json_extract(u.data,'$.active')=1 AND json_extract(u.data,'$.role') IN ('Employee','Supervisor')
-    AND json_extract(i.data,'$.status') IN ('New inquiry','Preparing proposal','Waiting for agent details','Needs correction')
+    AND json_extract(i.data,'$.status') IN ('New inquiry','Preparing proposal','Waiting for agent details','Needs correction','Supervisor editing')
     GROUP BY a.inquiry_id,a.user_id ORDER BY startedAt`) .all();
   return rows as InquiryActivity[];
 }
 
 export function requireInquiryHandler(id:string,user:Staff){
+  assertClientReady(inquiry(id),true);
   const owner=activeInquiryActivity().find(row=>row.inquiryId===id);
   if(!owner)throw new AppError('Start handling this inquiry before making changes. Your previous handling session may have expired.',423);
   if(owner.userId!==user.id)throw new AppError(`${allUsers().find(person=>person.id===owner.userId)?.name||'A colleague'} is handling this inquiry. You can view it, but only the current handler can make changes.`,423);
@@ -36,9 +43,12 @@ export function updateInquiryActivity(id:string,user:Staff,session:string,input:
     if(body.action==='leave')db().prepare('DELETE FROM inquiry_activity WHERE session=? AND tab=? AND inquiry_id=? AND user_id=?').run(session,body.tab,id,user.id);
     if(body.action==='start'||body.action==='heartbeat'){
       if(!canPrepareProposal(user))throw new AppError('Employee or supervisor access is required.',403);
-      if(!editableStatus(record.status)){
-        db().prepare('DELETE FROM inquiry_activity WHERE inquiry_id=?').run(id);
+      if(body.action==='start')assertClientReady(record,true);
+      if(!canEditInquiry(user,record)){
+        if(body.action==='start')throw new AppError('This proposal is not available for editing by your account.',403);
+        db().prepare('DELETE FROM inquiry_activity WHERE session=? AND tab=? AND user_id=?').run(session,body.tab,user.id);
       }else if(body.action==='start'){
+        assertClientReady(record,true);
         const owner=activeInquiryActivity().find(row=>row.inquiryId===id);
         if(owner&&owner.userId!==user.id)requireInquiryHandler(id,user);
         db().prepare(`INSERT INTO inquiry_activity(session,tab,inquiry_id,user_id,started_at,seen_at) VALUES(?,?,?,?,?,?)
@@ -50,7 +60,8 @@ export function updateInquiryActivity(id:string,user:Staff,session:string,input:
       }
     }
     const activity=activeInquiryActivity().filter(row=>row.inquiryId===id);
-    const handling=!!db().prepare('SELECT tab FROM inquiry_activity WHERE session=? AND tab=? AND inquiry_id=?').get(session,body.tab,id)&&editableStatus(record.status);
+    if(isClientArchived(record))db().prepare('DELETE FROM inquiry_activity WHERE inquiry_id=?').run(id);
+    const handling=!!db().prepare('SELECT tab FROM inquiry_activity WHERE session=? AND tab=? AND inquiry_id=?').get(session,body.tab,id)&&canEditInquiry(user,record);
     return {activity,handling};
   });
 }

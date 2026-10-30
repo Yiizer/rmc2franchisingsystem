@@ -37,7 +37,7 @@ for(const template of catalog){
     else{assert.equal(sha(filledZip.file(name).asNodeBuffer()),sha(entry.asNodeBuffer()),name+' byte-for-byte preserved');preserved++;}
   }
   const artwork=sourceHeaderArtwork(filled);
-  assert.equal(artwork.length,template.sourceId==='D023'?0:2,'Both source logos recovered for flattened masters');
+  assert.equal(artwork.length,sourceHeaderArtwork(source).length,'Filling preserves the supplied header artwork and layering');
   for(const image of artwork){assert.ok(image.bytes.length>100);assert.ok(image.x>=0&&image.top>=0&&image.width>0&&image.height>0);}
   assert.equal(sha(await readFile(template.file)),template.sourceHash,'The supplied master remains untouched');
   const text=filledZip.file('word/document.xml').asText();assert.ok(text.includes('Test &amp; Company &lt;Local&gt;'));

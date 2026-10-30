@@ -47,6 +47,7 @@ export async function fillDocx(template:CatalogTemplate, fields:FormFields, prev
   return filled;
 }
 export async function generatePackage(id:string,template:CatalogTemplate,fields:FormFields,preparedBy:string,customization?:CustomizedProposal):Promise<GeneratedPackage> {
+  if(customization&&(customization.templateId!==template.id||customization.sourceHash!==template.sourceHash))throw new AppError('This customized draft uses an earlier template. Create a fresh customized copy and review its edits before generating.',409);
   const base=await fillDocx(template,fields),custom=customization?customDocument(base,customization.edits):undefined,bytes=custom?.bytes||base,pdf=await pdfFromDocx(bytes),packageId=randomUUID();
   await mkdir(path.join(dataRoot,'generated'),{recursive:true});
   await mkdir(path.join(dataRoot,'sources'),{recursive:true});

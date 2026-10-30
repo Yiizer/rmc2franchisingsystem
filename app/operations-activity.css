@@ -3,6 +3,14 @@
 .ops-activity-notice.occupied{background:#fff8ee;border-color:#efd6ac;color:#885314}.ops-activity-notice.occupied p{color:#856643}
 .ops-activity-notice.handling{background:#edf8f5;border-color:#bedfd3;color:#1f6b56}
 .ops-handling-badge{display:inline-flex;align-items:center;gap:5px;max-width:100%;padding:5px 7px;margin-top:7px;border-radius:5px;background:#fff2dc;color:#885314;font-size:11px;line-height:1.45;font-weight:600;white-space:normal}.ops-handling-badge>svg{flex:none}
-.ops-handling-badge.own{background:#e7f5ef;color:#216750}.ops-handling-badge small{display:block!important;color:inherit!important;font-size:10px!important;margin:2px 0 0!important;font-weight:400}.ops-table .ops-handling-badge{margin-top:0}
-.ops-app .ops-badge.preparing{background:#e4edff;color:#2454ad;border:1px solid #bfd1fa}.ops-badge.preparing .ops-dot{background:#356ac8}
+.ops-handling-badge.own{background:#e7f5ef;color:#216750}.ops-handling-badge small{display:block;color:inherit;font-size:10px;margin:2px 0 0;font-weight:400}.ops-table .ops-handling-badge{margin-top:0}
+.ops-app .ops-badge.preparing{background:#fff4d6;color:#795000;border:1px solid #e3c277}.ops-badge.preparing .ops-dot{background:#946000}
 @media(max-width:600px){.ops-activity-notice{align-items:flex-start;flex-wrap:wrap}.ops-activity-notice>div{flex-basis:calc(100% - 35px)}.ops-activity-notice>.ops-btn{margin-left:31px}}
+/* Handling card in the inquiry next-action panel. */
+.ops-handling-card{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border:1px solid var(--ops-avail-line);border-radius:8px;background:var(--ops-avail-tint);color:var(--ops-avail-ink)}
+.ops-handling-card>div{display:flex;gap:10px;align-items:flex-start}.ops-handling-card>div>svg{flex:none;margin-top:1px}
+.ops-handling-card b{display:block;font-size:13px;line-height:1.35}.ops-handling-card small{display:block;font-size:12px;line-height:1.45;margin-top:2px;color:inherit}
+.ops-handling-card.mine{background:var(--ops-mine-tint);border-color:var(--ops-mine-line);color:var(--ops-mine-ink)}
+.ops-handling-card.other{background:var(--ops-other-tint);border-color:var(--ops-other-line);color:var(--ops-other-ink)}
+.ops-handling-card>.ops-btn{width:100%;justify-content:center}
+.ops-handling-badge{background:var(--ops-other-tint);color:var(--ops-other-ink)}.ops-handling-badge.own{background:var(--ops-mine-tint);color:var(--ops-mine-ink)}

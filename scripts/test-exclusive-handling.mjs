@@ -1,3 +1,4 @@
+import {navigate} from './revamp-navigation.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
@@ -13,7 +14,7 @@ const state=async ctx=>(await(await ctx.request.get(base+'/api/operations/bootst
 const activity=(ctx,id,tab,action)=>ctx.request.post(base+'/api/operations/inquiries/'+id+'/activity',{data:{tab,action}});
 const payload=r=>({revision:r.revision,fields:r.fields,templateId:r.templateId,notes:r.notes,email:r.email,emailOverrides:r.emailOverrides});
 async function current(ctx,id){return (await state(ctx)).inquiries.find(r=>r.id===id);}
-async function open(ctx,r){const p=await ctx.newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto(base);await p.getByRole('button',{name:'Inquiries',exact:true}).click();await p.getByRole('link',{name:'Open '+r.fields.company,exact:true}).filter({hasText:r.id}).click();return p;}
+async function open(ctx,r){const p=await ctx.newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto(base);await navigate(p,'Inquiries');await p.getByRole('link',{name:'Open '+r.fields.company,exact:true}).filter({hasText:r.id}).click();return p;}
 async function until(fn){for(let i=0;i<80;i++){if(await fn())return;await new Promise(r=>setTimeout(r,200));}throw Error('State did not settle');}
 async function preview(p){await p.locator('.ops-doc-preview[aria-busy="false"]').waitFor({timeout:120000});assert.equal(await p.locator('.ops-doc-preview [role="alert"]').count(),0);}
 try{
@@ -43,7 +44,7 @@ try{
  assert.equal((await j.request.post(base+'/api/operations/inquiries/'+r.id+'/save',{data:payload(r)})).status(),423);
  await activity(c,r.id,ct,'leave');pass('Expired ownership cannot save or reclaim silently after another employee picks up');
  page=await open(c,r);const viewer=await open(j,r);
- await page.getByRole('button',{name:'Start handling',exact:true}).click();await page.getByText('You’re handling this inquiry',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'Start handling',exact:true}).click();await page.getByText('Handling: you',{exact:true}).waitFor();
  await viewer.getByText('Cryssa Kate Aban is handling this inquiry',{exact:true}).waitFor();assert.equal(await viewer.getByRole('button',{name:'Help alongside',exact:true}).count(),0);
  await viewer.getByRole('button',{name:'View submitted form',exact:true}).click();await viewer.getByRole('dialog',{name:'Agent submitted form'}).waitFor();await viewer.getByRole('button',{name:'Close dialog',exact:true}).click();
  await viewer.getByRole('button',{name:/Choose template/}).click();assert.equal(await viewer.getByLabel('Proposal template',{exact:true}).count(),0);assert.equal(await viewer.getByRole('button',{name:/Browse templates/}).isEnabled(),true);assert.equal(await viewer.getByRole('button',{name:'Use this template',exact:true}).first().isDisabled(),true);assert.equal(await viewer.getByRole('button',{name:'Customize',exact:true}).count(),0);
@@ -51,20 +52,20 @@ try{
  await viewer.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();await viewer.screenshot({path:out+'/locked-workspace.png'});
  pass('Viewer sees a lock banner and can inspect the form and templates, with all preparation controls disabled');
  await page.getByRole('button',{name:/Choose template/}).click();await page.locator('.ops-proposal-choice').filter({has:page.getByRole('heading',{name:'BureauHealth 7K & 5K · Standard',exact:true})}).getByRole('button',{name:'Use this template',exact:true}).click();await page.getByRole('button',{name:'Continue to preview',exact:true}).click();await preview(page);
- await page.getByLabel('Client / addressee',{exact:true}).fill('Dr. Exclusive Handler');await page.getByRole('button',{name:'Done for now',exact:true}).click();await page.getByRole('heading',{name:'Inquiries',exact:true}).waitFor();
+ await page.getByLabel('Client / addressee',{exact:true}).fill('Dr. Exclusive Handler');await page.getByRole('button',{name:'Release to queue',exact:true}).click();await page.getByRole('heading',{name:'Inquiries',exact:true}).waitFor();
  r=await current(c,r.id);assert.equal(r.fields.addressee,'Dr. Exclusive Handler');assert.ok(r.handledBy.includes('cryssa'));assert.equal((await state(c)).activity.filter(a=>a.inquiryId===r.id).length,0);
- await viewer.getByRole('button',{name:'Start handling',exact:true}).waitFor();await viewer.getByRole('button',{name:'Start handling',exact:true}).click();await viewer.getByText('You’re handling this inquiry',{exact:true}).waitFor();
+ await viewer.getByRole('button',{name:'Start handling',exact:true}).waitFor();await viewer.getByRole('button',{name:'Start handling',exact:true}).click();await viewer.getByText('Handling: you',{exact:true}).waitFor();
  assert.equal(await viewer.locator('.ops-proposal-choice').first().getByRole('button',{name:'Use this template',exact:true}).isEnabled(),true);assert.ok((await viewer.locator('.ops-proposal-choice.selected .ops-suggestion-source').innerText()).includes('D024'));
- pass('Done for now saves before unlocking; the next employee picks up the same saved draft');
- await page.reload();await page.getByRole('button',{name:'Inquiries',exact:true}).click();await page.getByRole('columnheader',{name:'Current handler',exact:true}).waitFor();
- const row=page.getByRole('link',{name:'Open '+r.fields.company,exact:true}).filter({hasText:r.id});assert.equal(await row.locator('td').nth(3).textContent(),'Jefferson SilotView only');await row.screenshot({path:out+'/current-handler-column.png'});
+ pass('Release to queue saves before unlocking; the next employee picks up the same saved draft');
+ await page.reload();await navigate(page,'Inquiries');await page.getByRole('columnheader',{name:'Current handler',exact:true}).waitFor();
+ const row=page.getByRole('link',{name:'Open '+r.fields.company,exact:true}).filter({hasText:r.id});assert.equal(await row.locator('td.dir-cell-handler').textContent(),'JSJefferson SilotView only');await row.screenshot({path:out+'/current-handler-column.png'});
  pass('Inquiry lists show one current handler instead of accumulated historical contributors');
  await viewer.locator('.ops-proposal-choice').first().getByRole('button',{name:'Customize',exact:true}).click();await viewer.locator('[data-custom-block]').first().waitFor();
  r=await current(j,r.id);await row.click();await page.getByRole('button',{name:/Preview & approval/}).click();await preview(page);
  assert.equal(await page.getByRole('button',{name:'Edit document',exact:true}).isDisabled(),true);assert.equal(await page.locator('[contenteditable="true"]').count(),0);assert.equal(await page.getByLabel('Client / addressee',{exact:true}).isDisabled(),true);assert.equal(await page.getByRole('button',{name:'Prepare PDF & email',exact:true}).count(),0);
  await page.locator('.ops-doc-toolbar').evaluate(e=>window.scrollBy(0,e.getBoundingClientRect().top-64));const before=await page.locator('.ops-doc-fields').evaluate(e=>e.getBoundingClientRect().top);await page.getByRole('region',{name:'Scrollable proposal document',exact:true}).evaluate(e=>e.scrollTop=1800);assert.equal(await page.locator('.ops-doc-fields').evaluate(e=>e.getBoundingClientRect().top),before);
  pass('Saved customized proposals remain visible but not editable, with independent PDF scrolling');
- await viewer.getByRole('button',{name:'Done for now',exact:true}).click();await page.getByRole('button',{name:'Start handling',exact:true}).waitFor();await page.getByRole('button',{name:'Start handling',exact:true}).click();await page.getByText('You’re handling this inquiry',{exact:true}).waitFor();
+ await viewer.getByRole('button',{name:'Release to queue',exact:true}).click();await page.getByRole('button',{name:'Start handling',exact:true}).waitFor();await page.getByRole('button',{name:'Start handling',exact:true}).click();await page.getByText('Handling: you',{exact:true}).waitFor();
  await page.getByLabel('Client / addressee',{exact:true}).fill('Unsaved recovery value');
  db.prepare('UPDATE inquiry_activity SET seen_at=? WHERE inquiry_id=?').run(new Date(Date.now()-95000).toISOString(),r.id);
  assert.equal((await activity(j,r.id,jt,'start')).status(),200);

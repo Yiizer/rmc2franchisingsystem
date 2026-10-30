@@ -1,3 +1,4 @@
+import {navigate} from './revamp-navigation.mjs';
 import { chromium } from 'playwright-core';
 import assert from 'node:assert/strict';
 import { mkdir,writeFile } from 'node:fs/promises';
@@ -11,7 +12,7 @@ try{
   assert.ok((await context.request.post(base+'/api/operations/login',{data:{email:'cryssa@rmc2.local',password:'Rmc2Local!2026'}})).ok());
   const initial=await (await context.request.get(base+'/api/operations/bootstrap')).json();const initialRecord=initial.inquiries.find(record=>record.id==='INQ-2026-00126');assert.ok(initialRecord);
   const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));await page.goto(base);
-  await page.getByRole('button',{name:'Inquiries',exact:true}).click();await page.getByRole('link',{name:'Open '+initialRecord.fields.company,exact:true}).click();
+  await navigate(page,'Inquiries');await page.getByRole('link',{name:'Open '+initialRecord.fields.company,exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Proposal help',exact:true}).count(),0);
   await page.getByRole('button',{name:'Choose a proposal',exact:true}).click();
   assert.equal(await page.getByText('Why this option?',{exact:true}).count(),0);assert.equal(await page.locator('details.ops-suggestion-reasons').count(),0);

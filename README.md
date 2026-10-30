@@ -1,6 +1,6 @@
 # RMC2 Franchising System
 
-A working Next.js application for testing the inquiry-to-proposal workflow on localhost. It includes authenticated staff accounts, shared inquiries, Excel intake, Word/PDF generation from 13 supplied proposal masters, editable email autofill, versioned supervisor review, notifications and an audit history.
+A working Next.js application for testing the inquiry-to-proposal workflow on localhost. It includes authenticated staff accounts, shared inquiries, Excel intake, Word/PDF generation from 11 active supplied proposal masters (3 retired masters retained for history), editable email autofill, versioned supervisor review, notifications and an audit history.
 
 Any employee can pick up an inquiry. My Inquiries shows actual contributions. Emerson or Zeo can return a proposal for correction or approve it; one approval automatically creates the finished agent reply with the approved PDF in the local test mailbox. Conflicting edits and duplicate sends are rejected.
 
@@ -15,11 +15,15 @@ npm run dev
 
 Open **http://127.0.0.1:5173/**. For the production build, use `npm run build` followed by `npm start`.
 
-Select an account on Login. Initial local accounts share the password **Rmc2Local!2026**. These credentials are for local testing.
+Sign in with your username or email. Initial local accounts share the password **Rmc2Local!2026**. These credentials are for local testing.
 
 See [LOCALHOST.md](LOCALHOST.md) for account details, source import, workflow testing, storage and document conversion.
 
 See [PROJECT_GUIDE.md](PROJECT_GUIDE.md) for the detailed project handover: current features, permissions, workflows, architecture, APIs, testing, hosting options, maintenance and production milestones.
+
+Use [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md) to track completed local features, remaining production requirements, priorities and release sign-offs.
+
+See [PRIVACY.md](PRIVACY.md) for the 30-day agent countdown, duplicate-client holds, progress reports, Archives, confidential-file access controls, and remaining production privacy requirements.
 
 ## Current connections
 

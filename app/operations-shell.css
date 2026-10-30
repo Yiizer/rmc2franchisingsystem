@@ -1,0 +1,70 @@
+.ops-shell-sidebar{padding:0;overflow:hidden;background:var(--ops-navy)}
+.ops-shell-brand{padding:24px 16px 18px;flex:none;display:flex;align-items:center;justify-content:space-between}
+.ops-shell-sidebar .ops-brand{padding:0}.ops-shell-sidebar .ops-brand small{font-size:8px}
+.ops-shell-sidebar>nav{flex:1;min-height:0;overflow:auto;padding:0 12px 16px;gap:4px}
+.ops-shell-sidebar nav>small,.ops-admin-nav>summary{font-size:11px;letter-spacing:.08em;color:#bdcbe0;padding:18px 12px 8px}
+.ops-shell-sidebar nav button{display:flex;align-items:center;gap:12px;width:100%;border:0;border-radius:6px;padding:12px;background:none;color:#d4dfef;text-align:left;min-height:44px;font-size:13px}
+.ops-shell-sidebar nav button>span{flex:1}
+.ops-app .ops-shell-sidebar nav button.active{position:relative;background:#1d3657;color:white}
+.ops-shell-sidebar nav button.active:before{content:'';position:absolute;left:3px;top:12px;bottom:12px;width:2px;background:var(--ops-orange);border-radius:2px}
+.ops-shell-sidebar nav button:hover{background:#1d3657}
+.ops-shell-sidebar nav button b{border-radius:12px;background:#fff;color:var(--ops-navy);padding:2px 7px;font-size:11px}
+.ops-shell-sidebar .ops-admin-nav{margin:0}.ops-admin-nav summary{display:flex;justify-content:space-between;cursor:pointer;list-style:none}.ops-admin-nav summary::-webkit-details-marker{display:none}
+.ops-profile{position:relative;flex:none;border-top:1px solid #344864;padding:12px}
+.ops-profile-trigger{display:flex;align-items:center;gap:10px;color:white;background:none;border:0;text-align:left;width:100%;padding:8px 0;min-height:56px}
+.ops-profile-trigger>span:nth-child(2){flex:1;min-width:0}.ops-profile-trigger b{font-size:12px;display:block}.ops-profile-trigger small{font-size:11px;color:#c0cde0}
+.ops-profile-menu{position:absolute;bottom:100%;left:12px;right:12px;background:white;color:var(--ops-ink);border:1px solid var(--ops-line);border-radius:8px;box-shadow:var(--ops-popover-shadow);padding:6px;z-index:2}
+.ops-profile-menu button{display:flex;align-items:center;gap:8px;border:0;background:white;color:var(--ops-ink);width:100%;padding:12px;text-align:left;min-height:44px;font-size:13px}
+.ops-profile-menu button:hover{background:var(--ops-info-tint)}
+.ops-breadcrumb{display:flex;align-items:center;gap:8px;min-width:0;font-size:12px}.ops-breadcrumb button{background:none;border:0;color:var(--ops-secondary);padding:4px;text-decoration:underline;text-underline-offset:3px}.ops-breadcrumb b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.ops-topbar .ops-environment{font-size:9px;padding:3px 6px;background:#f6f3ee;color:#765633}
+.ops-close-nav{display:none}.ops-shell-sidebar :is(button,summary):focus-visible{outline:2px solid var(--ops-orange);outline-offset:1px}
+@media(max-width:760px){.ops-close-nav{display:inline-flex}.ops-shell-sidebar{z-index:var(--ops-z-drawer)}.ops-nav-shade{z-index:var(--ops-z-backdrop);border:0}.ops-topbar .ops-environment{display:none}.ops-topbar{gap:6px}.ops-topbar>div{gap:8px}.ops-breadcrumb{font-size:11px}}
+.ops-list-tabs{display:flex;gap:24px;border-bottom:1px solid var(--ops-line);margin-bottom:20px}
+.ops-list-tabs button{border:0;border-bottom:2px solid transparent;background:none;padding:12px 4px;min-height:44px;color:var(--ops-muted);font-size:14px}
+.ops-list-tabs button[aria-pressed=true]{color:var(--ops-navy);border-bottom-color:var(--ops-orange);font-weight:600}
+/* Active item: brand orange marker + icon; waiting counts use the action orange. */
+.ops-app .ops-shell-sidebar nav button.active:before{left:0;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0}
+.ops-app .ops-shell-sidebar nav button.active>svg{color:var(--ops-orange)}
+.ops-app .ops-shell-sidebar nav button b{background:var(--ops-action);color:var(--ops-action-ink);font-weight:700}
+/* Collapse toggle. */
+.ops-collapse-nav{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid #344864;border-radius:6px;background:transparent;color:#d4dfef;flex:none;cursor:pointer}
+.ops-collapse-nav:hover{background:#1d3657;color:#fff}
+.ops-shell-sidebar,.ops-body{transition:width .2s cubic-bezier(.25,1,.5,1),margin-left .2s cubic-bezier(.25,1,.5,1)}
+@media(min-width:761px){
+ .ops-app .ops-shell-sidebar.collapsed{width:var(--ops-sidebar-rail);overflow:visible}
+ .ops-body.rail{margin-left:var(--ops-sidebar-rail)}
+ .ops-shell-sidebar.collapsed .ops-shell-brand{flex-direction:column;gap:14px;padding:18px 0 12px}
+ .ops-shell-sidebar.collapsed .ops-brand>div{display:none}
+ .ops-shell-sidebar.collapsed .ops-brand img{width:40px;height:40px}
+ .ops-shell-sidebar.collapsed>nav{padding:0 10px 12px;overflow:visible}
+ .ops-shell-sidebar.collapsed nav>small{font-size:0;padding:0;margin:10px 6px;height:1px;background:#344864;display:block}
+ .ops-shell-sidebar.collapsed nav button{justify-content:center;padding:12px 0;position:relative}
+ .ops-shell-sidebar.collapsed nav button>span{display:none}
+ .ops-shell-sidebar.collapsed nav button b{position:absolute;top:5px;right:5px;min-width:18px;height:18px;padding:0 4px;font-size:10px;line-height:18px;border-radius:9px;display:grid;place-items:center}
+ .ops-shell-sidebar.collapsed .ops-profile{padding:12px 10px}
+ .ops-shell-sidebar.collapsed .ops-profile-trigger{justify-content:center;position:relative}
+ .ops-shell-sidebar.collapsed .ops-profile-trigger>span:nth-child(2),.ops-shell-sidebar.collapsed .ops-profile-trigger>svg{display:none}
+ .ops-shell-sidebar.collapsed .ops-profile-menu{left:calc(100% + 8px);right:auto;bottom:8px;width:200px}
+ /* Tooltips on hover and keyboard focus while collapsed. */
+ .ops-shell-sidebar.collapsed [data-tip]{position:relative}
+ .ops-shell-sidebar.collapsed [data-tip]:is(:hover,:focus-visible):after{content:attr(data-tip);position:absolute;left:calc(100% + 10px);top:50%;transform:translateY(-50%);background:var(--ops-navy);color:#fff;border:1px solid #344864;font-size:12px;font-weight:500;padding:6px 10px;border-radius:6px;white-space:nowrap;z-index:var(--ops-z-toast);pointer-events:none;box-shadow:var(--ops-popover-shadow)}
+ .ops-body.rail .dir-side-panel{max-width:calc(100vw - var(--ops-sidebar-rail))}
+}
+@media(min-width:761px) and (max-width:960px){.ops-body.rail .ops-workspace-redesign .ops-next-action-panel{left:calc(var(--ops-sidebar-rail) + 16px)}}
+@media(max-width:760px){.ops-collapse-nav{display:none}}
+@media(prefers-reduced-motion:reduce){.ops-shell-sidebar,.ops-body{transition:none}}
+
+/* Mockup colors: solid burnt-orange active item, white text; counts in orange. */
+.ops-app .ops-shell-sidebar{background:var(--ops-navy)}
+.ops-app .ops-shell-sidebar nav button.active{background:var(--ops-action);color:#fff}
+.ops-app .ops-shell-sidebar nav button.active:before{display:none}
+.ops-app .ops-shell-sidebar nav button.active>svg{color:#fff}
+.ops-app .ops-shell-sidebar nav button:not(.active):hover{background:#1b3358}
+.ops-app .ops-shell-sidebar nav button b{background:var(--ops-action);color:#fff}
+.ops-app .ops-shell-sidebar nav button.active b{background:#fff;color:var(--ops-action)}
+.ops-top-account{position:relative;display:flex}
+.ops-profile-menu.ops-top-menu{top:calc(100% + 8px);bottom:auto;left:auto;right:0;width:220px;z-index:60}
+.ops-top-menu-user{padding:10px 12px 8px;border-bottom:1px solid var(--ops-line);margin-bottom:4px}
+.ops-top-menu-user b{display:block;font-size:13px}
+.ops-top-menu-user small{display:block;font-size:11px;color:var(--ops-muted-text,#5b677a);margin-top:2px}

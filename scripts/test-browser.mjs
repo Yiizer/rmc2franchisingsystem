@@ -1,3 +1,4 @@
+import {navigate} from './revamp-navigation.mjs';
 import { chromium } from 'playwright-core';
 import { mkdir,writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
@@ -7,11 +8,11 @@ const browser=await chromium.launch({executablePath,headless:true});
 const errors=[],checks=[];await mkdir('test-results',{recursive:true});
 async function account(name,viewport={width:1540,height:980}){const context=await browser.newContext({viewport});const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(base);await page.getByRole('heading',{name:'Welcome back'}).waitFor();await page.getByLabel('Staff account').selectOption(name+'@rmc2.local');await page.getByLabel('Password',{exact:true}).fill('Rmc2Local!2026');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.getByRole('heading',{name:'Dashboard',exact:true}).waitFor();return {context,page};}
 const pass=name=>{checks.push(name);process.stdout.write('PASS '+name+'\n');};
-async function inquiry(page,name){await page.getByRole('button',{name:'Inquiries',exact:true}).click();await page.getByRole('link',{name:'Open '+name,exact:true}).click();}
+async function inquiry(page,name){await navigate(page,'Inquiries');await page.getByRole('link',{name:'Open '+name,exact:true}).click();}
 try{
   const employee=await account('cryssa');const page=employee.page;pass('Browser login works with the real session cookie');
   await page.screenshot({path:'test-results/dashboard-desktop.png',fullPage:true});
-  await page.getByRole('button',{name:'My Inquiries',exact:true}).click();await page.getByRole('heading',{name:'My Inquiries',exact:true}).waitFor();pass('My Inquiries navigation works');
+  await navigate(page,'My Inquiries');await page.getByRole('heading',{name:'My Inquiries',exact:true}).waitFor();pass('My Inquiries navigation works');
   const sample=await employee.context.request.get(base+'/api/operations/sample-form');assert.ok(sample.ok());
   await page.getByRole('button',{name:'Import agent form',exact:true}).click();await page.getByLabel('Agent sender email',{exact:true}).fill('agent.browser@example.com');await page.getByLabel('Filled franchise form',{exact:true}).setInputFiles({name:'browser-test-franchise-form.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:await sample.body()});await page.getByRole('button',{name:'Create inquiry',exact:true}).click();await page.getByRole('heading',{name:'Review the agent’s form',exact:true}).waitFor();pass('Browser Excel upload creates an inquiry');
   await page.getByRole('button',{name:'View submitted form',exact:true}).click();await page.getByRole('dialog',{name:'Agent submitted form'}).waitFor();await page.locator('[data-cell="B10"]').waitFor();await page.keyboard.press('Shift+Tab');assert.equal(await page.evaluate(()=>document.querySelector('[role="dialog"]').contains(document.activeElement)),true);await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>document.querySelector('[role="dialog"]').contains(document.activeElement)),true);await page.getByRole('button',{name:'Close dialog',exact:true}).click();pass('Submitted Excel opens with its original worksheet layout and trapped keyboard focus');

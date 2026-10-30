@@ -7,6 +7,7 @@ export default function TemplateBrowser({templates,selectedId,customization,edit
   templates:CatalogTemplate[];selectedId:string;customization?:CustomizedProposal;editable:boolean;busy:boolean;
   onChoose:(id:string)=>void;onPreview:(template:CatalogTemplate)=>void;onCustomize:(id:string)=>void;
 }){
+  templates=templates.filter(template=>template.active);
   const [open,setOpen]=useState(false);
   const families=[...new Set(templates.map(template=>template.family))];
   const [family,setFamily]=useState(()=>templates.find(template=>template.id===selectedId)?.family||families[0]||'');

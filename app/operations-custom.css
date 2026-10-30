@@ -1,7 +1,7 @@
 .ops-badge.customized{background:#fff0dc;color:#995013;border:1px solid #f1d1a5;display:inline-flex;align-items:center;white-space:normal;line-height:1.4}
 .ops-ws-selection>.ops-card-head{background:linear-gradient(100deg,#f2f6ff,#fff9ef);border-top:3px solid #ff7b23;border-radius:8px 8px 0 0}
-.ops-proposal-choice.standard{background:linear-gradient(115deg,#f5f9ff,#fff);border-left:4px solid #789ac7}
-.ops-proposal-choice.coverage{background:linear-gradient(115deg,#f8f5fd,#fff);border-left:4px solid #ab8aca}
+.ops-proposal-choice.standard{background:linear-gradient(115deg,#f5f9ff,#fff);border:1px solid var(--ops-line)}
+.ops-proposal-choice.coverage{background:linear-gradient(115deg,#f8f5fd,#fff);border:1px solid var(--ops-line)}
 .ops-proposal-choice.selected{background:#f0f5ff;border-color:#668bcc;border-left-color:#ff8028;box-shadow:0 0 0 1px #668bcc18}
 .ops-proposal-choice.customized-choice{border-left-color:#d38a33;background:#fffaf2}
 .ops-template-tags{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:7px 0}
@@ -22,8 +22,10 @@
 .ops-custom-format select{height:29px;max-width:65px;font-size:11px!important;padding:2px 4px!important;border-radius:4px}
 .ops-custom-format input[type=color]{padding:2px!important;width:29px;height:29px;border:1px solid #e0d5c5;border-radius:4px}
 .ops-custom-canvas{min-width:0;color:#000;text-align:initial;line-height:normal;overflow-x:auto;overflow-y:visible}
-.ops-custom-canvas .customdoc-wrapper{background:transparent;padding:20px;min-width:100%;width:fit-content;gap:20px;box-sizing:border-box}
-.ops-custom-canvas section.customdoc{box-shadow:0 2px 10px #1a33531a;flex-shrink:0;overflow:visible}
+.ops-custom-canvas .customdoc-wrapper{background:transparent;padding:20px;min-width:0;width:100%;gap:20px;box-sizing:border-box}
+.ops-custom-canvas section.customdoc{box-shadow:0 2px 10px #1a33531a;flex-shrink:0;overflow:hidden;position:relative;isolation:isolate}
+.ops-custom-canvas section.customdoc table td,.ops-custom-canvas section.customdoc table th{padding-left:3pt!important;padding-right:3pt!important}
+.ops-custom-canvas table [data-custom-block]{overflow-wrap:normal;word-break:normal}
 .ops-custom-canvas [data-custom-block]{cursor:text;outline:1px solid transparent;outline-offset:2px;white-space:pre-wrap;transition:outline-color .12s,background-color .12s}
 .ops-custom-canvas [data-custom-block]:hover{outline-color:#aec9ee;background-color:#eaf3ff66}
 .ops-custom-canvas [data-custom-block]:focus{outline:2px solid #5384cb;background-color:#edf5ff99}

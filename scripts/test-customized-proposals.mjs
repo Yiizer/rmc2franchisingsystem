@@ -1,8 +1,10 @@
+import {navigate} from './revamp-navigation.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {createHash,randomUUID} from 'node:crypto';
 import {chromium} from 'playwright-core';
 import PizZip from 'pizzip';
+import ExcelJS from 'exceljs';
 const base='http://127.0.0.1:5190',out='test-results/custom-proposals';
 await mkdir(out,{recursive:true});
 const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
@@ -10,11 +12,12 @@ const errors=[],checks=[];let page;
 const pass=name=>{checks.push(name);console.log('PASS '+name);};
 async function login(who){const ctx=await browser.newContext({viewport:{width:1540,height:1000}});ctx.setDefaultTimeout(120000);const res=await ctx.request.post(base+'/api/operations/login',{data:{email:who+'@rmc2.local',password:'Rmc2Local!2026'}});assert.ok(res.ok());return ctx;}
 async function record(ctx,id){return (await(await ctx.request.get(base+'/api/operations/bootstrap')).json()).inquiries.find(r=>r.id===id);}
-async function open(ctx,r){const p=await ctx.newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto(base);await p.getByRole('button',{name:'Inquiries',exact:true}).click();await p.getByRole('link',{name:'Open '+r.fields.company,exact:true}).filter({hasText:r.id}).click();if(['New inquiry','Preparing proposal','Needs correction','Waiting for agent details'].includes(r.status)){await p.getByRole('button',{name:'Start handling',exact:true}).click();await p.getByText('You’re handling this inquiry',{exact:true}).waitFor();}return p;}
+async function open(ctx,r){const p=await ctx.newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto(base);await navigate(p,'Inquiries');await p.getByRole('link',{name:'Open '+r.fields.company,exact:true}).filter({hasText:r.id}).click();if(['New inquiry','Preparing proposal','Needs correction','Waiting for agent details'].includes(r.status)){await p.getByRole('button',{name:'Start handling',exact:true}).click();await p.getByText('Handling: you',{exact:true}).waitFor();}return p;}
 const payload=r=>({revision:r.revision,fields:r.fields,templateId:r.templateId,customization:r.customization?{id:r.customization.id,edits:r.customization.edits}:null,notes:r.notes,email:r.email,emailOverrides:r.emailOverrides});
 try{
   const employee=await login('cryssa'),supervisor=await login('zeo'),admin=await login('admin');
-  const source=await(await employee.request.get(base+'/api/operations/sample-form')).body();
+  const sample=await(await employee.request.get(base+'/api/operations/sample-form')).body();
+  const book=new ExcelJS.Workbook();await book.xlsx.load(sample);const sheet=book.worksheets[0],identity='Customized verification '+Date.now();sheet.getCell('B10').value=identity;sheet.getCell('D14').value=identity;sheet.getCell('B21').value=identity;const source=await book.xlsx.writeBuffer();
   const intake=await employee.request.post(base+'/api/operations/intake',{multipart:{sender:'custom.agent@example.com',file:{name:'custom-form.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:source}}});assert.equal(intake.status(),201);let r=(await intake.json()).inquiry;
   const denied=await admin.request.post(base+'/api/operations/inquiries/'+r.id+'/customize',{data:{revision:r.revision,templateId:'d023'}});assert.equal(denied.status(),403);
   const standardPreview=await employee.request.post(base+'/api/operations/custom-document',{data:{inquiryId:r.id,templateId:'d023',fields:r.fields,edits:{}}});assert.equal(standardPreview.status(),409);pass('Only preparers can create customized copies; standard inquiries cannot use custom editing');
@@ -35,7 +38,7 @@ try{
   await page.locator('[data-custom-block="'+benefit.id+'"]').first().scrollIntoViewIfNeeded();await page.screenshot({path:out+'/inline-rate-and-benefit.png'});pass('Rates and benefit-table cells edit directly in the document, with formatting and durable save');
   const bad=await employee.request.post(base+'/api/operations/inquiries/'+r.id+'/save',{data:{...payload(r),customization:{id:r.customization.id,edits:{...r.customization.edits,'not-a-section':{text:'invalid'}}}}});assert.equal(bad.status(),409);
   assert.equal((await record(employee,r.id)).revision,r.revision);pass('Invalid document section edits are rejected without changing the inquiry');
-  await page.reload();await page.getByRole('button',{name:'Inquiries',exact:true}).click();await page.getByRole('link',{name:'Open '+r.fields.company,exact:true}).filter({hasText:r.id}).click();await page.getByRole('button',{name:/Start handling|Continue in this tab/}).click();await page.getByText('You’re handling this inquiry',{exact:true}).waitFor();await page.getByRole('button',{name:'Edit document',exact:true}).click();await page.locator('[data-custom-block="'+rate.id+'"]').first().waitFor();assert.equal(await page.locator('[data-custom-block="'+rate.id+'"]').first().innerText(),rateText);
+  await page.reload();await navigate(page,'Inquiries');await page.getByRole('link',{name:'Open '+r.fields.company,exact:true}).filter({hasText:r.id}).click();await page.getByRole('button',{name:/Start handling|Continue in this tab/}).click();await page.getByText('Handling: you',{exact:true}).waitFor();await page.getByRole('button',{name:'Edit document',exact:true}).click();await page.locator('[data-custom-block="'+rate.id+'"]').first().waitFor();assert.equal(await page.locator('[data-custom-block="'+rate.id+'"]').first().innerText(),rateText);
   await page.setViewportSize({width:390,height:844});await page.waitForTimeout(400);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:out+'/custom-mobile.png'});await page.setViewportSize({width:1540,height:1000});pass('Customized content survives reload and remains contained on phones');
   await page.getByRole('button',{name:'PDF preview',exact:true}).click();await page.locator('.ops-doc-preview[aria-busy="false"]').waitFor();assert.equal(await page.locator('.ops-doc-preview [role="alert"]').count(),0);await page.locator('.ops-doc-page').first().scrollIntoViewIfNeeded();await page.screenshot({path:out+'/custom-pdf.png'});
   await page.getByRole('button',{name:'Prepare PDF & email',exact:true}).click();await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='Send to supervisor for approval'&&!b.disabled));

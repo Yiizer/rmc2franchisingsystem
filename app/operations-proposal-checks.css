@@ -1,0 +1,46 @@
+/* Self-contained styles: checks also appear in document dialogs. */
+.ops-proposal-checks { min-width: 0; padding: 18px; margin: 0 0 22px; border: 1px solid #dce2e9; border-radius: 8px; background: #fff; color: #21344e; font-size: 13px; line-height: 1.55; }
+.ops-proposal-checks .ops-checks-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+.ops-proposal-checks h3 { display: flex; align-items: center; gap: 7px; font-size: 15px; font-weight: 600; margin: 0; }
+.ops-proposal-checks .ops-checks-heading p { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; font-size: 11px; margin: 5px 0 0; color: #58677c; }
+.ops-checks-disclosure { padding: 2px 6px; background: #edf1f7; border-radius: 4px; color: #425775; }
+.ops-proposal-checks .ops-checks-summary { display: flex; align-items: center; gap: 9px; padding: 11px 13px; border-radius: 6px; }
+.ops-checks-summary.matched { color: #14685c; background: #e5f3ee; }
+.ops-checks-summary.attention { color: #735200; background: #fff4c9; }
+.ops-proposal-checks svg { flex-shrink: 0; }
+.ops-proposal-checks .ops-checks-custom { display: flex; align-items: flex-start; gap: 9px; border-top: 1px solid #dce2e9; padding-top: 13px; margin-top: 13px; }
+.ops-proposal-checks .ops-checks-custom svg { margin-top: 3px; color: #876300; }
+.ops-proposal-checks .ops-checks-custom p { color: #58677c; font-size: 12px; margin: 3px 0 0; }
+.ops-proposal-checks .ops-checks-results { margin-top: 14px; display: grid; gap: 12px; }
+.ops-proposal-checks .ops-check-item { padding: 13px 14px; border: 1px solid #e2d5a5; border:1px solid var(--ops-line); border-radius: 6px; background: #fffdf5; min-width: 0; }
+.ops-proposal-checks .ops-check-item.error { border-color: #e4c0bb; border-left-color: #a43930; background: #fff8f7; }
+.ops-proposal-checks .ops-check-item h4 { display: flex; align-items: center; gap: 7px; margin: 0 0 6px; font-size: 13px; font-weight: 600; color: #735200; }
+.ops-proposal-checks .ops-check-item.error h4 { color: #a43930; }
+.ops-proposal-checks .ops-check-item p { margin: 0; font-size: 12px; }
+.ops-proposal-checks ul { margin: 6px 0 0; padding-left: 18px; }
+.ops-proposal-checks li { margin: 5px 0; }
+.ops-proposal-checks .ops-check-values { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 12px; align-items: center; margin-top: 12px; }
+.ops-proposal-checks .ops-check-values > div { min-width: 0; }
+.ops-proposal-checks .ops-check-values small { display: block; font-size: 11px; color: #58677c; margin-bottom: 3px; }
+.ops-proposal-checks .ops-check-values b { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.ops-proposal-checks .ops-checks-note { color: #58677c; margin: 0; font-size: 12px; }
+@media (max-width: 760px) {
+  .ops-proposal-checks { padding: 14px; }
+  .ops-proposal-checks .ops-checks-heading .ops-btn { min-height: 44px; }
+  .ops-proposal-checks .ops-check-values { gap: 8px; }
+}
+
+/* Requested results stay compact, including inside the saved-PDF viewer. */
+.ops-proposal-checks { max-height:280px;overflow:auto;padding:12px;margin:0;overscroll-behavior:contain; }
+.ops-checks-context { color:#526077;font-size:11px;margin:0 0 8px; }
+.ops-proposal-checks .ops-checks-summary { padding:9px;font-size:12px; }
+.ops-proposal-checks .ops-checks-results { gap:8px;margin-top:10px; }
+.ops-proposal-checks .ops-check-item { padding:10px; }
+.ops-proposal-checks .ops-check-values { gap:6px; }
+.ops-check-control > small { display:block;color:#526077;font-size:11px;margin:6px 0; }
+.ops-saved-pdf > .ops-proposal-checks { border-radius:0;border-inline:0; }
+.ops-saved-pdf-toolbar .ops-check-proposal { min-height:44px;padding:8px 12px; }
+.ops-checker-label { display:flex;flex-direction:column;gap:3px;font-size:12px;line-height:1.4;color:#17375e; }
+.ops-checker-label small { font-size:11px;color:#526077; }
+.ops-saved-pdf-toolbar .ops-saved-check-control { display:flex;flex-wrap:wrap;align-items:center;gap:10px; }
+.ops-doc-controls .ops-checker-label { margin:2px 0 8px; }
