@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { allUsers, AppError, audit, db, inquiry, notify, persist, safeStorage, transaction } from './database';
-import { CLIENT_PROTECTION_MS, clientIdentity, clientState, protectionFor, reviewClient } from './client-rules';
+import { CLIENT_PROTECTION_MS, clientIdentity, clientState, isRegistered, protectedAgent, protectionFor, reviewClient } from './client-rules';
 import type { AgentProgressReport, FormFields, InquiryRecord, Staff } from './types';
 
 export function assertClientReady(record:InquiryRecord,allowIdentify=false){
@@ -18,8 +18,10 @@ export function assertClientReady(record:InquiryRecord,allowIdentify=false){
 export function updateClientReview(record:InquiryRecord,user?:Staff){
   const previous=record.clientReview?.state;
   record.clientReview=reviewClient(record,matchingInquiries(record));
+  // Completed work is never held; its matches stay informational (clientState overlaps).
+  if(isRegistered(record)&&record.clientReview.state==='duplicate')record.clientReview={...record.clientReview,state:'clear'};
   const expiredRepeat=record.clientReview.matches.find(match=>match.expiredSameAgent);
-  if(expiredRepeat&&!record.closure){
+  if(expiredRepeat&&!record.closure&&!isRegistered(record)){
     record.status='Declined';record.closure={kind:'declined',at:new Date().toISOString(),by:user?.id||'system',reason:'Same agent requested the same client after their previous 30-day registration expired.',relatedId:expiredRepeat.inquiryId};
     if(user)audit(record,user,'Automatically declined repeated request from an expired agent registration');
   }
@@ -32,7 +34,7 @@ export function updateClientReview(record:InquiryRecord,user?:Staff){
 export function startClientProtection(record:InquiryRecord,at:string,kind:'proposal'|'details',fields:FormFields=record.fields){
   if(record.protection)return;
   const existing=protectionFor(record);
-  record.protection=existing||{startedAt:at,activityAt:at,expiresAt:new Date(Date.parse(at)+CLIENT_PROTECTION_MS).toISOString(),agentName:fields.agentName||'Agent',agentEmail:fields.agentEmail||'',agentPhone:fields.agentPhone||'',activityKind:kind};
+  record.protection=existing||{startedAt:at,activityAt:at,expiresAt:new Date(Date.parse(at)+CLIENT_PROTECTION_MS).toISOString(),...protectedAgent(record,fields),activityKind:kind};
 }
 export function reviewClientRegistration(id:string,user:Staff,input:unknown){
   const body=z.object({revision:z.number().int(),action:z.enum(['recheck','distinct','reassign-expired']),matchId:z.string().optional(),note:z.string().trim().max(3000).default('')}).strict().parse(input);
@@ -48,6 +50,7 @@ export function reviewClientRegistration(id:string,user:Staff,input:unknown){
       const fresh=reviewClient(record,matchingInquiries(record));
       if(body.action==='distinct'){if(!body.matchId)throw new AppError('Choose the specific match to review.');fresh.matches=fresh.matches.filter(match=>match.inquiryId===body.matchId);}
       if(!fresh.matches.length)throw new AppError('Recheck availability; no matching client remains.',409);
+      if(body.action==='distinct'&&fresh.matches.some(match=>!match.expired)&&!(user.role==='Supervisor'&&user.canApprove))throw new AppError('An approving supervisor must decide whether an active or registered client is a different client.',403);
       if(fresh.matches.some(match=>match.expiredSameAgent))throw new AppError('The same agent cannot restart an expired registration. Recheck to decline this request.',409);
       if(body.action==='reassign-expired'&&fresh.matches.some(match=>!match.expired||match.sameAgent))throw new AppError('Only expired registrations for a different agent can be reassigned. Review the current matches first.',409);
       record.clientReview={...fresh,identity:clientIdentity(record),exceptions:[...(record.clientReview?.identity===clientIdentity(record)?record.clientReview.exceptions||[]:[]),...fresh.matches.map(match=>({inquiryId:match.inquiryId,identity:clientIdentity(inquiry(match.inquiryId))}))],reviewedBy:user.id,reviewedAt:new Date().toISOString(),note:body.note};

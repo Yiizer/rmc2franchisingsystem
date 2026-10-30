@@ -1,0 +1,41 @@
+/* Status header for a submitted proposal. Tone only tints; every state also has its own icon and words. */
+.ops-workspace-redesign .ops-submission-status{margin:0 0 16px;padding:0;border:1px solid var(--ops-rule);border-radius:12px;background:var(--ops-surface);overflow:hidden;--tone:var(--ops-new);--tone-tint:var(--ops-info-tint)}
+.ops-submission-status.tone-hold{--tone:var(--ops-hold);--tone-tint:var(--ops-hold-tint)}
+.ops-submission-status.tone-error{--tone:var(--ops-error);--tone-tint:var(--ops-error-tint)}
+.ops-submission-status.tone-done{--tone:var(--ops-done);--tone-tint:var(--ops-done-tint)}
+.ops-submission-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(200px,280px);gap:20px 32px;padding:20px 24px;border-left:4px solid var(--tone)}
+.ops-submission-lead{min-width:0}
+.ops-submission-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--tone-tint);color:var(--tone);font-size:12px;font-weight:600;line-height:1.4}
+.ops-workspace-redesign .ops-submission-status h2{margin:10px 0 4px;font-size:18px;line-height:1.35;font-weight:600;color:var(--ops-navy)}
+.ops-submission-status p{margin:0}
+.ops-submission-sub{font-size:12px;line-height:1.5;color:var(--ops-muted-text)}
+.ops-submission-status .ops-submission-body{margin-top:8px;font-size:13px;line-height:1.55;color:var(--ops-ink)}
+.ops-submission-note{display:flex;flex-direction:column;gap:4px;margin:12px 0 0;padding:10px 12px;border-left:3px solid var(--ops-hold);background:var(--ops-hold-tint);border-radius:0 6px 6px 0;font-size:12px;line-height:1.5;color:var(--ops-ink);overflow-wrap:anywhere}
+.ops-submission-note small{color:var(--ops-muted-text);font-size:12px}
+.ops-submission-meta{display:grid;align-content:start;gap:8px;margin:0;font-size:12px}
+.ops-submission-meta div{display:grid;grid-template-columns:76px minmax(0,1fr);gap:8px;min-width:0}
+.ops-submission-meta dt{color:var(--ops-muted-text);font-size:11px;line-height:1.5}
+.ops-submission-meta dd{margin:0;color:var(--ops-ink);font-weight:500;line-height:1.45;overflow-wrap:anywhere}
+.ops-submission-flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;list-style:none;margin:0;padding:14px 24px;border-top:1px solid var(--ops-rule);background:#fafcff}
+.ops-submission-flow li{position:relative;display:flex;align-items:center;gap:10px;min-width:0;margin:0;color:var(--ops-muted-text)}
+.ops-submission-flow li:not(:last-child):after{content:"";flex:1;min-width:12px;height:2px;border-radius:2px;background:var(--ops-rule)}
+.ops-submission-flow li.complete:not(:last-child):after{background:#acd2b9}
+.ops-submission-step-icon{display:flex;align-items:center;justify-content:center;flex:none;width:36px;height:36px;border:1px solid var(--ops-rule);border-radius:50%;background:var(--ops-info-tint)}
+.ops-submission-step-text{display:flex;flex-direction:column;min-width:0}
+.ops-submission-flow b{font-size:12px;line-height:1.4;font-weight:600}
+.ops-submission-flow small{font-size:11px;line-height:1.4}
+.ops-submission-flow .complete{color:var(--ops-done)}
+.ops-submission-flow .complete .ops-submission-step-icon{background:var(--ops-done-tint);border-color:#b5d6c0}
+.ops-submission-flow .current{color:var(--tone)}
+.ops-submission-flow .current .ops-submission-step-icon{background:var(--tone-tint);border-color:var(--tone);box-shadow:0 0 0 3px var(--tone-tint)}
+.ops-submission-flow .current small{font-weight:600}
+.ops-submission-next{display:flex;align-items:flex-start;gap:8px;padding:12px 24px;border-top:1px solid var(--ops-rule);font-size:12px;line-height:1.5;color:var(--ops-muted-text)}
+.ops-submission-next svg{flex:none;margin-top:2px}
+.ops-submission-next b{color:var(--ops-ink);font-weight:600}
+@media(max-width:760px){
+ .ops-submission-main{grid-template-columns:1fr;padding:16px}
+ .ops-submission-meta{padding-top:12px;border-top:1px solid var(--ops-rule)}
+ .ops-submission-flow{grid-template-columns:1fr;gap:6px;padding:14px 16px}
+ .ops-submission-flow li:not(:last-child):after{display:none}
+ .ops-submission-next{padding:12px 16px}
+}

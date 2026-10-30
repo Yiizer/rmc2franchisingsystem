@@ -25,9 +25,10 @@ export function useProposalDetailCheck(input?: ProposalCheckInputs) {
   }
   return {id,snapshot,stale,run};
 }
-type CheckState = ReturnType<typeof useProposalDetailCheck>;
-export function ProposalCheckButton({check,disabled=false}:{check:CheckState;disabled?:boolean}) {
-  return <button className="ops-btn ops-check-proposal" disabled={disabled} aria-controls={check.snapshot ? check.id : undefined} onClick={check.run}><ListChecks size={16}/>{check.stale ? 'Check again' : 'Check proposal details'}</button>;
+export type ProposalCheckState = ReturnType<typeof useProposalDetailCheck>;
+type CheckState = ProposalCheckState;
+export function ProposalCheckButton({check,disabled=false,title}:{check:CheckState;disabled?:boolean;title?:string}) {
+  return <button className="ops-btn ops-check-proposal" title={title} disabled={disabled} aria-controls={check.snapshot ? check.id : undefined} onClick={check.run}><ListChecks size={16}/>{check.stale ? 'Check again' : 'Check proposal details'}</button>;
 }
 export function ProposalCheckResults({check}:{check:CheckState}) {
   const {snapshot,stale,id} = check;

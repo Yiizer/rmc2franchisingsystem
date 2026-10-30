@@ -7,7 +7,6 @@
 .ops-workspace-redesign {
   max-width: 1540px;
   margin: 0 auto;
-  padding-bottom: 32px;
   color: var(--ops-navy);
 }
 
@@ -143,8 +142,6 @@
 .ops-rail-handling .ops-link { font-size: 11px; margin-left: auto; }
 .ops-rail-handling small { font-size: 11px; }
 .ops-rail-actions { display: flex; flex-direction: column; align-items: stretch; gap: 13px; margin-top: 18px; }
-.ops-main-action > .ops-btn { width: 100%; min-height: 46px; line-height: 1.4; padding: 12px 14px; text-align: left; justify-content: center; white-space: normal; overflow-wrap: anywhere; }
-.ops-main-action > .ops-btn svg { flex: none; }
 .ops-rail-actions > .ops-link { align-self: flex-start; }
 .ops-rail-actions > small { font-size: 11px; line-height: 1.5; }
 .ops-preparation-checklist { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 0 ; margin: 0 ; list-style: none; }
@@ -301,9 +298,6 @@
   .ops-workspace-main { width: 100%; }
   .ops-workspace-rail { position: static; width: 100%; max-height: none; overflow: visible; border-left: 0; border-top: 1px solid var(--ops-rule); padding: 24px; }
   .ops-rail-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .ops-workspace-redesign { padding-bottom: 124px; }
-  .ops-main-action { position: fixed; bottom: 0; left: 224px; right: 0; z-index: 45; padding: 12px 20px calc(12px + env(safe-area-inset-bottom)); background: white; border-top: 1px solid var(--ops-rule); box-shadow: 0 -4px 20px #0a204708; }
-  .ops-main-action .ops-locked-reason { margin-top: 5px; font-size: 11px; }
   .ops-workspace-rail > .ops-rail-handling { justify-content: flex-start; }
   .ops-rail-handling .ops-link { margin-left: 12px; }
   .ops-workspace-redesign .ops-doc-editor.embedded > .ops-doc-layout { grid-template-columns: 250px minmax(0, 1fr); }
@@ -322,8 +316,6 @@
   .ops-template-card { padding: 16px; }
   .ops-template-card.selected { padding: 15px; }
   .ops-workspace-redesign .ops-template-card-actions .ops-btn { min-height: 44px; }
-  .ops-main-action { left: 0; }
-  .ops-workspace-redesign .ops-main-action > .ops-btn { font-size: 12px; min-height: 44px; }
   .ops-workspace-rail { padding: 22px 16px; }
   .ops-key-details { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 14px; }
   .ops-form-followup { align-items: flex-start; flex-direction: column; gap: 12px; }
@@ -371,8 +363,6 @@
 .ops-workspace-redesign .ops-template-card .ops-template-description { color:#334155; }
 .ops-workspace-redesign .ops-template-card .ops-template-match { color:#40516a; }
 .ops-workspace-redesign .ops-ws-summary .ops-card-head p,.ops-workspace-redesign .ops-ws-summary .ops-summary-agent { color:#40516a; }
-.ops-main-action .ops-save-changes { margin-bottom:10px; }
-@media(max-width:960px) { .ops-workspace-redesign:has(.ops-main-action .ops-save-changes) { padding-bottom:180px; } }
 
 .ops-template-suggest-actions { display:flex;flex-wrap:wrap;align-items:center;gap:12px; }
 .ops-template-suggest-actions small { color:#526077;font-size:12px; }
@@ -411,16 +401,11 @@
   .ops-workspace-templates .ops-template-advisor { padding:14px; }
 }
 /* One workflow action, rendered once and pinned on phones. */
-.ops-next-action-panel{padding:0 0 20px;border-bottom:1px solid var(--ops-line);margin-bottom:18px;display:flex;flex-direction:column;gap:10px}
-.ops-next-action-panel>h2{font-size:14px;margin:0 0 4px}.ops-next-action-panel>.ops-btn{width:100%;min-height:44px}
-.ops-next-secondary{display:flex;gap:8px;flex-wrap:wrap}.ops-next-secondary>.ops-btn{flex:1}.ops-next-secondary>small{flex-basis:100%;font-size:12px;color:var(--ops-muted)}
 .ops-app .ops-workspace-rail{padding-top:20px}.ops-workspace-rail>.ops-rail-handling{margin-top:0;padding:12px 0;border-top:0}
 .ops-workspace-steps button[aria-disabled=true]{opacity:.6;cursor:help}.ops-workspace-steps button[aria-disabled=true]:focus-visible{outline:3px solid var(--ops-orange)}
 #client-protection-controls{min-height:0;margin-bottom:20px}#client-protection-controls>h3{font-size:14px;margin-bottom:12px}
 .ops-client-protection:not(:has(.ops-client-countdown)){padding:0;min-height:0}.ops-client-protection:not(:has(.ops-client-countdown)) .ops-client-protection-main{padding:14px 16px;min-height:0;gap:12px}.ops-client-protection:not(:has(.ops-client-countdown)) .ops-client-shield{width:32px;height:32px}.ops-client-protection:not(:has(.ops-client-countdown)) .ops-client-agent{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.ops-client-protection:not(:has(.ops-client-countdown)) .ops-client-agent>span{display:none}.ops-client-protection:not(:has(.ops-client-countdown)) .ops-client-agent small{margin:0}
 .ops-request-footer{border-top:1px solid var(--ops-line);margin-top:24px;padding:16px 0}.ops-request-footer .ops-registration-actions{margin:0}
-@media(max-width:960px){.ops-workspace-redesign{padding-bottom:160px}.ops-workspace-redesign .ops-next-action-panel{position:fixed;bottom:0;left:16px;right:16px;z-index:var(--ops-z-sticky);background:var(--ops-surface);border:1px solid var(--ops-line);border-radius:10px 10px 0 0;padding:12px 16px;margin:0;box-shadow:0 -4px 18px #0a204712;gap:8px;max-height:32dvh;overflow:auto}.ops-next-action-panel>h2{display:none}.ops-next-action-panel .ops-locked-reason{margin:0;font-size:12px}.ops-next-secondary{flex-wrap:nowrap}.ops-next-secondary>.ops-btn{min-width:0;white-space:normal;font-size:12px}.ops-next-secondary>small{font-size:11px;flex-basis:120px}.ops-workspace-redesign .ops-workspace-rail{position:static;max-height:none}.ops-next-action-panel:focus-within{z-index:var(--ops-z-sticky)}}
-@media(min-width:761px) and (max-width:960px){.ops-workspace-redesign .ops-next-action-panel{left:225px}}
 .ops-workspace-redesign #client-protection-controls{margin-bottom:12px}.ops-workspace-redesign #client-protection-controls .ops-client-protection{margin-bottom:0}.ops-workspace-redesign .ops-request-details[open]{margin-top:0}.ops-workspace-redesign .ops-ws-summary>.ops-card-head{padding-top:12px}.ops-workspace-redesign .ops-ws-summary>.ops-card-head p{margin-top:0}
 /* Protection row on the review step: left-aligned, compact. */
 .ops-workspace-redesign #client-protection-controls .ops-client-protection-main{justify-content:flex-start}
@@ -428,7 +413,6 @@
 .ops-next-main{gap:8px}
 
 /* ===== Inquiry page — mockup layout (Client Directory revamp PDF) ===== */
-.ops-workspace-redesign{padding-bottom:0}
 .ops-ws-breadcrumb{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ops-muted);margin:0 0 10px}
 .ops-ws-breadcrumb button{border:0;background:none;padding:2px 0;color:#2455a3;font:inherit;cursor:pointer}
 .ops-ws-breadcrumb button:hover{text-decoration:underline}
@@ -495,11 +479,13 @@
 @media(max-width:420px){.ops-action-bar{margin:20px -14px 0;padding:10px 14px}}
 .ops-action-bar{background:#fff}
 /* Bar is fixed to the bottom of the content area (left edge follows the sidebar width). */
-.ops-workspace-redesign{padding-bottom:96px}
+/* One clearance rule: --ops-action-bar-h is measured by ActionBar; the fallback covers the first paint. */
+.ops-simple-workspace.ops-workspace-redesign.ops-workspace-redesign{padding-bottom:calc(var(--ops-action-bar-h,96px) + 24px + env(safe-area-inset-bottom,0px))}
+:root:has(.ops-workspace-redesign){scroll-padding-bottom:calc(var(--ops-action-bar-h,96px) + 16px + env(safe-area-inset-bottom,0px))}
 .ops-action-bar{position:fixed;left:var(--ops-sidebar-width);right:0;bottom:0;margin:0;padding:14px 40px}
 @media(min-width:761px){.ops-body.rail .ops-action-bar{left:var(--ops-sidebar-rail)}}
 @media(max-width:1050px){.ops-action-bar{left:205px;margin:0;padding:12px 24px}}
-@media(max-width:760px){.ops-action-bar{left:0;margin:0;padding:10px 16px}.ops-workspace-redesign{padding-bottom:120px}}
+@media(max-width:760px){.ops-action-bar{left:0;margin:0;padding:10px 16px}.ops-simple-workspace.ops-workspace-redesign.ops-workspace-redesign{padding-bottom:calc(var(--ops-action-bar-h,168px) + 24px + env(safe-area-inset-bottom,0px))}:root:has(.ops-workspace-redesign){scroll-padding-bottom:calc(var(--ops-action-bar-h,168px) + 16px + env(safe-area-inset-bottom,0px))}}
 @media(max-width:420px){.ops-action-bar{margin:0;padding:10px 14px}}
 /* Submitted details are a single readable card, matching the inquiry summary. */
 .ops-workspace-redesign .ops-workspace-main .ops-ws-summary{background:var(--ops-surface);border:1px solid var(--ops-rule);border-radius:12px;overflow:hidden;margin:0}
@@ -532,7 +518,7 @@
 }
 
 /* The step heading and its intro read as one block. */
-.ops-workspace-redesign .ops-stage-guide{margin-bottom:-10px}
+.ops-workspace-redesign[data-stage="1"] .ops-stage-guide{margin-bottom:-10px}
 .ops-workspace-redesign .ops-workspace-templates>.ops-section-intro:first-child{padding-top:0}
 
 /* Select is the card's main action; Customize is the quieter alternative. */
@@ -549,3 +535,21 @@
  .ops-app .ops-workspace-redesign .ops-doc-editor .ops-doc-controls .ops-doc-field-actions .ops-btn{flex:1 1 auto;white-space:nowrap;min-height:40px}
 }
 
+
+/* Submitted proposal: one document card with a single header (tabs left, actions right). */
+.ops-workspace-redesign .ops-doc-card{margin:0 0 20px;padding:0;border:1px solid var(--ops-rule);border-radius:12px;background:var(--ops-surface);overflow:hidden}
+.ops-doc-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px;border-bottom:1px solid var(--ops-rule)}
+.ops-doc-head .ops-package-tabs{padding:0;border:0}
+.ops-doc-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}
+.ops-workspace-redesign .ops-doc-actions .ops-btn{min-height:40px;white-space:nowrap}
+.ops-workspace-redesign .ops-doc-card .ops-package-tabs button{min-height:40px}
+.ops-workspace-redesign .ops-doc-card>.ops-message{margin:12px 16px}
+.ops-workspace-redesign .ops-doc-card>.ops-ws-email{padding:16px}
+@media(max-width:760px){
+ .ops-doc-head{flex-direction:column;align-items:stretch;padding:10px 12px}
+ .ops-doc-actions{justify-content:stretch}
+ .ops-workspace-redesign .ops-doc-actions .ops-btn,.ops-workspace-redesign .ops-doc-card .ops-package-tabs button{min-height:44px}
+ .ops-doc-actions .ops-btn{flex:1 1 auto;justify-content:center}
+}
+.ops-workspace-redesign .ops-stage-guide.is-tight{margin-bottom:4px}
+.ops-workspace-redesign .ops-doc-actions .ops-btn{padding:8px 16px}

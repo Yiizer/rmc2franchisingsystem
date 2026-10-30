@@ -16,11 +16,13 @@ export function clientIdentity(record:Pick<InquiryRecord,'fields'|'source'>){ret
 export function clientIdentityKeys(record:Pick<InquiryRecord,'fields'|'source'>):[string,string][]{
   return [...companyKeys(record).map(value=>['company',value] as [string,string]),...personKeys(record).map(value=>['person',value] as [string,string]),...(record.source.sourceHash?[['file',record.source.sourceHash] as [string,string]]:[])];
 }
+// The protected agent is the one on the original submitted form; working fields are only a fallback (e.g. PDF intake).
+export function protectedAgent(record:Pick<InquiryRecord,'source'>,fields:FormFields){const src=record.source.fields;return {agentName:src.agentName?.trim()||fields.agentName||'Agent',agentEmail:src.agentEmail?.trim()||fields.agentEmail||'',agentPhone:src.agentPhone?.trim()||fields.agentPhone||''};}
 export function protectionFor(record:InquiryRecord):ClientProtection|null {
   if(record.protection)return record.protection;
   const contacts=[...record.detailRequests.map(item=>({at:item.at,fields:record.fields,kind:'details' as const})),...record.submissions.filter(item=>item.delivery).map(item=>({at:item.delivery!.at,fields:item.fields,kind:'proposal' as const}))].filter(item=>Number.isFinite(Date.parse(item.at))).sort((a,b)=>a.at.localeCompare(b.at));
   const first=contacts[0];
-  return first?{startedAt:first.at,activityAt:first.at,expiresAt:new Date(Date.parse(first.at)+CLIENT_PROTECTION_MS).toISOString(),agentName:first.fields.agentName||'Agent',agentEmail:first.fields.agentEmail||'',agentPhone:first.fields.agentPhone||'',activityKind:first.kind}:null;
+  return first?{startedAt:first.at,activityAt:first.at,expiresAt:new Date(Date.parse(first.at)+CLIENT_PROTECTION_MS).toISOString(),...protectedAgent(record,first.fields),activityKind:first.kind}:null;
 }
 export function isClientArchived(record:InquiryRecord,now=Date.now()){const protection=protectionFor(record);return !!record.closure||!!protection&&Date.parse(protection.expiresAt)<=now;}
 export function protectionDaysLeft(protection:ClientProtection,now=Date.now()){return Math.max(0,Math.ceil((Date.parse(protection.expiresAt)-now)/86400000));}
@@ -38,8 +40,9 @@ export function duplicateClients(record:InquiryRecord,records:InquiryRecord[],no
     if(other.id===record.id||isSampleForm(other.source))return false;
     // A completed handover must not block later transfers to new agents. Keep
     // an expired former agent's registration as evidence for their own repeats.
-    if(other.closure){const oldProtection=protectionFor(other);if(other.closure.kind!=='transferred'||!oldProtection||Date.parse(oldProtection.expiresAt)>now||!sameAgent(record.source.fields,other.source.fields))return false;}
-    if(other.clientReview?.state==='duplicate'&&!protectionFor(other))return false;
+    // A declined request whose protection is still active keeps its claim; only expiry releases it.
+    if(other.closure){const oldProtection=protectionFor(other);if(other.closure.kind==='declined'&&oldProtection&&Date.parse(oldProtection.expiresAt)>now){/* still protected: remains a blocker */}else if(other.closure.kind!=='transferred'||!oldProtection||Date.parse(oldProtection.expiresAt)>now||!sameAgent(record.source.fields,other.source.fields))return false;}
+    if(other.clientReview?.state==='duplicate'&&!isRegistered(other))return false;
     if(other.clientReview?.state==='identify'&&record.source.sourceHash!==other.source.sourceHash&&!protectionFor(other))return false;
     // New registrations reserve a client atomically. For legacy rows without a
     // check, the oldest inquiry wins instead of two rows blocking each other.
@@ -53,7 +56,7 @@ export function duplicateClients(record:InquiryRecord,records:InquiryRecord[],no
     if(ownCompanies.some(value=>companyKeys(other).includes(value)))reasons.push('Same account / company');
     if(people.some(name=>personKeys(other).includes(name)))reasons.push('Same client / addressee name');
     if(record.source.sourceHash&&record.source.sourceHash===other.source.sourceHash)reasons.push('Same submitted file');
-    const expired=isClientArchived(other,now),agentMatches=sameAgent(record.source.fields,other.source.fields),expiredSameAgent=expired&&agentMatches;
+    const otherProtection=protectionFor(other),expired=otherProtection?Date.parse(otherProtection.expiresAt)<=now:isClientArchived(other,now),agentMatches=sameAgent(record.source.fields,other.source.fields),expiredSameAgent=expired&&agentMatches;
     if(reasons.length&&expired)reasons.push(expiredSameAgent?'Same agent’s previous registration expired':'Expired registration — supervisor approval required');
     return reasons.length?[{expired,expiredSameAgent,inquiryId:other.id,company:other.fields.company||'Client details pending',agentName:protectionFor(other)?.agentName||other.fields.agentName||'Agent',sameAgent:agentMatches,reasons}]:[];
   });
@@ -63,9 +66,14 @@ export function reviewClient(record:InquiryRecord,records:InquiryRecord[],now=Da
   const matches=duplicateClients(record,records,now);
   return {...previous,identity,matches,state:matches.length?'duplicate':!normalizeClient(record.fields.company)&&!person(record.fields.contactName)&&!person(record.fields.addressee)?'identify':'clear'};
 }
+// Completed work: an outbound reply started protection, or a supervisor approved a submission
+// (Approved — sending / email failed / Sent). Such a record has already claimed its client.
+export function isRegistered(record:InquiryRecord):boolean{return protectionFor(record)!=null||record.submissions.some(item=>item.decision?.action==='approve');}
 export function clientState(record:InquiryRecord,records:InquiryRecord[],now=Date.now()):ClientState {
   const protection=protectionFor(record);
   if(isClientArchived(record,now))return {state:'archived',matches:record.clientReview?.matches||[],protection};
+  // A registered record is never held; any remaining matches are informational overlaps only.
+  if(isRegistered(record)){const overlaps=reviewClient(record,records,now).matches;return {state:'clear',matches:[],protection,...(overlaps.length?{overlaps}:{})};}
   const fresh=reviewClient(record,records,now);
   // A flagged import remains held until an explicit recheck/review; expiry
   // must not silently activate previously rejected agents' submissions.

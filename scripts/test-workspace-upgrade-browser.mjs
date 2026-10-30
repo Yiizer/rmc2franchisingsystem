@@ -41,7 +41,7 @@ try{
   await sp.getByLabel('I reviewed the customized content, including rates, benefits and conditions.',{exact:true}).check();
   const flag=sp.getByLabel('Flag for correction',{exact:true}).first();await flag.check();assert.equal(await approve.isDisabled(),true);await flag.uncheck();assert.equal(await approve.isEnabled(),true);
   await sp.getByRole('button',{name:'Return for correction',exact:true}).click();assert.equal(await sp.getByRole('dialog').getByRole('button',{name:'Send correction request',exact:true}).isDisabled(),true);await sp.getByRole('dialog').getByRole('button',{name:'Cancel',exact:true}).click();
-  await approve.click();await sp.getByText('Approved reply saved to the local test mailbox',{exact:true}).waitFor();
+  await approve.click();await sp.getByRole('heading',{name:'Reply sent',exact:true}).waitFor();
   pass('Discard restores the submitted version; review flags block approval and the verified reply reaches the local test mailbox');
   await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'Open navigation',exact:true}).click();await navigate(page,'Settings');await page.screenshot({path:out+'/mobile-settings.png'});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));pass('Account settings fit on mobile and notification counts have dedicated high-contrast badges');
   assert.deepEqual(errors,[]);pass('No browser JavaScript errors during the new workflows');

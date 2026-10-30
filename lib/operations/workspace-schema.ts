@@ -38,6 +38,11 @@ export function installWorkspaceIndexes(database: DatabaseSync) {
   database.exec(`
     INSERT OR IGNORE INTO inquiry_index_pending SELECT id FROM inquiry_summaries WHERE json_extract(summary,'$.status')='Sent' AND json_extract(summary,'$.preparedBy') IS NULL;
     INSERT OR IGNORE INTO inquiry_index_pending SELECT id FROM inquiries WHERE id NOT IN (SELECT id FROM inquiry_summaries);
+    -- Projections now keep approve decisions (isRegistered); refresh older ones that dropped them.
+    INSERT OR IGNORE INTO inquiry_index_pending SELECT s.id FROM inquiry_summaries s JOIN inquiries i ON i.id=s.id
+      WHERE json_extract(s.summary,'$.status') IN ('Sent','Approved — sending','Approved — email failed')
+      AND COALESCE(json_array_length(json_extract(s.data,'$.submissions')),0)=0
+      AND EXISTS(SELECT 1 FROM json_each(i.data,'$.submissions') x WHERE json_extract(x.value,'$.decision.action')='approve');
     INSERT OR IGNORE INTO notice_recipients(notice_id,user_id,is_read,at)
       SELECT n.id,r.value,EXISTS(SELECT 1 FROM json_each(n.data,'$.readBy') WHERE value=r.value),json_extract(n.data,'$.at')
       FROM notifications n, json_each(n.data,'$.recipientIds') r;
