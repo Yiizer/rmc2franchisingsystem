@@ -1,0 +1,73 @@
+/* RMC2 interface tokens.
+   Orange = the next thing to do. Navy = the shell and secondary actions.
+   Blue / green / amber = who is handling an inquiry. Status colors never reuse orange. */
+:root {
+ --ops-font:var(--font-plex),'Segoe UI',sans-serif; --ops-navy:#0d2142; --ops-orange:#c3410c; --ops-brand-orange:#ff791f;
+ /* Main action: RMC2 burnt orange with white text (5.2:1), as in the Client Directory revamp mockup. */
+ --ops-action:#c3410c; --ops-action-hover:#a8370a; --ops-action-ink:#fff; --ops-action-ring:#0d2142;
+ /* Secondary actions and links stay navy. */
+ --ops-secondary:#0d2142; --ops-secondary-hover:#eef2f8;
+ /* Handling state. */
+ --ops-avail:#2459a6; --ops-avail-hover:#1d4b8f; --ops-avail-ink:#1d4b8f; --ops-avail-tint:#eaf1fb; --ops-avail-line:#c7d8f0;
+ --ops-mine:#0f6b61; --ops-mine-hover:#0b514a; --ops-mine-ink:#1e643f; --ops-mine-tint:#f0fbf6; --ops-mine-line:#b7dccb;
+ --ops-other-ink:#885314; --ops-other-tint:#fff8e8; --ops-other-line:#f1dcae;
+ --ops-ink:#21344e; --ops-muted:#52647c; --ops-muted-text:var(--ops-muted); --ops-line:#dce2e9; --ops-rule:var(--ops-line); --ops-surface:#fff; --ops-canvas:#f7f8fc; --ops-amber-tint:#fff8e8; --ops-amber-line:#f1dcae;
+ /* Status colors. */
+ --ops-new:#2455a3; --ops-new-tint:#edf3ff; --ops-hold:#805500; --ops-hold-tint:#fff4dc; --ops-review:#713ba2; --ops-review-tint:#f4edfc;
+ --ops-error:#a52c26; --ops-error-tint:#fff0ee; --ops-done:#166a43; --ops-done-tint:#eaf6ee; --ops-info-tint:#edf1f7;
+ --ops-text-xs:12px; --ops-text-sm:13px; --ops-text:14px; --ops-text-lg:16px; --ops-title-sm:20px; --ops-title:28px;
+ --ops-space-1:4px; --ops-space-2:8px; --ops-space-3:12px; --ops-space-4:16px; --ops-space-6:24px; --ops-space-8:32px; --ops-space-12:48px;
+ --ops-radius:6px; --ops-card-radius:10px; --ops-shadow:0 2px 8px #0a204708; --ops-popover-shadow:0 12px 36px #0a204726;
+ --ops-z-sticky:30; --ops-z-sidebar:40; --ops-z-backdrop:70; --ops-z-drawer:80; --ops-z-modal:100; --ops-z-toast:120;
+ --ops-sidebar-width:224px; --ops-sidebar-rail:72px;
+}
+body,.ops-app{font-family:var(--ops-font);font-variant-numeric:tabular-nums}
+.ops-app .ops-ws-email pre{font-family:var(--ops-font)}
+
+/* Button levels. Every level shares one height so rows line up. */
+.ops-app.ops-app .ops-btn{border-radius:var(--ops-radius);font-size:var(--ops-text-sm);min-height:40px;transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out}
+/* Unclassed buttons and .secondary: white with a navy outline. */
+.ops-app .ops-btn{border-color:#b9c5d4;color:var(--ops-secondary)}
+.ops-app.ops-app .ops-btn.secondary{background:var(--ops-surface);border:1px solid #b9c5d4;color:var(--ops-secondary)}
+.ops-app.ops-app .ops-btn.secondary:hover:not(:disabled){background:var(--ops-secondary-hover);border-color:var(--ops-secondary)}
+/* Main action: orange. */
+.ops-app.ops-app .ops-btn.primary{background:var(--ops-action);border:1px solid var(--ops-action);color:var(--ops-action-ink);font-weight:650}
+.ops-app.ops-app .ops-btn.primary:hover:not(:disabled){background:var(--ops-action-hover);border-color:var(--ops-action-hover)}
+.ops-app.ops-app .ops-btn.primary svg{color:var(--ops-action-ink)}
+/* Start handling: blue means "available to pick up". */
+.ops-app.ops-app .ops-btn.ops-handling-start{background:var(--ops-avail);border:1px solid var(--ops-avail);color:#fff;font-weight:650}
+.ops-app.ops-app .ops-btn.ops-handling-start:hover:not(:disabled){background:var(--ops-avail-hover);border-color:var(--ops-avail-hover)}
+/* Pick up from a list: blue outline. */
+.ops-app.ops-app .ops-btn.ops-pickup{background:var(--ops-surface);border:1px solid var(--ops-avail);color:var(--ops-avail-ink);font-weight:600}
+.ops-app.ops-app .ops-btn.ops-pickup:hover:not(:disabled){background:var(--ops-avail-tint)}
+/* Your own work (Save & release, Save changes): green outline. */
+.ops-app.ops-app .ops-btn:is(.ops-handling-done,.ops-save-changes){background:var(--ops-surface);border:1px solid var(--ops-mine);color:var(--ops-mine-ink);font-weight:600}
+.ops-app.ops-app .ops-btn:is(.ops-handling-done,.ops-save-changes):hover:not(:disabled){background:var(--ops-mine-tint)}
+.ops-app.ops-app .ops-btn.ghost{background:transparent;border-color:transparent;color:var(--ops-secondary);text-decoration:none}
+.ops-app.ops-app .ops-btn.ghost:hover:not(:disabled){text-decoration:underline}
+.ops-app.ops-app .ops-btn.danger{background:var(--ops-surface);border:1px solid var(--ops-error);color:var(--ops-error)}
+.ops-app.ops-app .ops-btn.danger:hover:not(:disabled){background:var(--ops-error-tint)}
+.ops-app.ops-app .ops-btn:disabled,.ops-app.ops-app .ops-btn[aria-disabled=true]{background:#edf0f4;color:#5b677a;border-color:#d8dfe8;opacity:1;cursor:not-allowed;font-weight:500}
+.ops-app :is(button,a,input,select,textarea,summary,[tabindex]):focus-visible{outline:3px solid var(--ops-orange);outline-offset:3px}
+.ops-app.ops-app .ops-btn:is(.primary,.ops-handling-start):focus-visible{outline-color:var(--ops-action-ring)}
+
+/* Status pills: text color + tint, always with a dot or icon. */
+.ops-app.ops-app .ops-badge.blue{color:var(--ops-new);background:var(--ops-new-tint)}
+.ops-app.ops-app .ops-badge.preparing,.ops-app.ops-app .ops-badge.amber{color:var(--ops-hold);background:var(--ops-hold-tint)}
+.ops-app.ops-app .ops-badge.purple{color:var(--ops-review);background:var(--ops-review-tint)}
+.ops-app.ops-app .ops-badge.red{color:var(--ops-error);background:var(--ops-error-tint)}
+.ops-app.ops-app .ops-badge.green{color:var(--ops-done);background:var(--ops-done-tint)}
+.ops-app.ops-app .ops-badge.slate{color:var(--ops-muted);background:var(--ops-info-tint)}
+
+/* Color legend (Inquiries toolbar). */
+.ops-legend{position:relative}
+.ops-legend>summary{list-style:none;display:inline-flex;align-items:center;gap:6px;min-height:42px;padding:0 12px;border:1px solid #cdd9e8;border-radius:var(--ops-radius);background:#fff;color:var(--ops-secondary);font-size:13px;cursor:pointer;white-space:nowrap}
+.ops-legend>summary::-webkit-details-marker{display:none}
+.ops-legend>div{position:absolute;right:0;top:calc(100% + 6px);z-index:var(--ops-z-drawer);width:320px;background:#fff;border:1px solid var(--ops-line);border-radius:10px;box-shadow:var(--ops-popover-shadow);padding:16px;display:grid;gap:14px}
+.ops-legend h3{font-size:12px;color:var(--ops-muted);font-weight:600;margin:0 0 6px}
+.ops-legend ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.ops-legend li{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 8px;border-radius:6px}
+.ops-legend .lg-avail{background:var(--ops-avail-tint);color:var(--ops-avail-ink)}.ops-legend .lg-mine{background:var(--ops-mine-tint);color:var(--ops-mine-ink)}.ops-legend .lg-other{background:var(--ops-other-tint);color:var(--ops-other-ink)}
+.ops-legend .lg-action{background:var(--ops-action);color:var(--ops-action-ink);font-weight:650}
+@media(max-width:760px){.ops-app.ops-app .ops-btn{min-height:44px}.ops-legend>div{right:auto;left:0;width:min(320px,calc(100vw - 32px))}}
+@media(prefers-reduced-motion:reduce){.ops-app *{scroll-behavior:auto;transition:none;animation:none}}

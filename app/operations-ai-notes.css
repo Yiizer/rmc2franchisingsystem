@@ -22,7 +22,7 @@
 .ops-ai-notes .ops-ai-comment li{margin:5px 0}
 .ops-ai-notes .ops-ai-comment-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:11px}
 .ops-ai-notes .ops-ai-comment-actions .ops-link{display:flex;align-items:center;gap:5px;font-size:12px}
-.ops-ai-notes .ops-ai-comment-actions .ops-btn{min-height:32px;font-size:11px!important;padding:6px 9px}
+.ops-ai-notes .ops-ai-comment-actions .ops-btn{min-height:32px;font-size:11px;padding:6px 9px}
 .ops-ai-notes .ops-ai-footnote{font-size:11px;line-height:1.6;color:#6a7e98;margin-top:12px}
 .ops-ai-notes .ops-ai-value{padding:7px 9px;background:#f7f9fd;border-radius:5px;margin-top:9px}
 .ops-ai-notes .ops-ai-value small{display:block;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
@@ -35,7 +35,7 @@
 .ops-ai-notes .ops-ai-kept{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:#476788}
 .ops-ai-notes .ops-ai-plan b{display:block;font-size:13px;line-height:1.5;color:#15365c;overflow-wrap:anywhere}
 .ops-ai-notes .ops-ai-flow-arrow{display:flex;align-items:center;justify-content:center;gap:6px;color:#647d9c;padding:6px;font-size:10px;line-height:1}
-.ops-ai-notes .ops-ai-plan.suggested{background:#f1f8f5;border-color:#b9d8ca;border-left:3px solid #3f8d6b}
+.ops-ai-notes .ops-ai-plan.suggested{background:#f1f8f5;border-color:#b9d8ca;border:1px solid var(--ops-line)}
 .ops-ai-notes .ops-ai-plan.suggested .ops-ai-plan-label{justify-content:flex-start;color:#2f7156}
 .ops-ai-notes .ops-ai-plan.manual{background:#faf8f3;border-color:#e3d7bd;border-left-color:#bc9147}
 .ops-ai-notes .ops-ai-plan.manual .ops-ai-plan-label{color:#825d26}
@@ -46,7 +46,7 @@
 .ops-ai-notes .ops-ai-match-cue dt{display:flex;align-items:center;gap:6px;color:#496581;overflow-wrap:anywhere}
 .ops-ai-notes .ops-ai-match-cue svg{flex:none;color:#7590ac}
 .ops-ai-notes .ops-ai-match-cue dd{margin:0;color:#254d6f;font-weight:500;overflow-wrap:anywhere}
-.ops-ai-notes .ops-ai-use{width:100%;display:flex;align-items:center;justify-content:center;gap:7px;font-size:12px!important;min-height:36px;padding:8px 10px}
+.ops-ai-notes .ops-ai-use{width:100%;display:flex;align-items:center;justify-content:center;gap:7px;font-size:12px;min-height:36px;padding:8px 10px}
 .ops-ai-notes .ops-ai-preview{display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;min-height:36px;width:100%;margin-top:3px}
 .ops-ai-notes .ops-ai-visual-warning{border-top:1px solid #e5ebf4;padding-top:11px;margin-top:10px}
 .ops-ai-notes .ops-ai-visual-warning h4{display:flex;align-items:center;gap:6px;font-size:11px;line-height:1.5;color:#825d26;margin:0 0 7px;font-weight:600}

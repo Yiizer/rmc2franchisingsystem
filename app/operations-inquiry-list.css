@@ -1,0 +1,46 @@
+/* Inquiries, Closed and Approval queue reuse the Client Directory layout (dir-* classes). */
+.ops-inquiry-list .dir-page-heading p{color:var(--ops-muted);font-size:13px;margin-top:4px}
+.ops-inquiry-list .dir-toolbar{display:flex}
+.ops-inquiry-list .dir-table tbody th small,.ops-inquiry-list .dir-table td small{display:block;font-size:12px;color:var(--ops-muted);margin-top:3px;font-weight:400}
+.ops-inquiry-list .dir-table td{vertical-align:middle}
+.ops-inquiry-list .dir-table tbody tr{cursor:pointer}
+.ops-inquiry-list .dir-table tbody tr.is-selected>*{background:var(--ops-avail-tint)}
+.ops-inquiry-list .dir-cell-status .ops-badge{white-space:nowrap}
+.ops-inquiry-list .ops-handler-cell{display:flex;gap:8px;align-items:center}
+.ops-inquiry-list .ops-handler-cell .ops-handling-badge{margin:0}
+.ops-handler-free{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--ops-avail-ink);background:var(--ops-avail-tint);border:1px solid var(--ops-avail-line);border-radius:6px;padding:3px 8px}
+.ops-handler-free.other{color:var(--ops-error);background:var(--ops-error-tint);border-color:#efb8ab}
+.ops-inquiry-list .ops-wait-overdue{color:var(--ops-error);font-weight:600}
+.ops-inquiry-list .dir-empty{padding:48px 24px;text-align:center}.ops-inquiry-list .dir-empty p{color:var(--ops-muted);font-size:13px;margin:6px 0 14px}
+.ops-inquiry-list .ops-list-loading{padding:40px;text-align:center;color:var(--ops-muted)}
+.ops-list-note{display:flex;gap:10px;align-items:flex-start;font-size:12px;color:var(--ops-muted);background:var(--ops-info-tint);border-radius:8px;padding:10px 14px;margin:0 0 12px}
+.ops-list-note svg{flex:none;margin-top:1px}
+/* Preview side panel. */
+.ops-inquiry-preview .dir-panel-heading h2{margin-bottom:8px}
+.ops-preview-status{display:flex;gap:10px;align-items:center;font-size:12px;color:var(--ops-muted)}
+.ops-inquiry-preview .dir-panel-body{display:flex;flex-direction:column;gap:14px}
+.ops-preview-row{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:13px;padding-bottom:12px;border-bottom:1px solid var(--ops-line)}
+.ops-preview-row>span{color:var(--ops-muted);font-size:12px}
+.ops-preview-actions{padding:16px 28px;border-top:1px solid var(--ops-line);background:#fff;flex:none}
+.ops-preview-actions .ops-btn{width:100%;min-height:44px}
+.ops-inquiry-list .dir-toolbar .dir-sort-control{width:200px}
+.ops-inquiry-list .dir-cell-updated,.ops-inquiry-list .dir-cell-waiting{white-space:nowrap}
+@media(max-width:760px){
+ .ops-inquiry-list .dir-toolbar{flex-wrap:wrap;gap:8px}.ops-inquiry-list .dir-toolbar .dir-search{flex-basis:100%}
+ .ops-inquiry-list .dir-toolbar .dir-sort-control{flex:1;width:auto;min-width:0}.ops-inquiry-list .dir-toolbar .dir-columns:not(.dir-filter-menu){display:none}
+ .ops-inquiry-list .dir-status-filters{overflow-x:auto;flex-wrap:nowrap}
+ .ops-preview-actions{padding:12px 16px}
+ /* Phone: each inquiry becomes a card (beats the directory's sticky-column table rules). */
+ .ops-inquiry-list.dir-full-page .ops-inq-table.dir-table,.ops-inquiry-list.dir-full-page .ops-inq-table tbody{display:block;width:100%;min-width:0}
+ .ops-inquiry-list.dir-full-page .ops-inq-table thead{display:none}
+ .ops-inquiry-list.dir-full-page .ops-inq-table tbody tr{height:auto;display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;padding:14px 16px;border-bottom:1px solid var(--ops-line)}
+ .ops-inquiry-list.dir-full-page .ops-inq-table tbody tr>*{display:block;position:static;padding:0;border:0;min-width:0;max-width:none;width:auto;background:none;box-shadow:none;white-space:normal}
+ .ops-inquiry-list.dir-full-page .ops-inq-table tbody th,.ops-inquiry-list.dir-full-page .ops-inq-table tbody td.dir-cell-status{grid-column:1/-1}
+ .ops-inquiry-list.dir-full-page .ops-inq-table tbody td[data-label]:before{content:attr(data-label);display:block;font-size:11px;color:var(--ops-muted);margin-bottom:3px}
+ .ops-inquiry-list.dir-full-page .ops-inq-table tbody td.dir-cell-status:before{content:none}
+ .ops-inquiry-list.dir-full-page .ops-inq-table tbody tr{position:relative}.ops-inquiry-list.dir-full-page .ops-inq-table tbody th{padding-right:44px}
+ .ops-inquiry-list.dir-full-page .ops-inq-table .dir-open-column{position:absolute;top:10px;right:10px}
+}
+.ops-preview-btn{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--ops-secondary);cursor:pointer}
+.ops-preview-btn:hover{background:var(--ops-secondary-hover);border-color:#b9c5d4}
+.ops-inquiry-list .dir-table tbody th .dir-client-name{display:block;font-weight:500;color:var(--ops-ink);font-size:14px}

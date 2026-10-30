@@ -4,6 +4,7 @@ import path from 'node:path';
 import { randomUUID, randomBytes, scryptSync, createHash, timingSafeEqual } from 'node:crypto';
 import type { CatalogTemplate, InquiryRecord, Notice, Staff } from './types';
 import { defaultEmail } from './types';
+import { installWorkspaceIndexes } from './workspace-schema';
 
 // Runtime records are not deployment assets and must never be bundled by Next.js.
 export const dataRoot = path.resolve(/* turbopackIgnore: true */ process.env.RMC2_DATA_DIR || path.join(process.cwd(),'.data'));
@@ -15,17 +16,24 @@ export function db() {
   mkdirSync(dataRoot,{recursive:true});
   const database=new DatabaseSync(path.join(dataRoot,'rmc2.sqlite'));
   database.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+    CREATE TABLE IF NOT EXISTS security_events (id TEXT PRIMARY KEY, at TEXT NOT NULL, actor_id TEXT NOT NULL, action TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS auth_attempts (key TEXT PRIMARY KEY, failures INTEGER NOT NULL, window_start INTEGER NOT NULL, blocked_until INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS template_versions (id TEXT PRIMARY KEY, template_id TEXT NOT NULL, data TEXT NOT NULL, state TEXT NOT NULL, actor_id TEXT NOT NULL, at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS template_overrides (id TEXT PRIMARY KEY, data TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS ai_usage (id TEXT PRIMARY KEY, at TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, data TEXT NOT NULL, password TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS inquiries (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS inquiry_activity (session TEXT NOT NULL, tab TEXT NOT NULL, inquiry_id TEXT NOT NULL, user_id TEXT NOT NULL, started_at TEXT NOT NULL, seen_at TEXT NOT NULL, PRIMARY KEY(session,tab));
+    CREATE TABLE IF NOT EXISTS file_access (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, inquiry_id TEXT NOT NULL, kind TEXT NOT NULL, at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, inquiry_id TEXT NOT NULL, version INTEGER NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL, UNIQUE(inquiry_id,version,kind));`);
   shared.rmc2Database=database;
   if(!(database.prepare('SELECT id FROM users LIMIT 1').get())) seed(database);
+  installWorkspaceIndexes(database);
   return database;
 }
-function passwordHash(password: string) { const salt=randomBytes(16).toString('hex');return salt+':'+scryptSync(password,salt,64).toString('hex'); }
+export function passwordHash(password: string) { const salt=randomBytes(16).toString('hex');return salt+':'+scryptSync(password,salt,64).toString('hex'); }
 export function passwordMatches(password: string, stored: string) { const [salt,hash]=stored.split(':');const actual=scryptSync(password,salt,64),expected=Buffer.from(hash,'hex');return actual.length===expected.length&&timingSafeEqual(actual,expected); }
 export const tokenHash=(token:string)=>createHash('sha256').update(token).digest('hex');
 export function allUsers():Staff[] { return (db().prepare('SELECT data FROM users').all() as {data:string}[]).map(r=>JSON.parse(r.data)); }
@@ -38,8 +46,12 @@ export function persist(record:InquiryRecord, expected?:number) {
 export function transaction<T>(run:()=>T):T { const database=db();database.exec('BEGIN IMMEDIATE');try{const result=run();database.exec('COMMIT');return result;}catch(error){database.exec('ROLLBACK');throw error;} }
 export function audit(record:InquiryRecord, staff:Staff, action:string, changes?:{field:string;before:string;after:string}[]) { const at=new Date().toISOString();record.updatedAt=at;record.revision++;record.handledBy=[...new Set([...record.handledBy,staff.id])];record.history.push({id:randomUUID(),at,actorId:staff.id,actor:staff.name,action,changes}); }
 export function notify(record:InquiryRecord,title:string,message:string,recipientIds:string[]) { const notice:Notice={id:randomUUID(),inquiryId:record.id,title,message,at:new Date().toISOString(),recipientIds:[...new Set(recipientIds)],readBy:[]};db().prepare('INSERT INTO notifications(id,data) VALUES (?,?)').run(notice.id,JSON.stringify(notice)); }
-export function catalog():CatalogTemplate[] { const file=path.join(process.cwd(),'resources','private','catalog.json');if(!existsSync(file))return [];return JSON.parse(readFileSync(file,'utf8')); }
-export function sourceFile(template:CatalogTemplate) { return path.join(process.cwd(),'resources','private',path.basename(template.file)); }
+export function catalog():CatalogTemplate[] { const file=path.join(process.cwd(),'resources','private','catalog.json');const base:CatalogTemplate[]=existsSync(file)?JSON.parse(readFileSync(file,'utf8')):[];
+  const overrides=(db().prepare('SELECT data FROM template_overrides').all() as {data:string}[]).map(row=>JSON.parse(row.data) as CatalogTemplate);
+  const merged=new Map(base.map(template=>[template.id,{...template,active:['D091','D092','D093'].includes(template.sourceId)?false:template.active}]));
+  for(const template of overrides)merged.set(template.id,template);
+  return [...merged.values()]; }
+export function sourceFile(template:CatalogTemplate) { return template.storage?safeStorage(template.storage):path.join(process.cwd(),'resources','private',path.basename(template.file)); }
 export function safeStorage(relative:string) { const full=path.resolve(dataRoot,relative);if(!full.startsWith(dataRoot+path.sep))throw new AppError('Invalid stored file path',400);return full; }
 export class AppError extends Error { constructor(message:string,public status=400){super(message);} }
 

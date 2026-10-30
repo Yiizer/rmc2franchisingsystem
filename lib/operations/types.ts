@@ -1,6 +1,6 @@
 export type StaffRole = 'Employee' | 'Supervisor' | 'Admin';
-export type Staff = { id: string; name: string; email: string; role: StaffRole; position: string; active: boolean; canApprove: boolean };
-export type WorkflowStatus = 'New inquiry' | 'Preparing proposal' | 'Waiting for agent details' | 'Awaiting approval' | 'Needs correction' | 'Approved — sending' | 'Approved — email failed' | 'Sent';
+export type Staff = { id: string; name: string; email: string; role: StaffRole; position: string; active: boolean; canApprove: boolean; username?:string; mustChangePassword?:boolean };
+export type WorkflowStatus = 'Declined' | 'Transferred' | 'Supervisor editing' | 'New inquiry' | 'Preparing proposal' | 'Waiting for agent details' | 'Awaiting approval' | 'Needs correction' | 'Approved — sending' | 'Approved — email failed' | 'Sent';
 export type FormFields = Record<string, string>;
 export type CustomEdit = { text:string; bold?:boolean; italic?:boolean; underline?:boolean; fontSize?:number; color?:string; align?:'left'|'center'|'right'|'both' };
 export type CustomChange = { id:string; label:string; before:string; after:string; formatting:string[] };
@@ -8,18 +8,33 @@ export type CustomizedProposal = { id:string; templateId:string; sourceHash:stri
 export type CustomizedSnapshot = CustomizedProposal & {changes:CustomChange[]};
 export type MailDraft = { to: string; subject: string; body: string };
 export type SourceCell = { cell: string; value: string };
-export type SourceForm = { filename: string; storage: string; format?: 'xlsx' | 'pdf'; kind?:'sample'|'attachment'; sheet: string; cells: SourceCell[]; fields: FormFields; receivedAt: string };
+export type SourceForm = { filename: string; storage: string; sourceHash?:string; format?: 'xlsx' | 'pdf'; kind?:'sample'|'attachment'; sheet: string; cells: SourceCell[]; fields: FormFields; receivedAt: string };
+export type DuplicateClientMatch = { inquiryId:string; company:string; agentName:string; sameAgent:boolean; reasons:string[]; expiredSameAgent?:boolean; expired?:boolean };
+export type ClientReview = { state:'clear'|'duplicate'|'identify'; identity:string; matches:DuplicateClientMatch[]; exceptions?:{inquiryId:string;identity:string}[]; reviewedBy?:string; reviewedAt?:string; note?:string };
+export type ClientProtection = { startedAt:string; activityAt:string; expiresAt:string; agentName:string; agentEmail:string; agentPhone:string; activityKind:'proposal'|'details'|'progress-report' };
+export type AgentProgressReport = { id:string; sentAt:string; recordedAt:string; recordedBy:string; sender:string; summary:string; reference:string; attachment?:{storage:string;filename:string;mime:string} };
+export type ClientState = { state:'clear'|'duplicate'|'identify'|'archived'; matches:DuplicateClientMatch[]; protection:ClientProtection|null };
 export const isSampleForm=(source:SourceForm)=>source.kind==='sample'||(!source.storage&&source.filename==='Sample franchise form.xlsx');
 export type ProposalRenderer='native-word'|'native-word-v2'|'native-word-legacy'|'browser-print'|'unknown';
 export type AuditEntry = { id: string; at: string; actorId: string; actor: string; action: string; changes?: { field: string; before: string; after: string }[] };
 export type ChatEntry = { id: string; at: string; role: 'user' | 'assistant'; text: string; actorId: string; sources: string[] };
 export type GeneratedPackage = { id: string; templateId: string; sourceHash: string; sourceDocx?: string; sourceName?: string; templateName?: string; renderer?:ProposalRenderer; pdf: string; docx: string; filename: string; generatedAt: string; preparedBy: string; fingerprint: string; fields: FormFields; pageCount: number; customization?: CustomizedSnapshot };
-export type Submission = { version: number; at: string; submittedBy: string; fields: FormFields; email: MailDraft; emailOverrides: string[]; generated: GeneratedPackage; notes: string; warnings: string[]; decision?: { action: 'approve' | 'return'; actorId: string; at: string; note: string; flags: string[]; customizationReviewed?: boolean }; delivery?: { id: string; at: string; mode: 'local-test'; file: string } };
-export type InquiryRecord = { id: string; revision: number; status: WorkflowStatus; createdAt: string; updatedAt: string; fields: FormFields; source: SourceForm; email: MailDraft; emailOverrides: string[]; templateId: string; customization?: CustomizedProposal; customizationArchive?: CustomizedProposal[]; generated?: GeneratedPackage; submissions: Submission[]; handledBy: string[]; workProgress?: Record<string,{step:number;at:string;paused:boolean}>; history: AuditEntry[]; chat: ChatEntry[]; notes: string; returnNote: string; returnFlags: string[]; detailRequests: { at: string; actorId: string; body: string; to: string; file: string }[] };
-export type CatalogTemplate = { id: string; name: string; family: string; variant: string; sector: 'Government' | 'All'; sourceName: string; sourceId: string; sourceHash: string; file: string; text: string; placeholders: string[]; warnings: string[]; annualOnly: boolean; active: boolean };
+export type Submission = { supervisorRevision?:{by:string;fromVersion:number}; supersededBy?:number; version: number; at: string; submittedBy: string; fields: FormFields; email: MailDraft; emailOverrides: string[]; generated: GeneratedPackage; notes: string; warnings: string[]; decision?: { action: 'approve' | 'return'; actorId: string; at: string; note: string; flags: string[]; customizationReviewed?: boolean }; delivery?: { id: string; at: string; mode: 'local-test'; file: string; sentBy?:string } };
+export type AgentTransferRequest = {id:string;at:string;by:string;previousId:string;previousRevision:number;identity:string;previousIdentity:string;reference:string;note:string;kind?:'bor'|'expiry';attachment?:{storage:string;filename:string;mime:string};decision?:{by:string;at:string;action:'approve'|'reject';note:string}};
+export type InquiryRecord = { historicalAgentChangeBlocked?:boolean; agentTransferRequest?:AgentTransferRequest; id: string; revision: number; status: WorkflowStatus; createdAt: string; updatedAt: string; fields: FormFields; source: SourceForm; closure?:{kind:'declined'|'transferred';at:string;by:string;reason:string;relatedId?:string}; bor?:{fromInquiryId:string;at:string;by:string;reference:string;note:string;attachment:{storage:string;filename:string;mime:string}}; supervisorEdit?:{by:string;at:string;version:number}; clientReview?:ClientReview; protection?:ClientProtection; progressReports?:AgentProgressReport[]; email: MailDraft; emailOverrides: string[]; templateId: string; customization?: CustomizedProposal; customizationArchive?: CustomizedProposal[]; generated?: GeneratedPackage; submissions: Submission[]; handledBy: string[]; workProgress?: Record<string,{step:number;at:string;paused:boolean}>; history: AuditEntry[]; chat: ChatEntry[]; notes: string; returnNote: string; returnFlags: string[]; detailRequests: { at: string; actorId: string; body: string; to: string; file: string }[] };
+export type CatalogTemplate = { id: string; name: string; family: string; variant: string; sector: 'Government' | 'All'; sourceName: string; sourceId: string; sourceHash: string; file: string; text: string; placeholders: string[]; warnings: string[]; annualOnly: boolean; active: boolean; storage?:string; updatedAt?:string; updatedBy?:string };
 export type Notice = { id: string; inquiryId: string; title: string; message: string; at: string; recipientIds: string[]; readBy: string[] };
 export type InquiryActivity = { inquiryId:string; userId:string; startedAt:string; seenAt:string };
-export type WorkspaceData = { packageRenderers:Record<string,ProposalRenderer>; user: Staff; users: Staff[]; inquiries: InquiryRecord[]; activity:InquiryActivity[]; templates: CatalogTemplate[]; notifications: Notice[]; integrations: { database: string; gmail: string; ai: string; documents: string } };
+export type WorkspaceData = { clientStates:Record<string,ClientState>; packageRenderers:Record<string,ProposalRenderer>; user: Staff; users: Staff[]; inquiries: InquiryRecord[]; activity:InquiryActivity[]; templates: CatalogTemplate[]; notifications: Notice[]; integrations: { database: string; gmail: string; ai: string; documents: string } };
+export type InquirySummary = Pick<InquiryRecord,'id'|'revision'|'status'|'createdAt'|'updatedAt'|'fields'|'templateId'|'handledBy'|'workProgress'> & {historicalMatchCount?:number;preparedBy?:string;approvedBy?:string;sentBy?:string;customized:boolean; submittedAt?:string; deliveredAt?:string; nextAction?:string};
+export type PageInfo = {page:number; pageSize:number; total:number; pages:number};
+export type WorkspaceView = Omit<WorkspaceData,'inquiries'> & {
+  inquiries:InquirySummary[]; current?:InquiryRecord; cursor:string; metadataVersion:string;
+  pagination:PageInfo; noticePagination:PageInfo; unreadCount:number; pendingCount:number;
+  divisions:string[]; stats:Record<string,number>; attention:InquirySummary[]; attentionCount:number; resume:InquirySummary[];
+  tabCounts?:{mine:number;all:number;toPrepare:number;awaiting:number;onHold:number;sent:number;archived:number;waiting:number;returned:number};
+};
+export type WorkspaceUpdate = Omit<WorkspaceView,'users'|'templates'|'integrations'> & Partial<Pick<WorkspaceView,'users'|'templates'|'integrations'>>;
 
 export const FORM_GROUPS = [
   { title: 'Account', fields: [['company','Account name'],['sector','Sector'],['industry','Nature of business'],['address','Address'],['division','Division'],['branch','Branch'],['requestDate','Request date']] },
@@ -28,6 +43,7 @@ export const FORM_GROUPS = [
 ] as const;
 export const LABELS: Record<string,string> = {...Object.fromEntries(FORM_GROUPS.flatMap(g=>g.fields.map(([key,label])=>[key,label]))),proposalDate:'Proposal date',addresseeTitle:'Addressee title'};
 export const editableStatus = (status: WorkflowStatus) => ['New inquiry','Preparing proposal','Waiting for agent details','Needs correction'].includes(status);
+export const canEditInquiry=(user:Pick<Staff,'role'|'canApprove'>,record:Pick<InquiryRecord,'status'>)=>editableStatus(record.status)&&canPrepareProposal(user)||record.status==='Supervisor editing'&&user.role==='Supervisor'&&user.canApprove;
 export const canPrepareProposal = (user:Pick<Staff,'role'>) => user.role==='Employee'||user.role==='Supervisor';
 export function defaultEmail(fields: FormFields, template?: Pick<CatalogTemplate,'name'>, preparer = 'Franchising team'): MailDraft {
   return { to: fields.agentEmail || '', subject: `Proposal — ${fields.company || 'Account'}${template ? ' — '+template.name : ''}`, body: `Dear ${fields.agentName || 'Agent'},\n\nPlease find attached the ${template?.name || 'healthcare'} proposal for ${fields.company || 'your account'}, prepared from the submitted franchise form.\n\nPlease review the attached proposal for the complete rates, benefits and coverage conditions. Let us know if you need any clarification.\n\nBest regards,\n${preparer}\nFranchising Operations\nRMC2 Consultancy Corporation` };
@@ -50,5 +66,5 @@ export function documentIssues(fields: FormFields, template?: CatalogTemplate, c
   if(!customized && template?.sourceId==='D023' && Number(fields.dependents)>0) problems.push('BureauHealth 4,250 does not supply dependent rates');
   return [...new Set(problems)];
 }
-export const manilaTime = (value: string) => new Intl.DateTimeFormat('en-PH',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Manila'}).format(new Date(value));
+export const manilaTime = (value: string) => new Intl.DateTimeFormat('en-US',{month:'2-digit',day:'2-digit',year:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'}).format(new Date(value));
 export function ageLabel(value: string, now=Date.now()) { const mins=Math.max(0,Math.floor((now-Date.parse(value))/60000)); return mins<1?'Just now':mins<60?`${mins}m ago`:mins<1440?`${Math.floor(mins/60)}h ${mins%60}m ago`:`${Math.floor(mins/1440)}d ${Math.floor(mins%1440/60)}h ago`; }

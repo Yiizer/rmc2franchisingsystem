@@ -1,3 +1,4 @@
+import {navigate} from './revamp-navigation.mjs';
 import { chromium } from 'playwright-core';
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
@@ -49,7 +50,7 @@ try{
   await supervisor.page.screenshot({path:'test-results/workspace-simple-supervisor.png',fullPage:true});await supervisor.page.getByRole('button',{name:'Approve & email agent',exact:true}).click();await supervisor.page.getByText('Approved reply saved to the local test mailbox',{exact:true}).waitFor();pass('Supervisor approval still automatically saves the agent reply');
   state=await (await context.request.get(base+'/api/operations/bootstrap')).json();record=state.inquiries.find(inquiry=>inquiry.id===record.id);assert.equal(record.status,'Sent');assert.equal(record.email.subject,'Reviewed PDF request');
   const generated=await context.request.get(base+'/api/operations/file/'+record.id+'/pdf?version=1');assert.notEqual(sha(await generated.body()),sha(original));assert.equal(sha(await (await context.request.get(base+'/api/operations/file/'+record.id+'/source')).body()),sha(original));pass('Agent attachment and generated proposal remain separate retained documents');
-  await page.reload();await page.getByRole('heading',{name:'Dashboard',exact:true}).waitFor();await page.getByRole('button',{name:'Inquiries',exact:true}).click();await page.getByRole('link',{name:'Open '+company,exact:true}).click();await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'1 Review form',exact:false}).click();
+  await page.reload();await page.getByRole('heading',{name:'Dashboard',exact:true}).waitFor();await navigate(page,'Inquiries');await page.getByRole('link',{name:'Open '+company,exact:true}).click();await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'1 Review form',exact:false}).click();
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));assert.ok(await page.getByRole('button',{name:'View submitted form',exact:true}).isVisible());await page.screenshot({path:'test-results/workspace-simple-mobile.png',fullPage:true});pass('Phone workspace keeps the submitted document visible without horizontal overflow');
   assert.deepEqual(errors,[]);pass('No client JavaScript errors');
   await writeFile('test-results/submitted-pdf.json',JSON.stringify({at:new Date().toISOString(),checks,errors,inquiry:record.id},null,2));console.log('\n'+checks.length+' checks passed.');

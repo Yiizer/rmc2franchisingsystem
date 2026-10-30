@@ -1,4 +1,4 @@
-.ops-simple-workspace .ops-proposal-choice.selected,.ops-template-browser-card.selected{background:#f0f8f3;border:1px solid #73ae8c;border-left:4px solid #378359;box-shadow:0 0 0 1px #73ae8c12}
+.ops-simple-workspace .ops-proposal-choice.selected,.ops-template-browser-card.selected{background:#f0f8f3;border:1px solid #73ae8c;border:1px solid var(--ops-line);box-shadow:0 0 0 1px #73ae8c12}
 .ops-simple-workspace .ops-proposal-choice.selected .ops-option-number{background:#dcefe2;color:#267447}
 .ops-template-browser{margin-top:22px;border:1px solid #dbe5f1;border-radius:7px;background:#fff;overflow:clip}
 .ops-template-browser-trigger{display:flex;align-items:center;gap:12px;width:100%;padding:15px 17px;text-align:left;background:#f8faff;border:0;color:#2b527c;cursor:pointer}
@@ -21,7 +21,7 @@
 .ops-template-selected-mark svg{flex:none}
 .ops-template-browser-source{font-size:11px;line-height:1.5;color:#6a809b;margin-bottom:15px}
 .ops-template-browser-actions{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-top:auto}
-.ops-template-browser .ops-template-browser-actions .ops-btn{min-height:34px;font-size:11px!important;padding:7px 9px;gap:5px}
+.ops-template-browser .ops-template-browser-actions .ops-btn{min-height:34px;font-size:11px;padding:7px 9px;gap:5px}
 .ops-template-browser .ops-template-select{color:#29557e;background:#eff5fc;border-color:#c7d8ed}
 .ops-template-browser .selected .ops-template-select{color:#267447;background:#e5f2e9;border-color:#a3cbb2}
 .ops-template-browser .ops-template-browser-customize{display:inline-flex;align-items:center;gap:5px;align-self:flex-start;font-size:11px;color:#8c602e;margin-top:11px;min-height:25px}
