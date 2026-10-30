@@ -59,6 +59,8 @@ Launch decisions:
 - [ ] Make startup configuration portable; remove dependence on this computer's drive paths and converter location.
 - [ ] Verify records and uploaded documents survive application restarts and redeployments.
 - [ ] Document the instance/worker design. Do not add multiple app workers without verifying shared transactions, editing locks and job ownership.
+- [ ] Staging (online test): a free, test-data-only trial via a Cloudflare quick tunnel from a local PC is prepared in `STAGING.md` (separate data directory, fresh random passwords, local email outbox). It is a temporary test aid, not the staging environment required above; run it only with Product Owner approval.
+- [ ] Real email phase 1 (staging copy only): sends only when the Product Owner creates `.env.mail.test` (gitignored, never in `.env.local`); every message is redirected to the PO test inbox, dry run by default, capped at 5/hour and 20/day. Setup, verification and rollback (delete the file, revoke the app password) are in `STAGING.md`. No production mail is enabled.
 
 ### 2. Accounts, access and confidentiality
 

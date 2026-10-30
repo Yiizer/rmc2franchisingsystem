@@ -34,6 +34,23 @@ Format: **Decision** — why — where it applies.
   `scripts/test-workspace-advisors.mjs` and `scripts/test-directory-model.mjs`. Native date inputs follow
   the OS region and may show DD/MM; that is expected and not a bug.
 - **Keep merged feature branches** (2026-10-30) — `ui-revamp-ux-fixes` was kept after merging PR #2.
+- **Real email, phase 1** (2026-10-30) — Gmail SMTP + app password via `nodemailer`, from a **new dedicated
+  Gmail account**. Only the **online test copy (5180)** may send, and only when the PO creates the separate
+  mail env file; every message is **redirected to the PO's test inbox** (original recipient shown in the
+  subject/body only). The real-data copy (5173) stays on the simulated outbox and never gets mail credentials.
+  Both the approved reply and "Request missing details" send for real (outbox-first; protection and "Sent"
+  only after Gmail accepts). Caps: 5/hour, 20/day (DB-backed). App passwords are for the pilot only —
+  production needs Workspace/OAuth or a transactional provider with SPF/DKIM/DMARC.
+- **Test sender changed to the PO's own personal Gmail** (2026-10-30; address kept out of git, see `.env.mail.test`) — chosen by the PO instead of a
+  dedicated account, for testing only. Test mail is also redirected to that address. Its app password lives
+  only in `.env.mail.test` on this PC and must be revoked when testing ends.
+- **Target hosting remains Vercel + Supabase** (2026-10-30) — needs a migration first (SQLite → Postgres, files →
+  Supabase Storage, LibreOffice → container/CloudConvert, mail polling → scheduled job). Plan with architect +
+  database engineer before coding; Vercel Hobby is non-commercial (verify terms). Inbound email (reading the
+  Gmail inbox) is approved as the next phase.
+- **First online test runs free on a Cloudflare quick tunnel from this PC** (2026-10-30) — production build on
+  port 5180 with its own test data (`test-results/staging-data`) and rotated passwords; see `STAGING.md`.
+  Real `.data` is never exposed. Render's free tier was rejected: no persistent disk (data lost on restart).
 
 ## UI conventions
 
@@ -61,6 +78,19 @@ Format: **Decision** — why — where it applies.
   silently beat it.
 - **Only one `next dev` can run per project folder.** To QA on 5190, stop the 5173 server first, and copy the
   data with SQLite's backup API (`.data` has a live WAL) into `test-results/<name>/qa-data`.
+- **The UI loads `GET /api/operations/workspace` (`workspace-query.ts`), not `/bootstrap`** — a field added only to
+  bootstrap never reaches the screens (the email badge showed "LOCAL" while SMTP was on). Add shared payload fields to
+  `workspaceView`, and have QA check the real browser, not just the API.
+- **Google app passwords are 16 lowercase letters shown with spaces** — a normal Gmail password is always rejected
+  (first live attempt failed with AUTH), and pasted spaces must be stripped (`mail-config.ts` now does). First live
+  test send to the redirected test inbox succeeded on 2026-10-30; staging was set back to dry run afterwards.
+- **Mail states:** dry runs never mark Sent or start protection (they leave "Approved — sending" + `mailDryRun`, and
+  Retry sends for real); an uncertain send can only be resolved by an Admin ("Confirm sent…" / "Not received…",
+  both audited with a reason). Real nodemailer connection failures report `ESOCKET`/`CONN`.
+- **Absolutely positioned children escape `overflow:auto` scrollers** unless the scroller is `position:relative`.
+  Hidden `.sr-only` labels in table headers widened the whole page at tablet widths; scroll wrappers
+  (`.dash-queue-scroll`, `.dir-table-scroll`) are now positioned. Always sweep 768px too — the sidebar is
+  still visible there, so toolbars need to wrap.
 - **Verify specialists' claims in the code** — a developer reported a component "rendered" when it was only
   defined; the code reviewer caught it. Grep for usage, not just definitions.
 
