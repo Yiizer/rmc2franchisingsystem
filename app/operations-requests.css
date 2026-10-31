@@ -1,0 +1,21 @@
+/* Requests: emails from the test inbox waiting for a staff decision. */
+.ops-main .ops-tabs{display:flex;gap:4px;border-bottom:1px solid #e3e8ef;margin:4px 0 16px}
+.ops-main .ops-tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:9px 12px;font:inherit;font-size:14px;color:#4a5a70;cursor:pointer}
+.ops-main .ops-tabs button span{margin-left:4px;color:#6b7a8f}
+.ops-main .ops-tabs button.active{color:var(--ops-navy);font-weight:600;border-bottom-color:var(--ops-action)}
+.ops-main .ops-tabs button:focus-visible{outline:2px solid var(--ops-action-ring);outline-offset:2px}
+.ops-request-list{display:flex;flex-direction:column}
+.ops-request{padding:16px 20px;border-bottom:1px solid #edf1f6;display:flex;flex-direction:column;gap:10px}
+.ops-request:last-child{border-bottom:0}
+.ops-request-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
+.ops-request-head b{display:block;color:#111c3d;font-size:15px;overflow-wrap:anywhere}
+.ops-request-head small{color:#5d6b80;overflow-wrap:anywhere}
+.ops-request-meta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0}
+.ops-request-meta .ops-badge{display:inline-flex;align-items:center;gap:5px}
+.ops-request-snippet{margin:0;color:#3b4a5e;font-size:14px;line-height:1.5;max-height:4.5em;overflow:hidden}
+.ops-request-files{display:flex;flex-direction:column;gap:8px}
+.ops-request-file{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px;border:1px solid #e3e8ef;border-radius:8px;background:#fafbfd}
+.ops-request-file span{font-weight:500;overflow-wrap:anywhere;min-width:0;flex:1}
+.ops-request-file small{color:#6b7a8f}
+.ops-request-foot{display:flex;justify-content:flex-end}
+@media (max-width:640px){.ops-request{padding:14px}.ops-request-head{flex-direction:column}.ops-request-meta{align-items:flex-start}}

@@ -3,5 +3,8 @@
   "regions": ["sin1"],
   "functions": {
     "app/api/operations/[[...path]]/route.ts": { "maxDuration": 300 }
-  }
+  },
+  "crons": [
+    { "path": "/api/operations/inbound/cron", "schedule": "0 0 * * *" }
+  ]
 }

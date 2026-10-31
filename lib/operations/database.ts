@@ -37,7 +37,10 @@ function openDatabase() {
     CREATE TABLE IF NOT EXISTS file_access (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, inquiry_id TEXT NOT NULL, kind TEXT NOT NULL, at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, inquiry_id TEXT NOT NULL, version INTEGER NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL, UNIQUE(inquiry_id,version,kind));
     CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, n INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS mail_sends (id TEXT PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, outbox_id TEXT NOT NULL);`);
+    CREATE TABLE IF NOT EXISTS mail_sends (id TEXT PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, outbox_id TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS inbound_messages (id TEXT PRIMARY KEY, message_id TEXT NOT NULL UNIQUE, received_at TEXT NOT NULL, state TEXT NOT NULL, data TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS inbound_received ON inbound_messages(received_at);
+    CREATE TABLE IF NOT EXISTS inbound_cursor (mailbox TEXT PRIMARY KEY, uidvalidity TEXT NOT NULL, last_uid INTEGER NOT NULL, checked_at TEXT NOT NULL);`);
   if(!(database.prepare('SELECT id FROM users LIMIT 1').get())) { if(demoSeedAllowed())seedSqlite(database); else console.warn('[rmc2] Empty database and demo seed disabled: nobody can sign in. Set RMC2_SEED_DEMO=1 for test data.'); }
   installWorkspaceIndexes(database);
   // Inquiry numbers come from this counter (same statement on Postgres). Never below the highest number already issued.

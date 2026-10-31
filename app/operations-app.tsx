@@ -8,6 +8,8 @@ import { api, endpoint, initials, Modal } from './operations-common';
 import { HandlingBadge } from './operations-activity';
 import { AccountSettings, CreateAccount, TemplateAdministration, AdminMonitoring } from './operations-administration';
 import ClientDirectory from './operations-directory';
+import RequestsPage from './operations-requests';
+import './operations-requests.css';
 import NotificationsPage,{NotificationsPopover} from './operations-notifications';
 import './operations-notifications.css';
 import OperationsShell,{pageHash,hashPage} from './operations-shell';
@@ -53,6 +55,7 @@ export default function OperationsApp(){
   {['Inquiry Workspace','Supervisor Review'].includes(page)&&!current&&<div className="ops-list-loading" role="status"><RefreshCw className="ops-spin"/>Opening inquiry…</div>}
   {['Inquiry Workspace','Supervisor Review'].includes(page)&&current&&<InquiryWorkspace key={current.id+user.id} initial={current} user={user} users={users} templates={templates} clientState={data.clientStates[current.id]} mail={mail} onOpenRelated={id=>{void openRelated(id);}} renderers={data.packageRenderers??{}} onChange={replace} onRefresh={refresh} onBack={()=>{void go(user.canApprove&&['Awaiting approval','Supervisor editing'].includes(current.status)?'Approval Queue':user.role==='Employee'?'My Inquiries':'Inquiries');}} registerLeave={registerLeave}/>}
   {page==='Notifications'&&<NotificationsPage userId={user.id} unread={unreadCount} onReadAll={()=>void readNotices([],true)} onOpen={async n=>{if(await openRelated(n.inquiryId))await readNotices([n.id]);}}/>}
+  {page==='Requests'&&user.role!=='Supervisor'&&<RequestsPage now={now} onOpen={record=>{void refresh().then(()=>open(record));}}/>}
   {page==='Monitoring'&&user.role==='Admin'&&<AdminMonitoring/>}
   {page==='Settings'&&<AccountSettings user={user} onSignedOut={()=>setData(null)}/>}
   {page==='Users & Roles'&&user.role==='Admin'&&<><div className="ops-heading"><div><h1>Users & roles</h1><p>Both supervisors can edit and approve. Staff manage their own sign-in details in Settings.</p></div><CreateAccount onRefresh={refresh}/></div><section className="ops-card ops-admin-users">{users.map(person=><UserEditor key={person.id+person.role+person.active} person={person} onRefresh={refresh}/>)}</section></>}

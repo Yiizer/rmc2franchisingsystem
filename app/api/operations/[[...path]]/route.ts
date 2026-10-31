@@ -5,6 +5,7 @@ import { declineInquiry, transferWithBor, decideAgentTransfer, requestExpiredTra
 import { beginSupervisorEdit, cancelSupervisorEdit } from '@/lib/operations/supervisor-edit';
 import { stageTemplate, publishTemplate, setTemplateActive, templateStage } from '@/lib/operations/template-admin';
 import { monitoring } from '@/lib/operations/monitoring';
+import { checkInbox, cronAllowed, dismissInbound, importInbound, inboundAttachment, listInbound } from '@/lib/operations/inbound';
 import { chosen } from '@/lib/operations/service';
 import { NextRequest, NextResponse } from 'next/server';
 import { clientStates } from '@/lib/operations/client-rules';
@@ -47,7 +48,10 @@ export async function GET(request:NextRequest,context:Context){try{
   await ensureReady();
   const route=(await context.params).path||[];
   if(route[0]==='login-options')return response({users:[]});
+  if(route[0]==='inbound'&&route[1]==='cron'){if(!cronAllowed(request.headers.get('authorization')))throw new AppError('Not allowed.',401);return response(await checkInbox());}
   const user=await staff(request);
+  if(route[0]==='inbound'&&!route[1])return response(await listInbound(user));
+  if(route[0]==='inbound'&&route[1]&&route[2]==='attachment'){const file=await inboundAttachment(user,route[1],Number(route[3]));return fileResponse(file.bytes,file.type,file.name);}
   if(route[0]==='workspace')return response(await workspaceView(user,request.nextUrl.searchParams));
   if(user.mustChangePassword){if(route[0]!=='bootstrap')throw new AppError('Set your own password in Settings to activate your account.',403);return response({user,users:[user],inquiries:[],clientStates:{},packageRenderers:{},activity:[],templates:[],notifications:[],integrations:{database:'',gmail:'',ai:'',documents:''},mail:mailStatus()});}
 
@@ -84,6 +88,9 @@ export async function POST(request:NextRequest,context:Context){try{
   if(route[0]==='login'){const user=await authenticate(await request.json()),token=randomBytes(32).toString('hex');await db.run('INSERT INTO sessions (token,user_id,expires) VALUES (?,?,?)',tokenHash(token),user.id,new Date(Date.now()+12*3600000).toISOString());const result=response({user});result.cookies.set('rmc2_session',token,{httpOnly:true,sameSite:'strict',secure:request.nextUrl.protocol==='https:',path:'/',maxAge:12*3600});return result;}
   const user=await staff(request);
   if(user.mustChangePassword&&!['account-settings','logout'].includes(route[0]))throw new AppError('Change your temporary password in Settings before continuing.',403);
+  if(route[0]==='inbound'&&route[1]==='check'){await listInbound(user);return response(await checkInbox());}
+  if(route[0]==='inbound'&&route[1]&&route[2]==='import'){const body=z.object({index:z.number().int().min(0).max(50)}).parse(await request.json());return response({inquiry:await importInbound(user,route[1],body.index)},201);}
+  if(route[0]==='inbound'&&route[1]&&route[2]==='dismiss'){await dismissInbound(user,route[1]);return response({ok:true});}
   if(route[0]==='account-settings'){const updated=await updateOwnAccount(user,await request.json());const result=response({user:updated});result.cookies.delete('rmc2_session');return result;}
   if(route[0]==='directory'&&route[1]&&route[2]==='edit')return response({record:await editDirectoryRecord(route[1],user,await request.json())});
   if(route[0]==='create-account')return response(await createAccount(user,await request.json()),201);
