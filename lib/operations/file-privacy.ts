@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { db, safeStorage } from './database';
+import { db } from './database';
+import { files } from './file-store';
 import type { Staff } from './types';
 
 // Access events are separate from preparation history: viewing a confidential
 // file must never claim the inquiry or count as editing it.
 export async function privateFile(user:Staff,inquiryId:string,kind:string,relative:string){
-  const bytes=readFileSync(safeStorage(relative));
+  const bytes=await files().get(relative);
   await logFileAccess(user,inquiryId,kind);
   return bytes;
 }

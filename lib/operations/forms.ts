@@ -1,9 +1,9 @@
 import ExcelJS from 'exceljs';
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { AppError, dataRoot } from './database';
-import { resourceFile } from './paths';
+import { AppError } from './errors';
+import { MIME, files } from './file-store';
+import { resourceBytes } from './template-source';
 import type { FormFields, SourceForm } from './types';
 
 const mapping:Record<string,string>={agentName:'C7',requestDate:'J7',branch:'D8',agentPhone:'J8',company:'B10',industry:'J11',address:'C12',contactName:'D14',contactEmail:'B17',contactPhone:'J16',contactPosition:'C18',existingProvider:'J18',addressee:'B21',addresseePosition:'G21',requestedPlan:'D22',payment:'G23',employees:'D25',dependents:'J24',employeeAges:'C26',dependentAges:'J26',hospitals:'C29',dental:'I29'};
@@ -28,20 +28,20 @@ export async function parseForm(bytes:Buffer, filename:string, sender:string):Pr
   fields.division='Unconfirmed';fields.agentEmail=sender.trim();
   fields.payment=/semi/i.test(fields.payment)?'Semiannual':/annual/i.test(fields.payment)?'Annual':fields.payment;
   const cells:{cell:string;value:string}[]=[];sheet.eachRow(row=>row.eachCell(cell=>{const value=text(cell.value);if(value)cells.push({cell:cell.address,value});}));
-  const relative='attachments/'+randomUUID()+'.xlsx';await mkdir(path.join(dataRoot,'attachments'),{recursive:true});await writeFile(path.join(dataRoot,relative),bytes);
+  const relative='attachments/'+randomUUID()+'.xlsx';await files().put(relative,bytes,{contentType:MIME.xlsx});
   return {filename:path.basename(filename),storage:relative,format:'xlsx',sheet:sheet.name,cells,fields,receivedAt:new Date().toISOString()};
 }
 export async function preservePdfForm(bytes:Buffer,filename:string,sender:string):Promise<SourceForm> {
   if(bytes.length>7*1024*1024)throw new AppError('The submitted PDF must be smaller than 7 MB.');
   if(!bytes.subarray(0,8).toString('ascii').startsWith('%PDF-')||!bytes.subarray(-4096).toString('latin1').includes('%%EOF'))throw new AppError('This attachment could not be read as a PDF. Upload the original PDF or Excel form.');
-  const relative='attachments/'+randomUUID()+'.pdf';await mkdir(path.join(dataRoot,'attachments'),{recursive:true});await writeFile(path.join(dataRoot,relative),bytes);
+  const relative='attachments/'+randomUUID()+'.pdf';await files().put(relative,bytes,{contentType:MIME.pdf});
   // Preserve the actual attachment; do not manufacture form fields from PDF filenames or proposal text.
   const fields:FormFields={agentEmail:sender.trim(),division:'Unconfirmed'};
   return {filename:path.basename(filename),storage:relative,format:'pdf',sheet:'',cells:[],fields,receivedAt:new Date().toISOString()};
 }
 export async function sampleForm(fields?:FormFields):Promise<Buffer> {
   const workbook=new ExcelJS.Workbook();
-  await workbook.xlsx.load(await readFile(resourceFile('franchise-form.xlsx')) as unknown as ExcelJS.Buffer);
+  await workbook.xlsx.load(await resourceBytes('franchise-form.xlsx') as unknown as ExcelJS.Buffer);
   const sheet=workbook.worksheets[0];
   const fake:FormFields={agentName:'Andrea Mendoza',requestDate:new Date().toISOString().slice(0,10),branch:'Antipolo',agentPhone:'09171234567',company:'Sampaguita National High School',industry:'DepEd',address:'Antipolo City, Rizal',contactName:'Ariana Santos',contactEmail:'school.contact@example.com',contactPhone:'09981234567',contactPosition:'HR Manager',existingProvider:'None',addressee:'Ariana Santos',addresseePosition:'HR Manager',requestedPlan:'DepEd plan',payment:'Annual',employees:'10',dependents:'0',employeeAges:'25–58',dependentAges:'',hospitals:'For confirmation',dental:'For confirmation'};
   const values=fields??fake;

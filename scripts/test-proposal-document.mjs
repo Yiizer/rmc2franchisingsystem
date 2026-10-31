@@ -11,9 +11,13 @@ const dir=path.resolve('test-results/document-editor');
 // Test the actual XML filler with filesystem-only dependencies, without
 // connecting to or creating any application database.
 await writeFile(path.join(dir,'database.mjs'),`export class AppError extends Error{};export const dataRoot=${JSON.stringify(dir)};export const sourceFile=t=>t.file;`);
+// Stubs for the storage modules documents.ts imports: fillDocx only needs errors + templateBytes (reads the master from disk).
+await writeFile(path.join(dir,'errors.mjs'),`export class AppError extends Error{};`);
+await writeFile(path.join(dir,'file-store.mjs'),`export const MIME={};export const deleteQuietly=async()=>{};export const files=()=>{throw new Error('file store is not available in this test')};export const putContentAddressed=async()=>{};`);
+await writeFile(path.join(dir,'template-source.mjs'),`import {readFile} from 'node:fs/promises';export const templateBytes=t=>readFile(t.file);`);
 for(const name of ['documents','document-renderer','proposal-fields','custom-documents','office-artwork']){
   const source=await readFile('lib/operations/'+name+'.ts','utf8');
-  const output=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText.replace(/from '\.\/(database|document-renderer|proposal-fields|custom-documents|office-artwork)'/g,"from './$1.mjs'");
+  const output=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText.replace(/from '\.\/(database|errors|file-store|template-source|document-renderer|proposal-fields|custom-documents|office-artwork)'/g,"from './$1.mjs'");
   await writeFile(path.join(dir,name+'.mjs'),output);
 }
 const {fillDocx}=await import(pathToFileURL(path.join(dir,'documents.mjs')));

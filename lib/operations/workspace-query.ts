@@ -55,7 +55,7 @@ function paginate<T>(items:T[], requested:number, pageSize=25): {items:T[]; pagi
 
 export async function inquiryDetails(id:string) {
   const record = await withHistoricalHold(await inquiry(id));
-  return {inquiry:record, clientState:clientState(record,await matchingInquiries(record)), packageRenderers:packageRenderers([record])};
+  return {inquiry:record, clientState:clientState(record,await matchingInquiries(record)), packageRenderers:await packageRenderers([record])};
 }
 
 export async function workspaceView(user: Staff, params: URLSearchParams): Promise<WorkspaceUpdate | {unchanged:true;cursor:string}> {
@@ -132,7 +132,7 @@ export async function workspaceView(user: Staff, params: URLSearchParams): Promi
     visibleIds.add(selected);
     if (row.revision!==query.knownRevision) {
       current=await withHistoricalHold(await inquiry(selected));
-      renderers=packageRenderers([current]);
+      renderers=await packageRenderers([current]);
     }
   }
   return {

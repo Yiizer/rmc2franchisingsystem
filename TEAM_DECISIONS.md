@@ -161,6 +161,25 @@ Format: **Decision** — why — where it applies.
   REPEATABLE READ read-only transaction. `activeInquiryActivity` prunes inside a transaction on every poll
   (microseconds on SQLite; revisit with Postgres). Login rate-limit check and failure record are separate
   statements; make them one transaction before any transaction can span I/O (security review in phase 4).
+- **File storage rule (phase 3 design, 2026-10-31):** never call `files()` inside `transaction()`. Write the file
+  first under a fresh unique key (uuid or content hash), then commit the row that references it; a row may only
+  reference a key whose `put` resolved. If the transaction fails, best-effort delete per-request keys; never delete
+  content-addressed keys (`sources/<sha>`, `templates/<sha>`). Orphans are harmless (sweep later, phase 8+).
+- **Phase 3 QA findings (2026-10-31), for later phases:**
+  - Legacy packages without `generated.renderer` cost one storage read each on a cold cache (Supabase: ~0.4–0.8 s
+    per package; 3.3 s first bootstrap for 4). **Backfill `generated.renderer` during the phase 8 import.**
+  - Before cutover, run a read-only check that every stored file key passes `assertKey` (a failing key would now
+    return 400 instead of the file).
+  - Orphaned objects accumulate (a workflow run left 37 unreferenced generated/source objects); a sweeper
+    (`list` minus referenced keys) is needed before production (phase 8).
+  - A cold LibreOffice profile can take ~72 s for the first conversion, close to the 90 s timeout; warm the
+    converter at startup or raise the first-run timeout when the converter moves (phase 5).
+  - Run storage e2e against Supabase with `RMC2_STORAGE_PREFIX=selftest/e2e-<run>/` and delete the prefix after.
+- **Supabase TEST project** (2026-10-31, PO's free org "RMC2 Testing", Singapore): ref `pgoiqwixaeqbxlwbmren`,
+  private bucket `rmc2-test-files`, credentials only in git-ignored `.env.supabase.test`
+  (`RMC2_SUPABASE_URL`, `RMC2_SUPABASE_SECRET_KEY`). Synthetic test files only, never real client data. Use the
+  **secret** key (`sb_secret_…`); the publishable key gets "row-level security" 403s. Free projects pause after
+  a week idle (resume from the dashboard).
 - **Create schema when the connection opens, never lazily per request** behind an "installed" flag. The lazy
   historical schema could run inside a request's transaction, roll back, and leave the flag set: two first-ever
   requests on a new database both got 500 "no such table: historical_accounts" (pre-existing, fixed 2026-10-31).

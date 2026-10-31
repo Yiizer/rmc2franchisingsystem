@@ -2,14 +2,15 @@ import { requireInquiryHandler } from './activity';
 import { randomUUID, createHash } from 'node:crypto';
 import { assertClientReady, startClientProtection, updateClientReview } from './client-service';
 import { protectionFor } from './client-rules';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { isSafeEmail, mailConfig, maskEmail } from './mail-config';
 import type { MailConfig } from './mail-config';
 import { MAIL_REASONS, MailSendError, mailTransport } from './mail-transport';
 import type { DeliveryMode, SendResult } from './mail-transport';
-import path from 'node:path';
 import { z } from 'zod';
-import { AppError, allUsers, audit, catalog, dataRoot, db, inquiry, notify, persist, safeStorage, sourceFile, transaction } from './database';
+import { AppError, allUsers, audit, catalog, db, inquiry, notify, persist, transaction } from './database';
+import { isAppError } from './errors';
+import { MIME, deleteQuietly, files } from './file-store';
+import { templateBytes } from './template-source';
 import { canEditInquiry, canPrepareProposal, documentIssues, defaultEmail, LABELS } from './types';
 import type { CatalogTemplate, InquiryRecord, MailDraft, Notice, Staff } from './types';
 import { proposalChecks, proposalFields } from './proposal-fields';
@@ -17,7 +18,7 @@ import { nextWorkAction } from './work-progress';
 import { customDocument, customEditsSchema } from './custom-documents';
 import { fingerprint, generatePackage } from './documents';
 import { parseForm, preservePdfForm } from './forms';
-import { packageRenderer } from './package-rendering';
+import { cachedRenderer, packageRenderer } from './package-rendering';
 import { getProposalHelp, PROPOSAL_HELP_PROMPTS, suggestTemplates } from './suggestions';
 
 export function checkRevision(record:InquiryRecord,revision:unknown) { if(record.revision!==revision)throw new AppError('This inquiry changed in another session. Reload before continuing.',409); }
@@ -55,6 +56,15 @@ export async function customize(id:string,user:Staff,input:unknown){
 
 export async function saveDraft(id:string,user:Staff,input:unknown) {
   canPrepare(user);const body=draftSchema.parse(input);
+  // The customized master is read and validated before the transaction (file I/O never runs inside one). Any error
+  // is held and raised at the original position below so the order of checks, and their messages, do not change.
+  // The held outcome is tied to the master hash it was computed from; if the master changed by the time the transaction
+  // runs, it cannot be trusted (and no file I/O is allowed in there), so the user is asked to reload.
+  let earlyHash:string|undefined,earlyError:unknown;
+  if(body.customization){
+    try{const early=await inquiry(id),master=await chosen(early);earlyHash=master?.sourceHash;if(master)customDocument(await templateBytes(master),body.customization.edits);}
+    catch(error){earlyError=error;}
+  }
   return await transaction(async()=>{
     const record=await inquiry(id);checkRevision(record,body.revision);await assertClientReady(record,true);
     const registered=protectionFor(record);if(registered&&body.fields.agentEmail?.trim().toLowerCase()!==registered.agentEmail.trim().toLowerCase())throw new AppError('The registered agent cannot be changed during the client protection period.',409);
@@ -68,7 +78,8 @@ export async function saveDraft(id:string,user:Staff,input:unknown) {
     if(body.customization){
       const custom=record.customization,master=await chosen(record);
       if(!custom||custom.id!==body.customization.id||custom.templateId!==body.templateId||!master||custom.sourceHash!==master.sourceHash)throw new AppError("Reload the customized copy before saving edits.",409);
-      customDocument(readFileSync(sourceFile(master)),body.customization.edits);
+      if(earlyHash!==master.sourceHash)throw new AppError("Reload the customized copy before saving edits.",409);
+      if(earlyError)throw earlyError;
       for(const key of new Set([...Object.keys(custom.edits),...Object.keys(body.customization.edits)])){const before=custom.edits[key],after=body.customization.edits[key];if(JSON.stringify(before)!==JSON.stringify(after))customizationChanges.push({field:"Customized content · "+key,before:before?JSON.stringify(before):"Original template content",after:after?JSON.stringify(after):"Restored template content"});}
       custom.edits=body.customization.edits;custom.updatedAt=new Date().toISOString();custom.updatedBy=user.id;
     }else if(record.customization&&(body.customization===null||body.templateId!==record.templateId)){
@@ -93,11 +104,15 @@ export async function generate(id:string,user:Staff,revision:number) {
   if(!canEditInquiry(user,record))throw new AppError('The submitted version cannot be regenerated.',409);await requireInquiryHandler(id,user);
   const template=await chosen(record);const issues=preparationIssues(record,template);if(issues.length)throw new AppError('Complete these before generating: '+issues.join('; '));
   const generated=await generatePackage(id,template!,record.fields,user.id,record.customization);
-  return await transaction(async()=>{const fresh=await inquiry(id);checkRevision(fresh,revision);await assertClientReady(fresh);if(!canEditInquiry(user,fresh))throw new AppError('This proposal was submitted while generation was running.',409);await requireInquiryHandler(id,user);fresh.generated=generated;if(!fresh.supervisorEdit)fresh.status='Preparing proposal';const automatic=defaultEmail(fresh.fields,template,user.name);for(const key of ['to','subject','body'] as const)if(!fresh.emailOverrides.includes(key))fresh.email[key]=automatic[key];audit(fresh,user,'Generated '+(fresh.customization?'CUSTOMIZED ':'')+'proposal PDF, Word document and agent email from '+template!.sourceId);await persist(fresh,revision);return fresh;});
+  // The package files are already stored under fresh keys; if the row cannot be committed they are removed again.
+  try{return await transaction(async()=>{const fresh=await inquiry(id);checkRevision(fresh,revision);await assertClientReady(fresh);if(!canEditInquiry(user,fresh))throw new AppError('This proposal was submitted while generation was running.',409);await requireInquiryHandler(id,user);fresh.generated=generated;if(!fresh.supervisorEdit)fresh.status='Preparing proposal';const automatic=defaultEmail(fresh.fields,template,user.name);for(const key of ['to','subject','body'] as const)if(!fresh.emailOverrides.includes(key))fresh.email[key]=automatic[key];audit(fresh,user,'Generated '+(fresh.customization?'CUSTOMIZED ':'')+'proposal PDF, Word document and agent email from '+template!.sourceId);await persist(fresh,revision);return fresh;});}catch(error){await deleteQuietly(generated.docx,generated.pdf);throw error;}
 }
 export async function submit(id:string,user:Staff,revision:number) {
   canPrepare(user);
-  return await transaction(async()=>{const record=await inquiry(id);checkRevision(record,revision);await assertClientReady(record);if(!canEditInquiry(user,record))throw new AppError('This proposal has already been submitted.',409);await requireInquiryHandler(id,user);const template=await chosen(record),issues=preparationIssues(record,template);if(issues.length)throw new AppError('Resolve these before submission: '+issues.join('; '));if(!record.generated||record.generated.fingerprint!==fingerprint(record.fields,template!,record.customization))throw new AppError('Generate an updated proposal before submitting.');if(['browser-print','native-word-legacy'].includes(packageRenderer(record.generated)))throw new AppError('Update the PDF & email before submitting this earlier layout.');mailSchema.parse(record.email);if(record.email.to!==record.fields.agentEmail&&!record.emailOverrides.includes('to'))throw new AppError('Confirm the agent reply recipient.');const warnings=[...(record.customization?["CUSTOMIZED proposal — review all content edits against the original template"]:[]),...template!.warnings,...(record.customization?documentIssues(record.fields,template).filter(issue=>!documentIssues(record.fields,template,true).includes(issue)):[]),...proposalChecks(record.fields,record.source.fields,template).filter(check=>check.kind==='changed').map(check=>'Verify '+(LABELS[check.field]||check.field)+': '+(check.original||'(blank)')+' → '+(check.current||'(blank)')),...record.emailOverrides.map(key=>'Edited email '+key)];const version=record.submissions.length+1,reviewEdit=record.supervisorEdit,originalSubmitter=reviewEdit?record.submissions.at(-1)!.submittedBy:user.id;if(reviewEdit)record.submissions.at(-1)!.supersededBy=version;record.submissions.push({... (reviewEdit?{supervisorRevision:{by:user.id,fromVersion:reviewEdit.version}}:{}),version,at:new Date().toISOString(),submittedBy:originalSubmitter,fields:{...record.fields},email:{...record.email},emailOverrides:[...record.emailOverrides],generated:{...record.generated},notes:record.notes,warnings});delete record.supervisorEdit;record.status='Awaiting approval';for(const staff of await allUsers())await workReminder(record,staff,false);record.returnNote='';record.returnFlags=[];audit(record,user,'Submitted proposal v'+version+' to Emerson and Zeo');await persist(record,revision);await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',id);await notify(record,record.customization?'Customized proposal awaiting approval':'Proposal awaiting approval',`${user.name} submitted ${record.fields.company} · v${version}.`,(await allUsers()).filter(u=>u.active&&u.canApprove&&u.role==='Supervisor').map(u=>u.id));return record;});
+  // A legacy package's renderer is found by reading its PDF; do that (file I/O) before the transaction, which then
+  // uses the cached answer. A cache miss inside the transaction asks the user to retry.
+  const early=await inquiry(id);if(early.generated)await packageRenderer(early.generated,{rethrowTransient:true});
+  return await transaction(async()=>{const record=await inquiry(id);checkRevision(record,revision);await assertClientReady(record);if(!canEditInquiry(user,record))throw new AppError('This proposal has already been submitted.',409);await requireInquiryHandler(id,user);const template=await chosen(record),issues=preparationIssues(record,template);if(issues.length)throw new AppError('Resolve these before submission: '+issues.join('; '));if(!record.generated||record.generated.fingerprint!==fingerprint(record.fields,template!,record.customization))throw new AppError('Generate an updated proposal before submitting.');const renderer=cachedRenderer(record.generated);if(!renderer)throw new AppError('The proposal files changed. Reload the inquiry and submit again.',409);if(['browser-print','native-word-legacy'].includes(renderer))throw new AppError('Update the PDF & email before submitting this earlier layout.');mailSchema.parse(record.email);if(record.email.to!==record.fields.agentEmail&&!record.emailOverrides.includes('to'))throw new AppError('Confirm the agent reply recipient.');const warnings=[...(record.customization?["CUSTOMIZED proposal — review all content edits against the original template"]:[]),...template!.warnings,...(record.customization?documentIssues(record.fields,template).filter(issue=>!documentIssues(record.fields,template,true).includes(issue)):[]),...proposalChecks(record.fields,record.source.fields,template).filter(check=>check.kind==='changed').map(check=>'Verify '+(LABELS[check.field]||check.field)+': '+(check.original||'(blank)')+' → '+(check.current||'(blank)')),...record.emailOverrides.map(key=>'Edited email '+key)];const version=record.submissions.length+1,reviewEdit=record.supervisorEdit,originalSubmitter=reviewEdit?record.submissions.at(-1)!.submittedBy:user.id;if(reviewEdit)record.submissions.at(-1)!.supersededBy=version;record.submissions.push({... (reviewEdit?{supervisorRevision:{by:user.id,fromVersion:reviewEdit.version}}:{}),version,at:new Date().toISOString(),submittedBy:originalSubmitter,fields:{...record.fields},email:{...record.email},emailOverrides:[...record.emailOverrides],generated:{...record.generated},notes:record.notes,warnings});delete record.supervisorEdit;record.status='Awaiting approval';for(const staff of await allUsers())await workReminder(record,staff,false);record.returnNote='';record.returnFlags=[];audit(record,user,'Submitted proposal v'+version+' to Emerson and Zeo');await persist(record,revision);await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',id);await notify(record,record.customization?'Customized proposal awaiting approval':'Proposal awaiting approval',`${user.name} submitted ${record.fields.company} · v${version}.`,(await allUsers()).filter(u=>u.active&&u.canApprove&&u.role==='Supervisor').map(u=>u.id));return record;});
 }
 export async function decide(id:string,user:Staff,input:unknown) {
   canReview(user);const body=z.object({revision:z.number().int(),version:z.number().int(),action:z.enum(['approve','return']),note:z.string().max(10000),flags:z.array(z.string().max(150)).max(30),failSend:z.boolean().optional(),customizationReviewed:z.boolean().optional()}).parse(input);
@@ -120,7 +135,7 @@ const STALE_SENDING_MS=120000;
 type MailFailure={code:string;safeReason:string;uncertain:boolean};
 function toFailure(error:unknown):MailFailure{
   if(error instanceof MailSendError)return {code:error.code,safeReason:error.safeReason,uncertain:error.uncertain};
-  if(error instanceof AppError&&error.status<500)return {code:'BLOCKED',safeReason:error.message,uncertain:false};
+  if(isAppError(error)&&error.status<500)return {code:'BLOCKED',safeReason:error.message,uncertain:false};
   console.error('Mail delivery error',error instanceof Error?error.name:'unknown'); // never the message: it can carry addresses
   return {code:'UNKNOWN',safeReason:MAIL_REASONS.UNKNOWN,uncertain:false};
 }
@@ -175,7 +190,9 @@ async function recordFailure(id:string,version:number,user:Staff,rowId:string,fa
     if(latest)await notify(record,failure.uncertain?'Approved email outcome unknown':'Approved email needs attention',failure.safeReason,[latest.submittedBy]);
   });
 }
-function storeEml(relative:string,eml:Buffer){try{mkdirSync(path.join(dataRoot,'outbox'),{recursive:true});writeFileSync(safeStorage(relative),eml);return relative;}catch{return '';}}
+// Storage calls around an SMTP send use a short timeout so a delivery stays well inside STALE_SENDING_MS.
+const STORAGE_TIMEOUT_MS=15000;
+async function storeEml(relative:string,eml:Buffer){try{await files().put(relative,eml,{contentType:MIME.eml,mode:'replace',timeoutMs:STORAGE_TIMEOUT_MS});return relative;}catch{return '';}}
 async function deliver(id:string,version:number,user:Staff,fail=false) {
   await recoverStuckMail();
   const row=await db.get("SELECT id,status,data FROM outbox WHERE inquiry_id=? AND version=? AND kind='proposal'",id,version) as {id:string;status:string;data:string}|undefined;
@@ -189,13 +206,13 @@ async function deliver(id:string,version:number,user:Staff,fail=false) {
     // failSend is a local-test aid only; with real email configured the request flag is ignored.
     if(fail&&config.mode==='local'&&config.env==='local')throw new MailSendError('SIMULATED',undefined,true,false);
     await reserveSend(config,'reply',row.id);
-    result=await mailTransport(config).send({messageId:row.id,to:mail.email.to,subject:mail.email.subject,body:mail.email.body,attachments:[{filename:mail.filename+'.pdf',content:readFileSync(safeStorage(mail.pdf)),contentType:'application/pdf'}],kind:'reply'});
+    result=await mailTransport(config).send({messageId:row.id,to:mail.email.to,subject:mail.email.subject,body:mail.email.body,attachments:[{filename:mail.filename+'.pdf',content:await files().get(mail.pdf,{timeoutMs:STORAGE_TIMEOUT_MS}),contentType:'application/pdf'}],kind:'reply'});
   }catch(error){await recordFailure(id,version,user,row.id,toFailure(error));return;}
   try{
     const text=deliveryText(config,result);
     if(result.dryRun){
       // A dry run proves the message can be built; it must never complete the workflow. Retry stays available.
-      const file=storeEml('outbox/'+row.id+'.dry-run.eml',result.eml);
+      const file=await storeEml('outbox/'+row.id+'.dry-run.eml',result.eml);
       await transaction(async()=>{const record=await inquiry(id),revision=record.revision,latest=record.submissions.find(s=>s.version===version);if(!latest||latest.delivery)return;
         record.status='Approved — sending';delete record.mailFailure;delete record.mailUncertain;record.mailDryRun={at:result.at,kind:'reply',file};
         audit(record,user,'Approved proposal v'+version+': '+text.audit);await persist(record,revision);
@@ -203,7 +220,7 @@ async function deliver(id:string,version:number,user:Staff,fail=false) {
         await notify(record,text.notice,`Proposal v${version}. ${text.detail}`,[latest.submittedBy]);});
       return;
     }
-    const file=storeEml('outbox/'+row.id+'.eml',result.eml),masked=maskedRedirect(config);
+    const file=await storeEml('outbox/'+row.id+'.eml',result.eml),masked=maskedRedirect(config);
     await transaction(async()=>{const record=await inquiry(id),revision=record.revision,latest=record.submissions.find(s=>s.version===version);if(!latest||latest.decision?.action!=='approve')throw new AppError('No approval exists for this package.',409);if(latest.delivery)return;startClientProtection(record,new Date().toISOString(),'proposal',latest.fields);latest.delivery={id:row.id,at:result.at,mode:result.mode,file,sentBy:user.id,...(masked?{redirectedTo:masked}:{})};record.status='Sent';delete record.mailFailure;delete record.mailUncertain;delete record.mailDryRun;audit(record,user,'Approved proposal v'+version+' '+text.audit);await persist(record,revision);await db.run('UPDATE outbox SET status=?,data=? WHERE id=?','sent',JSON.stringify({...JSON.parse((await db.get('SELECT data FROM outbox WHERE id=?',row.id) as {data:string}).data),file,error:''}),row.id);await notify(record,text.notice,`${config.mode==='local'?latest.email.to:'Agent'} · proposal v${version}. ${text.detail}`,[latest.submittedBy]);});
   }catch{
     // The message left (or was prepared) but we could not record it. Never auto-retry: that could send twice.
@@ -289,10 +306,10 @@ export async function requestDetails(id:string,user:Staff,input:unknown) {
     const text=deliveryText(config,result);
     if(result.dryRun){
       // Dry run: no status, protection or detailRequests change. Only a marker so the UI can offer the built message.
-      const stored=storeEml('outbox/'+outboxId+'.dry-run.eml',result.eml);
+      const stored=await storeEml('outbox/'+outboxId+'.dry-run.eml',result.eml);
       return await transaction(async()=>{const record=await inquiry(id),revision=record.revision;record.mailDryRun={at:result.at,kind:'details',file:stored};audit(record,user,'Details request: '+text.audit);await persist(record,revision);await settle('dryrun','');return record;});
     }
-    const stored=storeEml(file,result.eml);
+    const stored=await storeEml(file,result.eml);
     return await transaction(async()=>{const record=await inquiry(id),revision=record.revision,at=new Date().toISOString();
       startClientProtection(record,at,'details');record.detailRequests.push({at,actorId:user.id,to:record.fields.agentEmail,body:body.body,file:stored});record.status='Waiting for agent details';delete record.mailDryRun;
       audit(record,user,'Requested missing information from the agent — '+text.audit);await persist(record,revision);await settle('sent','');return record;});
@@ -308,8 +325,9 @@ export async function intake(user:Staff,file:File,sender:string) {
   if(!filename.endsWith('.xlsx')&&!filename.endsWith('.pdf'))throw new AppError('Upload the agent’s submitted form as an Excel (.xlsx) or PDF (.pdf) attachment.');
   const source=filename.endsWith('.pdf')?await preservePdfForm(bytes,file.name,sender):await parseForm(bytes,file.name,sender);
   source.sourceHash=createHash('sha256').update(bytes).digest('hex');
-  return await transaction(async()=>{const max=await inquiriesMax(),at=new Date().toISOString();const record:InquiryRecord={id:'INQ-'+new Date().getFullYear()+'-'+String(max+1).padStart(5,'0'),revision:1,status:'New inquiry',createdAt:at,updatedAt:at,fields:{...source.fields},source,email:defaultEmail(source.fields),emailOverrides:[],templateId:'',submissions:[],handledBy:[],history:[{id:randomUUID(),at,actorId:user.id,actor:user.name,action:'Imported agent email form. All active staff notified.'}],chat:[],notes:'',returnNote:'',returnFlags:[],detailRequests:[]};await updateClientReview(record,user);
-    await persist(record);await notify(record,record.closure?'Request declined — previous registration expired':record.clientReview?.state==='duplicate'?'Duplicate import received — on hold':record.clientReview?.state==='identify'?'Client details needed':'New inquiry',`${record.fields.company||'Agent request'} is ready for form review.`,(await allUsers()).filter(u=>u.active).map(u=>u.id));return record;});
+  // The original is already stored under a fresh key; if the row cannot be committed, remove it again.
+  try{return await transaction(async()=>{const max=await inquiriesMax(),at=new Date().toISOString();const record:InquiryRecord={id:'INQ-'+new Date().getFullYear()+'-'+String(max+1).padStart(5,'0'),revision:1,status:'New inquiry',createdAt:at,updatedAt:at,fields:{...source.fields},source,email:defaultEmail(source.fields),emailOverrides:[],templateId:'',submissions:[],handledBy:[],history:[{id:randomUUID(),at,actorId:user.id,actor:user.name,action:'Imported agent email form. All active staff notified.'}],chat:[],notes:'',returnNote:'',returnFlags:[],detailRequests:[]};await updateClientReview(record,user);
+    await persist(record);await notify(record,record.closure?'Request declined — previous registration expired':record.clientReview?.state==='duplicate'?'Duplicate import received — on hold':record.clientReview?.state==='identify'?'Client details needed':'New inquiry',`${record.fields.company||'Agent request'} is ready for form review.`,(await allUsers()).filter(u=>u.active).map(u=>u.id));return record;});}catch(error){await deleteQuietly(source.storage);throw error;}
 }
 async function inquiriesMax() { const rows=await db.all('SELECT id FROM inquiries') as {id:string}[];return Math.max(129,...rows.map(r=>Number(r.id.split('-').at(-1))||0)); }
 export async function alternatives(record:InquiryRecord) { return suggestTemplates(record.fields,await catalog()).map(option=>option.template); }

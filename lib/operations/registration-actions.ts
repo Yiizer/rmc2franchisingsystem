@@ -3,13 +3,13 @@ import { matchingInquiries } from './inquiry-index';
 
 import { randomUUID } from 'node:crypto';
 
-import { mkdirSync, writeFileSync, unlinkSync, readFileSync } from 'node:fs';
-
 import path from 'node:path';
 
 import { z } from 'zod';
 
-import { allUsers, AppError, audit, db, inquiry, notify, persist, safeStorage, transaction } from './database';
+import { allUsers, AppError, audit, db, inquiry, notify, persist, transaction } from './database';
+
+import { deleteQuietly, files } from './file-store';
 
 import { clientIdentity, clientState, isRegistered, protectionFor, reviewClient, sameAgent } from './client-rules';
 
@@ -75,9 +75,14 @@ export async function transferWithBor(id:string,user:Staff,form:FormData){
 
   if(!pdf&&!png&&!jpg)throw new AppError('The BOR must be a valid PDF, PNG or JPEG.');
 
-  const storage='bor/'+randomUUID()+ext;let written=false;
+  // Cheap read-only pre-check so a stale request uploads nothing; the transaction re-checks everything.
+  const early=await inquiry(id),earlyPrevious=await inquiry(body.previousId);
+  if(early.revision!==body.revision||earlyPrevious.revision!==body.previousRevision)throw new AppError('The registration changed. Reload both inquiries before transferring.',409);
 
-  try{return await transaction(async()=>{
+  const storage='bor/'+randomUUID()+ext,mime=pdf?'application/pdf':png?'image/png':'image/jpeg';let written=false,used=false;
+
+  // File first (never inside transaction()), then the row; every committed path below references this key.
+  try{await files().put(storage,bytes,{contentType:mime});written=true;const saved=await transaction(async()=>{
 
     const record=await inquiry(id),previous=await inquiry(body.previousId),records=await matchingInquiries(record);
 
@@ -92,8 +97,6 @@ export async function transferWithBor(id:string,user:Staff,form:FormData){
     if(sameAgent(record.source.fields,previous.source.fields)||review.matches[0].expiredSameAgent)throw new AppError('A BOR transfer requires a different incoming agent.',409);
 
     await available(id,user);await available(previous.id,user);
-
-    mkdirSync(path.dirname(safeStorage(storage)),{recursive:true});writeFileSync(safeStorage(storage),bytes,{flag:'wx'});written=true;
 
     const at=new Date().toISOString();
 
@@ -129,7 +132,7 @@ export async function transferWithBor(id:string,user:Staff,form:FormData){
 
     await notify(record,'Client transferred by BOR',record.fields.agentName+' now holds the client registration. Verified by '+user.name+'.',(await allUsers()).filter(person=>person.active).map(person=>person.id));return record;
 
-  });}catch(error){if(written)try{unlinkSync(safeStorage(storage));}catch{}throw error;}
+  });used=true;return saved;}finally{if(written&&!used)await deleteQuietly(storage);}
 
 }
 
@@ -155,7 +158,7 @@ export async function decideAgentTransfer(id:string,user:Staff,input:unknown){
   if(!pending.attachment)throw new AppError('BOR evidence is missing.',409);
   const form=new FormData();Object.entries({revision:String(record.revision),previousId:previous.id,previousRevision:String(previous.revision),reference:pending.reference,note:pending.note+'; Supervisor approval: '+body.note,verified:'true'}).forEach(([key,value])=>form.set(key,value));
 
-  form.set('file',new File([readFileSync(safeStorage(pending.attachment.storage))],pending.attachment.filename,{type:pending.attachment.mime}));
+  form.set('file',new File([new Uint8Array(await files().get(pending.attachment.storage))],pending.attachment.filename,{type:pending.attachment.mime}));
 
   return await transferWithBor(id,user,form);
 
