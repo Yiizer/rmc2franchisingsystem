@@ -28,6 +28,9 @@ export interface FileStore {
   list(prefix: string): Promise<FileKey[]>;
   /** Remote stores only: the URL an anonymous visitor would use, so the health check can prove the bucket is private. */
   publicUrl?(key: FileKey): string;
+  /** Supabase only: short-lived links that let another service read or write one object without the secret key. */
+  signedDownloadUrl?(key: FileKey, seconds: number): Promise<string>;
+  signedUploadUrl?(key: FileKey): Promise<string>;
 }
 
 export const MIME = {

@@ -5,8 +5,9 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { AppError } from './database';
+import { deleteQuietly, files } from './file-store';
 import { restoreHeaderArtwork } from './office-artwork';
 
 const execute = promisify(execFile);
@@ -49,19 +50,32 @@ const remoteConverter = () => {
 };
 export const conversionName = () => remoteConverter() ? 'LibreOffice (online converter) · original Word layout' : officePath() ? 'LibreOffice · original Word layout' : 'Document converter needs setup';
 
+const DOCX_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const CONVERTER_FAILED = 'The document converter could not prepare the proposal. Your saved details are safe. Try again.';
+// Vercel caps request/response bodies at 4.5 MB and filled proposals are larger, so with Supabase storage the files
+// travel through short-lived private links: the app uploads the DOCX, the converter reads it and uploads the PDF.
 async function convertRemote(bytes: Buffer, remote: NonNullable<ReturnType<typeof remoteConverter>>): Promise<Buffer> {
-  if (bytes.length > 4 * 1024 * 1024) throw new AppError('This proposal is too large for the online converter (over 4 MB).', 413);
-  let reply: Response;
-  try {
-    reply = await fetch(remote.url + '/convert', { method: 'POST', body: new Uint8Array(bytes), cache: 'no-store', signal: AbortSignal.timeout(150000),
-      headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'x-converter-secret': remote.secret, ...(remote.bypass ? { 'x-vercel-protection-bypass': remote.bypass } : {}) } });
-  } catch (error) {
-    console.error('Online document conversion unreachable:', error instanceof Error ? error.name : 'error');
-    throw new AppError('The document converter could not prepare the proposal. Your saved details are safe. Try again.', 503);
+  const store = files();
+  const headers = { 'x-converter-secret': remote.secret, ...(remote.bypass ? { 'x-vercel-protection-bypass': remote.bypass } : {}) };
+  const send = async (init: RequestInit & { headers: Record<string, string> }, route: string) => {
+    let reply: Response;
+    try { reply = await fetch(remote.url + route, { ...init, headers: { ...headers, ...init.headers }, cache: 'no-store', signal: AbortSignal.timeout(150000) }); }
+    catch (error) { console.error('Online document conversion unreachable:', error instanceof Error ? error.name : 'error'); throw new AppError(CONVERTER_FAILED, 503); }
+    if (reply.status === 429) throw new AppError('The document converter is busy. Please try again shortly.', 429);
+    if (!reply.ok) { console.error('Online document conversion failed: status', reply.status); throw new AppError(CONVERTER_FAILED, 503); }
+    return reply;
+  };
+  if (store.signedUploadUrl && store.signedDownloadUrl) {
+    const id = randomUUID(), docxKey = 'converter-tmp/' + id + '.docx', pdfKey = 'converter-tmp/' + id + '.pdf';
+    try {
+      await store.put(docxKey, bytes, { contentType: DOCX_TYPE });
+      const source = await store.signedDownloadUrl(docxKey, 300), target = await store.signedUploadUrl(pdfKey);
+      await send({ method: 'POST', body: JSON.stringify({ source, target }), headers: { 'content-type': 'application/json' } }, '/convert-url');
+      return await store.get(pdfKey);
+    } finally { await deleteQuietly(docxKey); await deleteQuietly(pdfKey); }
   }
-  if (reply.status === 429) throw new AppError('The document converter is busy. Please try again shortly.', 429);
-  if (!reply.ok) { console.error('Online document conversion failed: status', reply.status); throw new AppError('The document converter could not prepare the proposal. Your saved details are safe. Try again.', 503); }
-  return Buffer.from(await reply.arrayBuffer());
+  if (bytes.length > 4 * 1024 * 1024) throw new AppError('This proposal is too large for the online converter (over 4 MB).', 413);
+  return Buffer.from(await (await send({ method: 'POST', body: new Uint8Array(bytes), headers: { 'content-type': DOCX_TYPE } }, '/convert')).arrayBuffer());
 }
 
 async function convert(bytes: Buffer): Promise<{ bytes: Buffer; pageCount: number }> {

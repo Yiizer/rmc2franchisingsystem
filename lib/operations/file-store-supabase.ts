@@ -88,6 +88,22 @@ export function createSupabaseStore(cfg: { url: string; secretKey: string; bucke
     },
     get,
     publicUrl(key) { assertKey(key); return `${api}/object/public/${bucket}/${path(key)}`; },
+    async signedDownloadUrl(key, seconds) {
+      assertKey(key);
+      const reply = await request('sign', key, `${api}/object/sign/${bucket}/${path(key)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expiresIn: seconds }) }, 1);
+      if (!ok(reply)) throw failure('sign', key, reply);
+      const signed = String((json('sign', key, reply) as { signedURL?: string; signedUrl?: string }).signedURL ?? '');
+      if (!signed.startsWith('/')) throw new StorageError('unavailable');
+      return api + signed;
+    },
+    async signedUploadUrl(key) {
+      assertKey(key);
+      const reply = await request('upload-sign', key, `${api}/object/upload/sign/${bucket}/${path(key)}`, { method: 'POST' }, 1);
+      if (!ok(reply)) throw failure('upload-sign', key, reply);
+      const signed = String((json('upload-sign', key, reply) as { url?: string }).url ?? '');
+      if (!signed.startsWith('/')) throw new StorageError('unavailable');
+      return api + signed;
+    },
     async stat(key): Promise<FileStat | null> {
       assertKey(key);
       const reply = await request('stat', key, `${api}/object/info/authenticated/${bucket}/${path(key)}`, { method: 'GET' }, 1);

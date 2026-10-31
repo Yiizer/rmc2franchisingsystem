@@ -38,12 +38,42 @@ const body = req => new Promise((resolve, reject) => {
   req.on('end', () => resolve(Buffer.concat(parts))); req.on('error', reject);
 });
 
+// Files over Vercel's 4.5 MB body cap: the app sends two short-lived Supabase links (read the DOCX, upload the PDF).
+// Only links on the configured Supabase host's signed-object paths are accepted, so this cannot fetch anything else.
+const STORAGE_HOST = (process.env.RMC2_CONVERTER_STORAGE_HOST || '').trim().toLowerCase();
+const signedLink = (value, kind) => {
+  let u; try { u = new URL(String(value)); } catch { return null; }
+  const path = kind === 'read' ? '/storage/v1/object/sign/' : '/storage/v1/object/upload/sign/';
+  return STORAGE_HOST && u.protocol === 'https:' && u.hostname.toLowerCase() === STORAGE_HOST && u.pathname.startsWith(path) && u.searchParams.get('token') ? u.href : null;
+};
+async function runQueued(work) {
+  if (waiting >= 4) throw Object.assign(new Error('busy'), { status: 429 });
+  waiting++;
+  const task = queue.then(work); queue = task.then(() => {}, () => {});
+  try { return await task; } finally { waiting--; }
+}
+async function convertViaLinks(req, reply) {
+  let links; try { links = JSON.parse((await body(req)).toString('utf8')); } catch { return reply(400, { error: 'bad request' }); }
+  const source = signedLink(links?.source, 'read'), target = signedLink(links?.target, 'write');
+  if (!source || !target) return reply(400, { error: 'links not allowed' });
+  const got = await fetch(source, { signal: AbortSignal.timeout(60000) });
+  if (!got.ok) return reply(502, { error: 'could not read the document' });
+  const docx = Buffer.from(await got.arrayBuffer());
+  if (docx.length > 60 * 1024 * 1024 || docx.subarray(0, 2).toString() !== 'PK') return reply(400, { error: 'not a docx' });
+  const pdf = await runQueued(() => convert(docx));
+  if (pdf.subarray(0, 5).toString() !== '%PDF-') return reply(502, { error: 'conversion produced no pdf' });
+  const put = await fetch(target, { method: 'PUT', body: pdf, headers: { 'content-type': 'application/pdf' }, signal: AbortSignal.timeout(60000) });
+  if (!put.ok) { console.error('upload failed:', put.status); return reply(502, { error: 'could not store the pdf' }); }
+  reply(200, { ok: true, bytes: pdf.length });
+}
+
 http.createServer(async (req, res) => {
   const reply = (code, obj) => { res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(obj)); };
   try {
     if (!authed(req)) return reply(401, { error: 'unauthorized' });
     const url = new URL(req.url, 'http://x');
     if (url.pathname === '/health' && req.method === 'GET') return reply(200, { ok: true, libreoffice: (await run('soffice', ['--version'])).stdout.trim() });
+    if (url.pathname === '/convert-url' && req.method === 'POST') return await convertViaLinks(req, reply);
     if (url.pathname !== '/convert' || req.method !== 'POST') return reply(404, { error: 'not found' });
     const docx = await body(req);
     if (docx.subarray(0, 2).toString() !== 'PK') return reply(400, { error: 'not a docx' });
