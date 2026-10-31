@@ -207,6 +207,19 @@ Format: **Decision** — why — where it applies.
   - Lessons:
     - The Vercel-only guards must skip `NEXT_PHASE=phase-production-build`.
     - `vercel link` writes `VERCEL_OIDC_TOKEN` into `.env.local`.
+- **Inbound email, lean phase 7 (2026-10-31):**
+  - **Reading:** IMAP read-only on `INBOX` of the test account, using the sending app password.
+  - **Requests page:** emails go to a staff-reviewed "Requests" page and are never auto-imported.
+  - **Import:** "Create inquiry" runs the normal intake on an attachment.
+  - **When it checks:** "Check mail now" and a daily cron at `/api/operations/inbound/cron` (`CRON_SECRET`).
+  - **Lessons:**
+    - Vercel Cron runs only on PRODUCTION deployments, so previews rely on the button.
+    - **Online PDF files exceed Vercel's 4.5 MB body cap.** Convert through short-lived Supabase signed links (`/convert-url`), never in the request body.
+    - Test mode redirects our own replies into the same inbox; those are skipped.
+  - **Final check:**
+    - review the IMAP failure modes;
+    - sender trust (show SPF/DKIM only, never treat the address as identity);
+    - the inbox retention policy.
 - **Online PDFs and real email on the preview (2026-10-31, approved by the PO):**
   - Converter: `converter/`, a separate Vercel container project `rmc2-converter`, alias `rmc2-converter-yiizer.vercel.app`, behind Vercel Authentication.
     - The app passes `RMC2_CONVERTER_BYPASS` for Vercel protection and `RMC2_CONVERTER_SECRET` for the converter's own check.
