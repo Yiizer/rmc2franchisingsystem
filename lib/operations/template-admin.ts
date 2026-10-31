@@ -48,7 +48,7 @@ export async function stageTemplate(user:Staff,form:FormData){
   await putContentAddressed(storage,bytes,hash,MIME.docx,'The saved template could not be verified.');
   await files().put(pdfStorage,pdf.bytes,{contentType:MIME.pdf});
   const staged:StagedTemplate={template,expectedHash:existing?.sourceHash||null,pdf:pdfStorage,pages:pdf.pageCount};
-  try{await db.run('INSERT INTO template_versions VALUES (?,?,?,?,?,?)',stageId,id,JSON.stringify(staged),'staged',user.id,new Date().toISOString());}
+  try{await db.run('INSERT INTO template_versions (id,template_id,data,state,actor_id,at) VALUES (?,?,?,?,?,?)',stageId,id,JSON.stringify(staged),'staged',user.id,new Date().toISOString());}
   catch(error){await deleteQuietly(pdfStorage);throw error;}
   await securityEvent(user,'Staged template '+id+' source '+hash);return {id:stageId,template:{...template,file:'',storage:undefined},pages:pdf.pageCount};
 }
@@ -56,12 +56,13 @@ export async function templateStage(user:Staff,id:string){admin(user);const row=
 export async function publishTemplate(user:Staff,input:unknown){
   admin(user);const body=z.object({id:z.string().uuid(),reviewed:z.literal(true)}).strict().parse(input);
   return await transaction(async()=>{
+    await db.lock('templates'); // two administrators publishing together: the second sees the first's hash and gets a 409
     const staged=await templateStage(user,body.id);if(staged.state==='published')return staged.template;
     const current=(await catalog()).find(template=>template.id===staged.template.id);
     if((current?.sourceHash||null)!==staged.expectedHash)throw new AppError('Another administrator updated this template. Upload and review again.',409);
-    if(current)await db.run('INSERT INTO template_versions VALUES (?,?,?,?,?,?)',randomUUID(),current.id,JSON.stringify({template:current}),'previous',user.id,new Date().toISOString());
-    await db.run('INSERT OR REPLACE INTO template_overrides VALUES (?,?)',staged.template.id,JSON.stringify(staged.template));
+    if(current)await db.run('INSERT INTO template_versions (id,template_id,data,state,actor_id,at) VALUES (?,?,?,?,?,?)',randomUUID(),current.id,JSON.stringify({template:current}),'previous',user.id,new Date().toISOString());
+    await db.run('INSERT INTO template_overrides (id,data) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',staged.template.id,JSON.stringify(staged.template));
     await db.run("UPDATE template_versions SET state='published' WHERE id=?",body.id);await securityEvent(user,'Published template '+staged.template.id+' source '+staged.template.sourceHash);return staged.template;
   });
 }
-export async function setTemplateActive(user:Staff,input:unknown){admin(user);const body=z.object({id:z.string(),expectedHash:z.string(),active:z.boolean()}).strict().parse(input);return await transaction(async()=>{const template=(await catalog()).find(template=>template.id===body.id);if(!template||template.sourceHash!==body.expectedHash)throw new AppError('Reload the template library first.',409);const next={...template,active:body.active};await db.run('INSERT OR REPLACE INTO template_overrides VALUES (?,?)',next.id,JSON.stringify(next));await securityEvent(user,(body.active?'Activated':'Retired')+' template '+next.id);return next;});}
+export async function setTemplateActive(user:Staff,input:unknown){admin(user);const body=z.object({id:z.string(),expectedHash:z.string(),active:z.boolean()}).strict().parse(input);return await transaction(async()=>{await db.lock('templates');const template=(await catalog()).find(template=>template.id===body.id);if(!template||template.sourceHash!==body.expectedHash)throw new AppError('Reload the template library first.',409);const next={...template,active:body.active};await db.run('INSERT INTO template_overrides (id,data) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',next.id,JSON.stringify(next));await securityEvent(user,(body.active?'Activated':'Retired')+' template '+next.id);return next;});}

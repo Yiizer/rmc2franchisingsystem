@@ -15,6 +15,7 @@ register();
 const imp = file => import(pathToFileURL(path.resolve('lib/operations', file)).href);
 const database = await imp('database.ts'), svc = await imp('service.ts'), transport = await imp('mail-transport.ts'), types = await imp('types.ts'), wq = await imp('workspace-query.ts');
 const { db, allUsers, inquiry, persist } = database;
+if (db.dialect !== 'sqlite') throw new Error('test-mail-service is SQLite-only (it rewrites mail_sends and lease rows directly)');
 const { MailSendError } = transport;
 
 const smtpEnv = { RMC2_MAIL_MODE: 'smtp', RMC2_MAIL_ENV: 'staging', RMC2_SMTP_HOST: 'smtp.example.test', RMC2_SMTP_PORT: '465', RMC2_SMTP_USER: 's@example.test', RMC2_SMTP_APP_PASSWORD: 'pw', RMC2_MAIL_FROM_ADDRESS: 's@example.test', RMC2_MAIL_FROM_NAME: 'T', RMC2_MAIL_ALLOWLIST: 'tester@example.test', RMC2_MAIL_REDIRECT_TO: 'tester@example.test' };
@@ -120,7 +121,7 @@ await check('recoverStuckMail turns a stale sending row into uncertain (and keep
   const c = await svc.confirmSent(id, admin, { revision: (await inquiry(id)).revision, reason: 'Seen in the test inbox' }); assert.equal(c.status, 'Sent'); assert.equal(c.submissions[0].delivery.mode, 'local-test');
 });
 await check('caps: 5 per hour boundary, 20 per day boundary, old rows pruned, failures count', async () => {
-  setEnv(smtpEnv); await db.exec('DROP TABLE IF EXISTS mail_sends');
+  setEnv(smtpEnv); await db.exec('DELETE FROM mail_sends'); // SQLite-only test; the table is created by openDatabase now
   const ids = []; for (let i = 0; i < 7; i++) ids.push(await fresh());
   for (let i = 0; i < 5; i++) assert.equal((await approve(ids[i])).status, 'Sent');
   const sixth = await approve(ids[5]); assert.equal(sixth.status, 'Approved — email failed'); assert.equal(sixth.mailFailure.code, 'RATE_LIMITED');

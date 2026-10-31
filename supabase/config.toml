@@ -1,0 +1,3 @@
+# Minimal Supabase CLI config. Only what `supabase link` / `supabase db push` needs.
+# Used against the hosted TEST project; the local stack (`supabase start`) is not part of phase 4.
+project_id = "rmc2-test"

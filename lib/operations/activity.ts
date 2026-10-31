@@ -2,36 +2,67 @@ import { z } from 'zod';
 import { assertClientReady } from './client-service';
 import { isClientArchived, isRegistered } from './client-rules';
 import { AppError, allUsers, db, inquiry, transaction } from './database';
+import { jsonBool, jsonText } from './sql-dialect';
 import { canPrepareProposal, canEditInquiry } from './types';
 import type { InquiryActivity, Staff } from './types';
 
 export const ACTIVITY_TTL_MS=90000;
 const activitySchema=z.object({tab:z.string().uuid(),action:z.enum(['poll','start','heartbeat','leave'])}).strict();
+const ACTIVE_STATUSES="('New inquiry','Preparing proposal','Waiting for agent details','Needs correction','Supervisor editing')";
 
 // The editing lease is separate from saved records: heartbeats must not change revisions,
 // contributors, draft timestamps, or the proposal's approval history.
-// Prunes and reads as one unit (a transaction, or the caller's), as the synchronous version did.
-export const activeInquiryActivity=():Promise<InquiryActivity[]>=>transaction(pruneAndReadActivity);
-async function pruneAndReadActivity():Promise<InquiryActivity[]>{
+//
+// Reading never writes. activeInquiryActivity() returns what pruning would leave behind: current (seen within the TTL,
+// on a live session), by an active employee/supervisor, on an inquiry still being worked, one owner per inquiry (the
+// earliest), and not archived or held. Housekeeping (pruneActivity) runs on start/leave/heartbeat and, throttled, on polls.
+export async function activeInquiryActivity():Promise<InquiryActivity[]>{
+  const now=new Date(),cutoff=new Date(now.getTime()-ACTIVITY_TTL_MS).toISOString();
+  const valid=`SELECT a.* FROM inquiry_activity a JOIN inquiries i ON i.id=a.inquiry_id JOIN users u ON u.id=a.user_id
+      WHERE a.seen_at>=? AND a.session IN (SELECT token FROM sessions WHERE expires>?)
+      AND ${jsonBool(db,'u.data','active')} AND ${jsonText(db,'u.data','role')} IN ('Employee','Supervisor')
+      AND ${jsonText(db,'i.data','status')} IN ${ACTIVE_STATUSES}`;
+  // The owner of an inquiry is its earliest lease (ties by user id); only that user's rows are reported.
+  const owner=db.dialect==='postgres'
+    ?`SELECT DISTINCT ON (inquiry_id) inquiry_id,user_id FROM valid ORDER BY inquiry_id,started_at,user_id`
+    :`SELECT DISTINCT v.inquiry_id,(SELECT b.user_id FROM valid b WHERE b.inquiry_id=v.inquiry_id ORDER BY b.started_at,b.user_id LIMIT 1) AS user_id FROM valid v`;
+  const rows=await db.all<InquiryActivity>(`WITH valid AS (${valid}), owner AS (${owner})
+    SELECT v.inquiry_id AS "inquiryId",v.user_id AS "userId",MIN(v.started_at) AS "startedAt",MAX(v.seen_at) AS "seenAt"
+    FROM valid v JOIN owner o ON o.inquiry_id=v.inquiry_id AND o.user_id=v.user_id
+    GROUP BY v.inquiry_id,v.user_id ORDER BY "startedAt"`,cutoff,now.toISOString());
+  const result:InquiryActivity[]=[];
+  for(const row of rows){
+    const record=await inquiry(row.inquiryId);
+    if(isClientArchived(record,now.getTime())||record.clientReview?.state==='duplicate'&&!isRegistered(record))continue;
+    result.push(row);
+  }
+  return result;
+}
+/** Deletes leases the reader above already ignores. Inside a transaction only; skipped when another request is pruning. */
+export async function pruneActivity():Promise<void>{
+  if(!await db.tryLock('act-prune'))return;
   const now=new Date().toISOString(),cutoff=new Date(Date.now()-ACTIVITY_TTL_MS).toISOString();
   await db.run('DELETE FROM inquiry_activity WHERE seen_at < ? OR session NOT IN (SELECT token FROM sessions WHERE expires > ?)',cutoff,now);
-  await db.exec(`DELETE FROM inquiry_activity WHERE user_id NOT IN (SELECT id FROM users WHERE json_extract(data,'$.active')=1 AND json_extract(data,'$.role') IN ('Employee','Supervisor'))
-    OR inquiry_id NOT IN (SELECT id FROM inquiries WHERE json_extract(data,'$.status') IN ('New inquiry','Preparing proposal','Waiting for agent details','Needs correction','Supervisor editing'));
-    DELETE FROM inquiry_activity WHERE user_id <> (SELECT b.user_id FROM inquiry_activity b WHERE b.inquiry_id=inquiry_activity.inquiry_id ORDER BY b.started_at,b.user_id LIMIT 1);`);
-  for(const row of await db.all('SELECT DISTINCT inquiry_id FROM inquiry_activity') as {inquiry_id:string}[]){
+  await db.run(`DELETE FROM inquiry_activity WHERE user_id NOT IN (SELECT id FROM users WHERE ${jsonBool(db,'data','active')} AND ${jsonText(db,'data','role')} IN ('Employee','Supervisor'))
+    OR inquiry_id NOT IN (SELECT id FROM inquiries WHERE ${jsonText(db,'data','status')} IN ${ACTIVE_STATUSES})`);
+  await db.run('DELETE FROM inquiry_activity WHERE user_id <> (SELECT b.user_id FROM inquiry_activity b WHERE b.inquiry_id=inquiry_activity.inquiry_id ORDER BY b.started_at,b.user_id LIMIT 1)');
+  for(const row of await db.all<{inquiry_id:string}>('SELECT DISTINCT inquiry_id FROM inquiry_activity')){
     const record=await inquiry(row.inquiry_id);
     if(isClientArchived(record,Date.parse(now))||record.clientReview?.state==='duplicate'&&!isRegistered(record))await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',record.id);
   }
-  const rows=await db.all(`SELECT a.inquiry_id AS inquiryId,a.user_id AS userId,MIN(a.started_at) AS startedAt,MAX(a.seen_at) AS seenAt
-    FROM inquiry_activity a JOIN inquiries i ON i.id=a.inquiry_id JOIN users u ON u.id=a.user_id
-    WHERE json_extract(u.data,'$.active')=1 AND json_extract(u.data,'$.role') IN ('Employee','Supervisor')
-    AND json_extract(i.data,'$.status') IN ('New inquiry','Preparing proposal','Waiting for agent details','Needs correction','Supervisor editing')
-    GROUP BY a.inquiry_id,a.user_id ORDER BY startedAt`);
-  return rows as InquiryActivity[];
+}
+// Polls prune at most this often per process (and only when no other request holds the prune lock).
+const POLL_PRUNE_MS=10000;
+let lastPollPrune=0;
+export async function pruneActivityThrottled():Promise<void>{
+  if(Date.now()-lastPollPrune<POLL_PRUNE_MS)return;
+  lastPollPrune=Date.now();
+  await transaction(pruneActivity);
 }
 
 export async function requireInquiryHandler(id:string,user:Staff){
   await assertClientReady(await inquiry(id),true);
+  if(db.inTransaction())await db.lock('lease:'+id); // a start for this inquiry must not slip in between this check and the caller's commit
   const owner=(await activeInquiryActivity()).find(row=>row.inquiryId===id);
   if(!owner)throw new AppError('Start handling this inquiry before making changes. Your previous handling session may have expired.',423);
   if(owner.userId!==user.id)throw new AppError(`${(await allUsers()).find(person=>person.id===owner.userId)?.name||'A colleague'} is handling this inquiry. You can view it, but only the current handler can make changes.`,423);
@@ -40,8 +71,9 @@ export async function requireInquiryHandler(id:string,user:Staff){
 export async function updateInquiryActivity(id:string,user:Staff,session:string,input:unknown){
   const body=activitySchema.parse(input);
   return await transaction(async()=>{
+    await db.lock('lease:'+id); // exclusive handling: start/leave/heartbeat for one inquiry run one at a time
     const record=await inquiry(id),now=new Date().toISOString();
-    await activeInquiryActivity();
+    if(body.action!=='poll')await pruneActivity();
     if(body.action==='leave')await db.run('DELETE FROM inquiry_activity WHERE session=? AND tab=? AND inquiry_id=? AND user_id=?',session,body.tab,id,user.id);
     if(body.action==='start'||body.action==='heartbeat'){
       if(!canPrepareProposal(user))throw new AppError('Employee or supervisor access is required.',403);
@@ -61,9 +93,9 @@ export async function updateInquiryActivity(id:string,user:Staff,session:string,
         await db.run('UPDATE inquiry_activity SET seen_at=? WHERE session=? AND tab=? AND inquiry_id=? AND user_id=?',now,session,body.tab,id,user.id);
       }
     }
-    const activity=(await activeInquiryActivity()).filter(row=>row.inquiryId===id);
     if(isClientArchived(record))await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',id);
-    const handling=!!await db.get('SELECT tab FROM inquiry_activity WHERE session=? AND tab=? AND inquiry_id=?',session,body.tab,id)&&canEditInquiry(user,record);
-    return {activity,handling};
+    const activity=(await activeInquiryActivity()).filter(row=>row.inquiryId===id);
+    const holds=!!await db.get('SELECT tab FROM inquiry_activity WHERE session=? AND tab=? AND inquiry_id=?',session,body.tab,id)&&activity.some(row=>row.userId===user.id);
+    return {activity,handling:holds&&canEditInquiry(user,record)};
   });
 }

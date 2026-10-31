@@ -175,6 +175,53 @@ Format: **Decision** — why — where it applies.
   - A cold LibreOffice profile can take ~72 s for the first conversion, close to the 90 s timeout; warm the
     converter at startup or raise the first-run timeout when the converter moves (phase 5).
   - Run storage e2e against Supabase with `RMC2_STORAGE_PREFIX=selftest/e2e-<run>/` and delete the prefix after.
+- **FINAL-CHECK LIST (deferred by the Product Owner on 2026-10-31 to save usage).** Phases 4 onward are built
+  lean, with quick checks only. Everything below MUST run before any real client data or real staff use. Never skip it.
+  - Full QA, including the Postgres stress tests T1–T10 from `test-results/phase4-design.md`. The QA run stopped
+    part-way. Its scripts `scripts/test-pg-*.mjs` and `scripts/db-parity/` are committed but unverified.
+  - Code review and security review over everything together.
+  - Code-review majors, not yet fixed in code:
+    - M1, lost index enqueue: the DB fix is written in migration 400, not applied.
+    - M2, retry 40001/40P01 raised at COMMIT, in `store-postgres.ts`.
+  - Code-review minors:
+    - lock order: lease and `idx-sync`, sorted `lease:` locks;
+    - wrap the poll's prune in try/catch;
+    - batch the reindex;
+    - activity filter by inquiry;
+    - `updateOwnAccount` re-reads the user;
+    - `requestDetails` takes the `ck:` lock;
+    - NUL stripping for all writes;
+    - log-safe `mapPgError`.
+  - Security:
+    - Apply migration 500 (hardening).
+    - Verified TLS with the Supabase CA.
+    - Login limits keyed on user id, plus per-IP and global, prune `auth_attempts`, async scrypt.
+    - Demo seed only via a manual script with random passwords, a `VERCEL_ENV=production` guard, and remove the shared password from the README.
+    - Safer rollbacks are written; check them.
+  - Preview: before sharing the link with anyone, rotate the demo passwords. The shared one is in the code.
+- **Vercel preview (2026-10-31):**
+  - Project `rmc2-preview` on Hobby, not connected to Git, deployed with `vercel deploy --target=preview`.
+  - Stable alias https://rmc2-test-yiizer.vercel.app; set it again after each deploy with `vercel alias set <url> rmc2-test-yiizer.vercel.app`.
+  - The preview env holds Postgres, Supabase storage and the `preview/` prefix. Mail is simulated, and PDFs are offline until phase 5.
+  - Templates are bundled privately via `outputFileTracingIncludes` and `.vercelignore`. Vercel CLI uploads git-ignored `resources/private` when `.vercelignore` exists.
+  - Lessons:
+    - The Vercel-only guards must skip `NEXT_PHASE=phase-production-build`.
+    - `vercel link` writes `VERCEL_OIDC_TOKEN` into `.env.local`.
+- **Postgres on the TEST project (phase 4, 2026-10-31):**
+  - The three `supabase/migrations` files were applied to schema `rmc2`, with the security self-check passing.
+  - The `rmc2_app` password is generated into `.env.supabase.test` as `RMC2_DATABASE_URL` (transaction pooler, port 6543). The owner connection for migrations is `RMC2_DATABASE_ADMIN_URL` (session pooler, port 5432). Neither is ever printed.
+  - Verified live:
+    - role defaults: `search_path` rmc2, timeouts 15s/5s/30s
+    - DDL is denied to the app
+    - transaction-scoped advisory locks work through the transaction pooler
+    - every table has RLS
+    - `anon` and `authenticated` are denied
+    - the Data API does not expose `rmc2`
+    - the 31 adapter checks pass live, including deadlock retry and lock-timeout 503
+- **Use postgres.js 3.4.7, not 4.0.0** (2026-10-31). v4 hangs forever when more queries than `max` queue up behind
+  the Supabase transaction pooler (6543); v3 completes the same load in ~0.8 s. `queue_timeout` isn't a real
+  option, so bound pool waits ourselves. Always test "more parallel requests than pool connections" live.
+- **Pasting connection strings:** Supabase shows `[YOUR-PASSWORD]`. When filling it in, remove the square brackets as well; leaving them gives "password authentication failed".
 - **Supabase TEST project** (2026-10-31, PO's free org "RMC2 Testing", Singapore): ref `pgoiqwixaeqbxlwbmren`,
   private bucket `rmc2-test-files`, credentials only in git-ignored `.env.supabase.test`
   (`RMC2_SUPABASE_URL`, `RMC2_SUPABASE_SECRET_KEY`). Synthetic test files only, never real client data. Use the

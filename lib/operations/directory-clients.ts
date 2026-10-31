@@ -4,10 +4,12 @@ import {db,AppError,transaction} from './database';
 import {directoryRecords,historicalIdentity,historicalDetail} from './historical';
 import {normalizeClient,clientStates,protectionDaysLeft} from './client-rules';
 import {synchronizeInquiryIndex} from './inquiry-index';
+import {jsonRaw,jsonText,rowOrder} from './sql-dialect';
 import {directoryGroups,statusGroup,statusStyles,manilaToday,displayDate,type DirectoryClient,type ClientListing,type ClientDetail,type DirectoryEdit,type RegisterEntry,type StatusKey} from './directory-model';
 import type {InquiryRecord,Staff} from './types';
 export const editableDirectoryFields=['status','remarks','agent','branch','plan','account'] as const;
-async function editsFor(id:string){return await db.all('SELECT * FROM historical_edits WHERE historical_id=? ORDER BY rowid',id) as DirectoryEdit[];}
+const EDIT_COLUMNS='id,historical_id,field,old_value,new_value,actor,at,reason';
+async function editsFor(id:string){return await db.all(`SELECT ${EDIT_COLUMNS} FROM historical_edits WHERE historical_id=? ORDER BY ${rowOrder(db)}`,id) as DirectoryEdit[];}
 function overlay(record:RegisterEntry,edits:DirectoryEdit[]):RegisterEntry {
  const result={...record,fields:record.fields.map(f=>({...f}))};
  for(const edit of edits){
@@ -23,28 +25,31 @@ export async function editDirectoryRecord(id:string,user:Staff,input:unknown){
  if(!user.active)throw new AppError('Active staff access required.',403);
  if(body.field==='status'&&!Object.hasOwn(statusStyles,body.value))throw new AppError('Choose a supported status.');
  if(body.field==='account'&&!body.value)throw new AppError('Account name is required.');
- return await transaction(async()=>{const record=await directoryRecord(id);if(record.editAt!==body.expectedAt)throw new AppError('A colleague edited this record. Reload before saving.',409);
+ return await transaction(async()=>{await db.lock('hist:'+id); // edits of one record are read-compare-write: one at a time
+ const record=await directoryRecord(id);if(record.editAt!==body.expectedAt)throw new AppError('A colleague edited this record. Reload before saving.',409);
  const old=body.field==='status'?record.statusKey:record[body.field];
  const at=new Date(Math.max(Date.now(),record.editAt?Date.parse(record.editAt)+1:0)).toISOString();
- await db.run('INSERT INTO historical_edits VALUES (?,?,?,?,?,?,?,?)',randomUUID(),id,body.field,old,body.value,user.name+' ('+user.id+')',at,body.reason);
+ await db.run('INSERT INTO historical_edits (id,historical_id,field,old_value,new_value,actor,at,reason) VALUES (?,?,?,?,?,?,?,?)',randomUUID(),id,body.field,old,body.value,user.name+' ('+user.id+')',at,body.reason);
  cache=undefined;return await directoryRecord(id);});
 }
 type Collection={projected:Map<string,RegisterEntry>;clients:DirectoryClient[];members:Map<string,string[]>;live:Map<string,ClientDetail['inquiries']>;sheets:string[]};
 let cache:{stamp:string;value:Collection}|undefined;
 async function collection():Promise<Collection>{
- await synchronizeInquiryIndex();const original=await directoryRecords();
- const stamp=original.stamp+JSON.stringify(await db.all('SELECT * FROM workspace_versions'))+JSON.stringify(await db.get('SELECT count(*) n,max(rowid) last FROM historical_reviews'))+JSON.stringify(await db.get('SELECT count(*) n,max(rowid) last FROM historical_edits'))+Math.floor(Date.now()/60000);
- if(cache?.stamp===stamp)return cache.value;
- const edits=await db.all('SELECT * FROM historical_edits ORDER BY rowid') as DirectoryEdit[],byEdit=new Map<string,DirectoryEdit[]>();
+ // Reads only: runs inside a snapshot, so the index was synchronised by the caller. A queued projection means the summaries lag
+ // the version stamps, so such a result is served but never cached.
+ const original=await directoryRecords(),projecting=!!await db.get('SELECT id FROM inquiry_index_pending LIMIT 1');
+ const stamp=original.stamp+JSON.stringify(await db.all('SELECT scope,version FROM workspace_versions ORDER BY scope'))+JSON.stringify(await db.get(`SELECT count(*) AS n,max(${rowOrder(db)}) AS "last" FROM historical_reviews`))+JSON.stringify(await db.get(`SELECT count(*) AS n,max(${rowOrder(db)}) AS "last" FROM historical_edits`))+Math.floor(Date.now()/60000);
+ if(cache?.stamp===stamp&&!projecting)return cache.value;
+ const edits=await db.all(`SELECT ${EDIT_COLUMNS} FROM historical_edits ORDER BY ${rowOrder(db)}`) as DirectoryEdit[],byEdit=new Map<string,DirectoryEdit[]>();
  for(const edit of edits)byEdit.set(edit.historical_id,[...(byEdit.get(edit.historical_id)||[]),edit]);
  const buckets=new Map<string,RegisterEntry[]>(),idKey=new Map<string,string>();
  for(const r of original.items){const key='historical:'+((r as RegisterEntry&{account_key?:string}).account_key||normalizeClient(r.account)||r.id);idKey.set(r.id,key);buckets.set(key,[...(buckets.get(key)||[]),overlay(r,byEdit.get(r.id)||[])]);}
  const clients=new Map<string,DirectoryClient>(),members=new Map<string,string[]>(),live=new Map<string,ClientDetail['inquiries']>();
  const distinctAgents=(names:string[])=>[...new Map(names.filter(Boolean).map(n=>[normalizeClient(n),n])).values()];
  for(const [key,rows] of buckets){rows.sort((a,b)=>(b.dateISO||'').localeCompare(a.dateISO||'')||b.source_row-a.source_row||a.id.localeCompare(b.id));const latest=rows[0];members.set(key,rows.map(r=>r.id));clients.set(key,{...latest,key,source:'historical',recordCount:rows.length,agents:distinctAgents(rows.map(r=>r.agent)),group:statusGroup(latest.statusKey),statusLabel:statusStyles[latest.statusKey].label,protectionDays:null,historicalIds:rows.map(r=>r.id)});}
- const indexed=await db.all("SELECT s.data,json_extract(i.data,'$.fields') fields,json_extract(i.data,'$.notes') notes FROM inquiry_summaries s JOIN inquiries i ON i.id=s.id") as {data:string;fields:string;notes:string}[];
+ const indexed=await db.all(`SELECT s.data,${jsonRaw(db,'i.data','fields')} AS fields,${jsonText(db,'i.data','notes')} AS notes FROM inquiry_summaries s JOIN inquiries i ON i.id=s.id`) as {data:string;fields:string;notes:string}[];
  const records=indexed.map(r=>({...JSON.parse(r.data),fields:JSON.parse(r.fields),notes:r.notes||''})) as InquiryRecord[];const states=clientStates(records);
- const reviews=await db.all('SELECT inquiry_id,historical_id,identity,outcome FROM historical_reviews ORDER BY rowid') as {inquiry_id:string;historical_id:string;identity:string;outcome:string}[];
+ const reviews=await db.all(`SELECT inquiry_id,historical_id,identity,outcome FROM historical_reviews ORDER BY ${rowOrder(db)}`) as {inquiry_id:string;historical_id:string;identity:string;outcome:string}[];
  const reviewMap=new Map(reviews.map(r=>[r.inquiry_id+'|'+r.historical_id,r]));
  const liveBuckets=new Map<string,InquiryRecord[]>();
  for(const r of records){const key=normalizeClient(r.fields.company)||r.id;liveBuckets.set(key,[...(liveBuckets.get(key)||[]),r]);}
@@ -62,11 +67,12 @@ async function collection():Promise<Collection>{
   live.set(key,rows.map(x=>({id:x.id,account:x.fields.company,agent:x.fields.agentName,status:x.status,at:x.updatedAt})));
   if(possible){const h=clients.get(histKey);if(h)h.possibleMatch=r.id;}
  }
- const value={projected:new Map([...buckets.values()].flat().map(r=>[r.id,r])),clients:[...clients.values()],members,live,sheets:original.sheets};cache={stamp,value};return value;
+ const value={projected:new Map([...buckets.values()].flat().map(r=>[r.id,r])),clients:[...clients.values()],members,live,sheets:original.sheets};if(!projecting)cache={stamp,value};return value;
 }
 export async function clientDirectory(params:URLSearchParams):Promise<ClientListing>{
  const q=z.object({search:z.string().max(200).default(''),source:z.enum(['all','live','historical']).default('all'),group:z.enum(['','active','won','lost','notStarted','review']).default(''),sheet:z.string().max(100).default(''),agent:z.string().max(500).default(''),branch:z.string().max(500).default(''),sort:z.enum(['account','date-new','date-old','age-old','age-new']).default('account'),page:z.coerce.number().int().min(1).max(100000).default(1)}).parse(Object.fromEntries(params));
- const all=await collection(),term=q.search.toLowerCase();
+ await synchronizeInquiryIndex();
+ const all=await db.snapshot(collection),term=q.search.toLowerCase();
  const byId=all.projected;
  const scoped=all.clients.filter(c=>(q.source==='all'||c.source===q.source||c.source==='both')&&(!q.sheet||c.historicalIds.some(id=>byId.get(id)?.sheet===q.sheet)));
  const filtered=scoped.filter(c=>(!q.agent||c.agents.includes(q.agent))&&(!q.branch||c.branch===q.branch)&&(!term||[c.account,c.agents.join(' '),c.branch,c.remarks,c.plan,c.serial,...c.historicalIds.map(id=>{const r=byId.get(id);return r?[r.account,r.agent,r.serial,r.remarks,r.plan].join(' '):'';})].join(' ').toLowerCase().includes(term)));
@@ -77,8 +83,11 @@ export async function clientDirectory(params:URLSearchParams):Promise<ClientList
  return {items:matches.slice((page-1)*50,page*50).map(c=>q.sheet?{...c,fields:c.historicalIds.map(id=>byId.get(id)).filter((r):r is RegisterEntry=>!!r&&r.sheet===q.sheet).sort((a,b)=>(b.dateISO||'').localeCompare(a.dateISO||'')||b.source_row-a.source_row)[0]?.fields||c.fields}:c),total:matches.length,page,pages,pageSize:50,counts,sheets:all.sheets,agents:[...new Set(scoped.flatMap(c=>c.agents))].sort(),branches:[...new Set(scoped.map(c=>c.branch).filter(Boolean))].sort(),columns:[...columns].map(([key,label])=>({key,label})),asOf:manilaToday()};
 }
 export async function directoryClient(key:string):Promise<ClientDetail>{
+ await synchronizeInquiryIndex();
+ return await db.snapshot(async()=>{
  const all=await collection();let client=all.clients.find(c=>c.key===key);
  if(!client){const r=await directoryRecord(key);client=all.clients.find(c=>c.historicalIds.includes(r.id));}
  if(!client)throw new AppError('Client not found.',404);
  return {client,records:await Promise.all(client.historicalIds.map(id=>directoryRecord(id))),inquiries:all.live.get(client.key)||[]};
+ });
 }

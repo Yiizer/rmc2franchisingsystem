@@ -1,4 +1,4 @@
-import { db } from './database';
+import { db, inquiry, jsonParam } from './database';
 import { clientIdentityKeys, protectionFor } from './client-rules';
 import { isSampleForm } from './types';
 import type { InquiryRecord, InquirySummary } from './types';
@@ -39,40 +39,65 @@ function clientProjection(record: InquiryRecord): InquiryRecord {
   };
 }
 
+/**
+ * Projects every queued inquiry into inquiry_summaries / inquiry_keys. Claims first: with work pending it takes the
+ * `idx-sync` lock, then DELETE ... RETURNING takes the ids, so two requests never project the same ids and an
+ * inquiry changed meanwhile is simply queued again by its trigger (no lost enqueue). Runs inside a transaction
+ * (joining the caller's); a failure rolls the claim back with it. Must not run inside snapshot(): call it first.
+ */
 export async function synchronizeInquiryIndex() {
   if (!await db.get('SELECT id FROM inquiry_index_pending LIMIT 1')) return;
-  // Runs inside a transaction (joining the caller's when there is one), so no other request can
-  // interleave. The SAVEPOINT keeps index changes rolling back with a failed BOR transfer or
-  // conflicting update without discarding the caller's earlier work.
   await db.transaction(async () => {
-    await db.exec('SAVEPOINT inquiry_projection');
-    try {
-      const pending = await db.all<{id: string}>('SELECT id FROM inquiry_index_pending');
-      for (const {id} of pending) {
-        await db.run('DELETE FROM inquiry_keys WHERE inquiry_id=?', id);
-        const row = await db.get<{data: string}>('SELECT data FROM inquiries WHERE id=?', id);
-        if (!row) await db.run('DELETE FROM inquiry_summaries WHERE id=?', id);
-        else {
-          const record: InquiryRecord = JSON.parse(row.data);
-          await db.run('INSERT INTO inquiry_summaries VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,summary=excluded.summary', id, JSON.stringify(clientProjection(record)), JSON.stringify(inquirySummary(record)));
-          if (!isSampleForm(record.source)) for (const [kind, value] of clientIdentityKeys(record)) await db.run('INSERT OR IGNORE INTO inquiry_keys VALUES (?,?,?)', id, kind, value);
-        }
-        await db.run('DELETE FROM inquiry_index_pending WHERE id=?', id);
+    await db.lock('idx-sync');
+    const pending = await db.all<{id: string}>('DELETE FROM inquiry_index_pending RETURNING id');
+    for (const {id} of pending) {
+      await db.run('DELETE FROM inquiry_keys WHERE inquiry_id=?', id);
+      const row = await db.get<{data: string}>('SELECT data FROM inquiries WHERE id=?', id);
+      if (!row) await db.run('DELETE FROM inquiry_summaries WHERE id=?', id);
+      else {
+        const record: InquiryRecord = JSON.parse(row.data);
+        await db.run('INSERT INTO inquiry_summaries (id,data,summary) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,summary=excluded.summary', id, jsonParam(clientProjection(record)), jsonParam(inquirySummary(record)));
+        if (!isSampleForm(record.source)) for (const [kind, value] of clientIdentityKeys(record)) await db.run('INSERT INTO inquiry_keys (inquiry_id,kind,value) VALUES (?,?,?) ON CONFLICT DO NOTHING', id, kind, value);
       }
-      await db.exec('RELEASE inquiry_projection');
-    } catch (error) {
-      await db.exec('ROLLBACK TO inquiry_projection; RELEASE inquiry_projection');
-      throw error;
     }
   });
 }
 
-export async function matchingInquiries(record: InquiryRecord): Promise<InquiryRecord[]> {
+/** `sync:false` is for read-only contexts (snapshot): the caller ran synchronizeInquiryIndex() beforehand. */
+export async function matchingInquiries(record: InquiryRecord, sync = true): Promise<InquiryRecord[]> {
   if (isSampleForm(record.source)) return [];
-  await synchronizeInquiryIndex();
+  if (sync) await synchronizeInquiryIndex();
   const keys = clientIdentityKeys(record);
   if (!keys.length) return [];
   const where = keys.map(() => '(k.kind=? AND k.value=?)').join(' OR ');
-  const rows = await db.all(`SELECT DISTINCT s.id,s.data FROM inquiry_keys k JOIN inquiry_summaries s ON s.id=k.inquiry_id WHERE ${where}`,...keys.flat()) as {data: string}[];
+  const rows = await db.all(`SELECT s.id,s.data FROM inquiry_summaries s WHERE s.id IN (SELECT k.inquiry_id FROM inquiry_keys k WHERE ${where})`,...keys.flat()) as {data: string}[];
   return rows.map(row => JSON.parse(row.data));
+}
+
+// ---- Duplicate-client registry locks (Postgres) -------------------------------------------------------------
+// Two requests for the same client must not both pass the "no registration yet" check. Every registration-affecting
+// transaction first takes a transaction-scoped advisory lock on each identity key of the record (`ck:<kind>:<value>`),
+// in sorted order, and only then reads the matching registrations. For an edit, lock the union of the old and new keys.
+// RMC2_PG_GLOBAL_REGISTRY_LOCK=1 swaps this for one global lock (fallback if per-key locking misbehaves in production).
+export function registryLockKeys(...records: Pick<InquiryRecord, 'fields' | 'source'>[]): string[] {
+  const keys = new Set<string>();
+  for (const record of records) if (!isSampleForm(record.source)) for (const [kind, value] of clientIdentityKeys(record)) keys.add(`ck:${kind}:${value}`);
+  if (!keys.size) return [];
+  return process.env.RMC2_PG_GLOBAL_REGISTRY_LOCK === '1' ? ['ck:global'] : [...keys].sort();
+}
+export async function lockRegistry(...records: Pick<InquiryRecord, 'fields' | 'source'>[]) {
+  if (db.dialect !== 'postgres') return;
+  const keys = registryLockKeys(...records);
+  if (keys.length) await db.lock(...keys);
+}
+/**
+ * Reads an inquiry, locks its client identity keys (plus those of any proposed new version), then reads it again so
+ * everything after the lock sees what earlier lock holders committed. Call first inside the transaction.
+ * SQLite: plain read (its global write lock already serialises).
+ */
+export async function lockedInquiry(id: string, proposed?: (current: InquiryRecord) => Pick<InquiryRecord, 'fields' | 'source'> | undefined): Promise<InquiryRecord> {
+  const first = await inquiry(id);
+  if (db.dialect !== 'postgres') return first;
+  await lockRegistry(first, ...[proposed?.(first)].filter((item): item is Pick<InquiryRecord, 'fields' | 'source'> => !!item));
+  return inquiry(id);
 }

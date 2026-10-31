@@ -1,8 +1,8 @@
 import {historicalMatchCounts,withHistoricalHold} from './historical';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { allUsers, AppError, catalog, db, inquiry } from './database';
-import { activeInquiryActivity } from './activity';
+import { allUsers, AppError, catalog, databaseLabel, db, inquiry } from './database';
+import { activeInquiryActivity, pruneActivityThrottled } from './activity';
 import { clientStates, protectionDaysLeft } from './client-rules';
 import { synchronizeInquiryIndex, matchingInquiries } from './inquiry-index';
 import { clientState } from './client-rules';
@@ -13,7 +13,8 @@ import { recoverStuckMail } from './service';
 import { nextWorkAction, unfinishedWork } from './work-progress';
 import type { InquiryRecord, InquirySummary, Notice, PageInfo, Staff, WorkspaceUpdate } from './types';
 
-const epoch = randomUUID();
+// Identifies this deployment in cursors and metadata versions: shared by every instance of one Vercel deployment, fresh per local process.
+const epoch = process.env.VERCEL_DEPLOYMENT_ID ?? randomUUID();
 const day = (value: string | number) => new Date(value).toLocaleDateString('en-CA', {timeZone: 'Asia/Manila'});
 const querySchema = z.object({
   view: z.string().max(60).default('Dashboard'), search: z.string().max(200).default(''),
@@ -31,7 +32,9 @@ let cache: {version:number; until:number; today:string; summaries:InquirySummary
 
 async function collection(version: number, now: number) {
   if (cache?.version === version && now < cache.until && cache.today === day(now)) return cache;
-  await synchronizeInquiryIndex();
+  // Runs inside a snapshot: the caller synchronised the index first. If a projection is queued the summaries lag the version
+  // stamp, so this result is served once but not cached under that version.
+  const projecting = !!await db.get('SELECT id FROM inquiry_index_pending LIMIT 1');
   const rows = await db.all('SELECT data,summary FROM inquiry_summaries') as {data:string;summary:string}[];
   const records: InquiryRecord[] = rows.map(row => JSON.parse(row.data));
   const historicalCounts=await historicalMatchCounts();
@@ -44,8 +47,9 @@ async function collection(version: number, now: number) {
       if (deadline > now) until = Math.min(until, deadline);
     }
   }
-  cache = {version, until, today:day(now), summaries, states};
-  return cache;
+  const fresh = {version, until, today:day(now), summaries, states};
+  if (!projecting) cache = fresh;
+  return fresh;
 }
 
 function paginate<T>(items:T[], requested:number, pageSize=25): {items:T[]; pagination:PageInfo} {
@@ -54,8 +58,12 @@ function paginate<T>(items:T[], requested:number, pageSize=25): {items:T[]; pagi
 }
 
 export async function inquiryDetails(id:string) {
-  const record = await withHistoricalHold(await inquiry(id));
-  return {inquiry:record, clientState:clientState(record,await matchingInquiries(record)), packageRenderers:await packageRenderers([record])};
+  await synchronizeInquiryIndex(); // a write: before the read-only snapshot
+  const view = await db.snapshot(async () => {
+    const record = await withHistoricalHold(await inquiry(id));
+    return {inquiry:record, clientState:clientState(record,await matchingInquiries(record,false))};
+  });
+  return {...view, packageRenderers:await packageRenderers([view.inquiry])}; // file reads happen after the snapshot is released
 }
 
 export async function workspaceView(user: Staff, params: URLSearchParams): Promise<WorkspaceUpdate | {unchanged:true;cursor:string}> {
@@ -68,7 +76,16 @@ export async function workspaceView(user: Staff, params: URLSearchParams): Promi
     cursor:'activate:'+user.id, metadataVersion:'activate', pagination:emptyPage,noticePagination:emptyPage,
     unreadCount:0,pendingCount:0,divisions:[],stats:{},attention:[],attentionCount:0,resume:[],
   };
+  // Write pre-steps first; everything else is read inside one snapshot (stamps first), then files are read outside it.
   await recoverStuckMail();
+  await synchronizeInquiryIndex();
+  await pruneActivityThrottled();
+  const result = await db.snapshot(() => workspaceSnapshot(user, query, mail));
+  if (!('unchanged' in result) && result.current) result.packageRenderers = await packageRenderers([result.current]);
+  return result;
+}
+
+async function workspaceSnapshot(user: Staff, query: z.infer<typeof querySchema>, mail: ReturnType<typeof mailStatus>): Promise<WorkspaceUpdate | {unchanged:true;cursor:string}> {
   const now = Date.now(), revision = await versions(), data = await collection(revision.inquiries, now);
   const activity = await activeInquiryActivity();
   const metadataVersion = epoch + ':' + revision.metadata;
@@ -125,20 +142,19 @@ export async function workspaceView(user: Staff, params: URLSearchParams): Promi
   const notifications = query.view==='Notifications'?(await db.all('SELECT n.data FROM notice_recipients r JOIN notifications n ON n.id=r.notice_id WHERE r.user_id=? ORDER BY r.at DESC,r.notice_id DESC LIMIT 25 OFFSET ?',user.id,(noticePage-1)*25) as {data:string}[]).map(row=>JSON.parse(row.data) as Notice):[];
   const visibleIds = new Set([...listing.items,...attention,...resume].map(record=>record.id));
   const selected = ['Inquiry Workspace','Supervisor Review'].includes(query.view)?query.selected:'';
-  let current:InquiryRecord|undefined, renderers = {};
+  let current:InquiryRecord|undefined;
   if (selected) {
     const row = await db.get('SELECT revision FROM inquiries WHERE id=?',selected) as {revision:number}|undefined;
     if (!row) throw new AppError('Inquiry not found',404);
     visibleIds.add(selected);
     if (row.revision!==query.knownRevision) {
       current=await withHistoricalHold(await inquiry(selected));
-      renderers=await packageRenderers([current]);
     }
   }
   return {
-    mail, user, ...(query.metadataVersion===metadataVersion?{}:{users,templates:templates.map(template=>({...template,file:''})),integrations:{database:'SQLite · shared server storage',gmail:mail.mode==='local'?'Local test mailbox · no real Gmail sends':mail.label,ai:'Simulated · supplied proposal sources only',documents:conversionName()}}),
+    mail, user, ...(query.metadataVersion===metadataVersion?{}:{users,templates:templates.map(template=>({...template,file:''})),integrations:{database:databaseLabel(),gmail:mail.mode==='local'?'Local test mailbox · no real Gmail sends':mail.label,ai:'Simulated · supplied proposal sources only',documents:conversionName()}}),
     cursor, metadataVersion, inquiries:listing.items, pagination:listing.pagination,
-    ...(current?{current}:{}), packageRenderers:renderers,
+    ...(current?{current}:{}), packageRenderers:{},
     clientStates:Object.fromEntries([...visibleIds].filter(id=>data.states[id]).map(id=>[id,data.states[id]])),
     activity, notifications, noticePagination:{page:noticePage,pageSize:25,total:noticeCounts.total,pages:noticePages},
     unreadCount:noticeCounts.unread, pendingCount:pending.length,

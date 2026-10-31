@@ -1,0 +1,2 @@
+-- Intentionally empty. Reference rows (workspace_versions, counters, app_meta) are seeded by the
+-- migrations; demo users and inquiries are seeded by the app (ensureReady) only when RMC2_SEED_DEMO=1.

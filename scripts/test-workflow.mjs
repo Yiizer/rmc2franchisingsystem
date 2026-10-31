@@ -3,7 +3,7 @@ import { mkdir,readFile,writeFile } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import ExcelJS from 'exceljs';
 const base=process.env.RMC2_TEST_URL||'http://127.0.0.1:5190';
-if(!/^http:\/\/(127\.0\.0\.1|localhost):(5190|5194)$/.test(base))throw new Error('Use an isolated localhost QA instance on port 5190 or 5194 for workflow tests.');
+if(!/^http:\/\/(127\.0\.0\.1|localhost):(5190|5194|5195)$/.test(base))throw new Error('Use an isolated localhost QA instance on port 5190, 5194 or 5195 for workflow tests.');
 const sessions={};const checks=[];const handlingTabs={};
 const ok=(name,test=true)=>{assert.ok(test,name);checks.push(name);process.stdout.write('PASS '+name+'\n');};
 async function call(user,route,body,expected=200){const response=await fetch(base+'/api/operations/'+route,{method:body===undefined?'GET':'POST',headers:{...(sessions[user]?{Cookie:sessions[user]}:{}),...(body instanceof FormData?{}:body===undefined?{}:{'Content-Type':'application/json'})},body:body===undefined?undefined:body instanceof FormData?body:JSON.stringify(body)});if(route==='login'&&response.ok)sessions[user]=response.headers.get('set-cookie').split(';')[0];const content=response.headers.get('content-type')||'';const value=content.includes('json')?await response.json():Buffer.from(await response.arrayBuffer());assert.equal(response.status,expected,route+': '+JSON.stringify(value));return value;}

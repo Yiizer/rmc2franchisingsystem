@@ -14,18 +14,33 @@ import type { DatabaseSync, StatementSync } from 'node:sqlite';
 //    (they never see uncommitted rows, and a queue of transactions cannot starve them).
 //  * A statement issued from a transaction's async context after it rolled back (e.g. a
 //    sibling still running after Promise.all rejected) throws instead of autocommitting.
-// A Postgres adapter replaces this file's implementation, not its interface.
+// store-postgres.ts is the Postgres implementation of the same interface (phase 4); database.ts picks one.
 
 export type SqlParam = string | number | bigint | null | Uint8Array;
 export type RunResult = { changes: number; lastInsertRowid: number | bigint };
+export type Dialect = 'sqlite' | 'postgres';
+export type TransactionOptions = {
+  /** Extra attempts after a retryable failure (Postgres only: deadlock, serialization, early connection failure). Clamped to 0-2. */
+  retries?: number;
+};
 export interface Store {
+  readonly dialect: Dialect;
   get<T = unknown>(sql: string, ...params: SqlParam[]): Promise<T | undefined>;
   all<T = unknown>(sql: string, ...params: SqlParam[]): Promise<T[]>;
   run(sql: string, ...params: SqlParam[]): Promise<RunResult>;
+  /** Schema/DDL and multi-statement scripts only. Never takes parameters. */
   exec(sql: string): Promise<void>;
-  transaction<T>(run: () => Promise<T> | T): Promise<T>;
+  transaction<T>(run: () => Promise<T> | T, opts?: TransactionOptions): Promise<T>;
+  /** One consistent read-only view for multi-read endpoints (Postgres: read-only REPEATABLE READ; SQLite: just run()). */
+  snapshot<T>(run: () => Promise<T> | T): Promise<T>;
+  /** Transaction-scoped advisory locks, taken in sorted order (Postgres). Must be called inside transaction(). No-op on SQLite. */
+  lock(...keys: string[]): Promise<void>;
+  /** Non-blocking variant of lock(): true when acquired. Must be called inside transaction(). Always true on SQLite. */
+  tryLock(key: string): Promise<boolean>;
+  /** True while the caller is inside transaction()/snapshot() (so lock() is allowed). */
+  inTransaction(): boolean;
   /** Closes the connection (tests and shutdown). */
-  close(): void;
+  close(): void | Promise<void>;
 }
 
 type Scope = { active: boolean; aborted?: boolean };
@@ -70,6 +85,7 @@ export function createSqliteStore(open: () => DatabaseSync): Store {
     try { return execute(); } finally { lock.release(); }
   };
   const store: Store = {
+    dialect: 'sqlite',
     get: <T>(sql: string, ...params: SqlParam[]) => statement(() => prepare(sql).get(...params) as T | undefined),
     all: <T>(sql: string, ...params: SqlParam[]) => statement(() => prepare(sql).all(...params) as T[]),
     run: (sql, ...params) => statement(() => {
@@ -97,6 +113,11 @@ export function createSqliteStore(open: () => DatabaseSync): Store {
         lock.release();
       }
     },
+    // SQLite's one global write lock already serialises everything: snapshots and locks have nothing to add.
+    snapshot: async <T>(run: () => Promise<T> | T) => run(),
+    lock: async () => {},
+    inTransaction,
+    tryLock: async () => true,
     close() { statements.clear(); database?.close(); database = undefined; },
   };
   return store;

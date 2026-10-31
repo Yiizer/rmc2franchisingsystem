@@ -8,6 +8,8 @@ import { MAIL_REASONS, MailSendError, mailTransport } from './mail-transport';
 import type { DeliveryMode, SendResult } from './mail-transport';
 import { z } from 'zod';
 import { AppError, allUsers, audit, catalog, db, inquiry, notify, persist, transaction } from './database';
+import { forUpdate, jsonMerge, jsonText } from './sql-dialect';
+import { lockRegistry, lockedInquiry } from './inquiry-index';
 import { isAppError } from './errors';
 import { MIME, deleteQuietly, files } from './file-store';
 import { templateBytes } from './template-source';
@@ -33,7 +35,7 @@ const draftSchema=z.object({customization:z.object({id:z.string().uuid(),edits:c
 const mailSchema=z.object({to:z.string().max(254).refine(isSafeEmail,'Enter one valid recipient email address'),subject:z.string().min(1).max(250).refine(v=>!/[\r\n\u2028\u2029\0]/.test(v),'Email subject must be one line'),body:z.string().min(1).max(20000)});
 
 async function workReminder(record:InquiryRecord,user:Staff,paused:boolean){
-  const rows=await db.all("SELECT id,data FROM notifications WHERE json_extract(data,'$.inquiryId')=? AND json_extract(data,'$.title')='Pick up where you left off'",record.id) as {id:string;data:string}[];
+  const rows=await db.all(`SELECT id,data FROM notifications WHERE ${jsonText(db,'data','inquiryId')}=? AND ${jsonText(db,'data','title')}='Pick up where you left off' ORDER BY id${forUpdate(db)}`,record.id) as {id:string;data:string}[];
   const existing=rows.filter(row=>{const n=JSON.parse(row.data) as Notice;return n.inquiryId===record.id&&n.title==='Pick up where you left off'&&n.recipientIds.includes(user.id);});
   if(!paused){for(const row of existing)await db.run('DELETE FROM notifications WHERE id=?',row.id);return;}
   const message=`${record.fields.company||record.id} · ${nextWorkAction(record,await chosen(record))}. Your draft is saved.`;
@@ -66,7 +68,7 @@ export async function saveDraft(id:string,user:Staff,input:unknown) {
     catch(error){earlyError=error;}
   }
   return await transaction(async()=>{
-    const record=await inquiry(id);checkRevision(record,body.revision);await assertClientReady(record,true);
+    const record=await lockedInquiry(id,current=>{try{return {source:current.source,fields:proposalFields(body.fields,current.source.fields)};}catch{return undefined;}});checkRevision(record,body.revision);await assertClientReady(record,true);
     const registered=protectionFor(record);if(registered&&body.fields.agentEmail?.trim().toLowerCase()!==registered.agentEmail.trim().toLowerCase())throw new AppError('The registered agent cannot be changed during the client protection period.',409);
     if(!canEditInquiry(user,record))throw new AppError('This version is locked for review or has already been approved.',409);await requireInquiryHandler(id,user);
     for(const [label,next,current] of [['agent reply email',body.fields.agentEmail,record.fields.agentEmail],['reply recipient',body.email.to,record.email.to]] as const)if(next&&next!==current&&!isSafeEmail(next))throw new AppError('Enter one valid '+label+' (no commas, semicolons, spaces or brackets).',400);
@@ -117,14 +119,14 @@ export async function submit(id:string,user:Staff,revision:number) {
 export async function decide(id:string,user:Staff,input:unknown) {
   canReview(user);const body=z.object({revision:z.number().int(),version:z.number().int(),action:z.enum(['approve','return']),note:z.string().max(10000),flags:z.array(z.string().max(150)).max(30),failSend:z.boolean().optional(),customizationReviewed:z.boolean().optional()}).parse(input);
   const result=await transaction(async()=>{
-    const record=await inquiry(id);checkRevision(record,body.revision);await assertClientReady(record);const latest=record.submissions.at(-1);
+    const record=await lockedInquiry(id);checkRevision(record,body.revision);await assertClientReady(record);const latest=record.submissions.at(-1);
     if(record.status!=='Awaiting approval'||!latest||latest.version!==body.version||latest.decision)throw new AppError('Another reviewer has already decided this proposal. Refresh the queue.',409);
     if(body.action==='approve'&&latest.generated.customization&&!body.customizationReviewed)throw new AppError('Review and acknowledge the customized content before approving.');
     if(body.action==='approve'&&latest.generated.customization&&body.flags.some(flag=>flag.startsWith('Custom edit ')))throw new AppError('Return flagged customized edits for correction before approving.');
     if(body.action==='return'&&!body.note.trim())throw new AppError('Add a correction note before returning the proposal.');
     latest.decision={action:body.action,actorId:user.id,at:new Date().toISOString(),note:body.note,flags:body.flags,...(latest.generated.customization?{customizationReviewed:body.action==='approve'&&!!body.customizationReviewed}:{})};
     if(body.action==='return'){record.status='Needs correction';record.returnNote=body.note;record.returnFlags=body.flags;audit(record,user,'Returned proposal v'+latest.version+' for correction: '+body.note);await notify(record,'Proposal needs correction',body.note,[latest.submittedBy]);}
-    else{record.status='Approved — sending';audit(record,user,'Approved proposal v'+latest.version+' — automatic agent reply queued');await notify(record,'Proposal approved',`${user.name} approved v${latest.version}. The agent reply is being prepared.`,[latest.submittedBy]);const outboxId=randomUUID();await db.run('INSERT INTO outbox VALUES (?,?,?,?,?,?)',outboxId,id,latest.version,'proposal','ready',JSON.stringify({id:outboxId,createdAt:new Date().toISOString(),email:latest.email,pdf:latest.generated.pdf,filename:latest.generated.filename,error:''}));}
+    else{record.status='Approved — sending';audit(record,user,'Approved proposal v'+latest.version+' — automatic agent reply queued');await notify(record,'Proposal approved',`${user.name} approved v${latest.version}. The agent reply is being prepared.`,[latest.submittedBy]);const outboxId=randomUUID();await db.run('INSERT INTO outbox (id,inquiry_id,version,kind,status,data) VALUES (?,?,?,?,?,?)',outboxId,id,latest.version,'proposal','ready',JSON.stringify({id:outboxId,createdAt:new Date().toISOString(),email:latest.email,pdf:latest.generated.pdf,filename:latest.generated.filename,error:''}));}
     await persist(record,body.revision);return record;
   });
   if(body.action==='approve')await deliver(id,result.submissions.at(-1)!.version,user,!!body.failSend);
@@ -152,16 +154,16 @@ const maskedRedirect=(config:MailConfig)=>config.mode==='smtp'&&config.env!=='pr
 /** Caps are counted per attempt (including failures) in SQLite, so a restart cannot reset them. */
 async function reserveSend(config:MailConfig,kind:string,outboxId:string){
   if(config.mode!=='smtp'||config.dryRun)return;
-  await db.exec('CREATE TABLE IF NOT EXISTS mail_sends (id TEXT PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, outbox_id TEXT NOT NULL)');
-  await transaction(async()=>{const now=Date.now(),count=async(span:number)=>((await db.get('SELECT COUNT(*) AS n FROM mail_sends WHERE at>?',new Date(now-span).toISOString())) as {n:number}).n;
+  await transaction(async()=>{await db.lock('mail-cap'); // the cap check and the insert are one step, across instances
+    const now=Date.now(),count=async(span:number)=>((await db.get('SELECT COUNT(*) AS n FROM mail_sends WHERE at>?',new Date(now-span).toISOString())) as {n:number}).n;
     await db.run('DELETE FROM mail_sends WHERE at<?',new Date(now-2*86400000).toISOString());
     if(await count(3600000)>=config.caps.perHour||await count(86400000)>=config.caps.perDay)throw new MailSendError('RATE_LIMITED',MAIL_REASONS.RATE_LIMITED,true,false);
-    await db.run('INSERT INTO mail_sends VALUES (?,?,?,?)',randomUUID(),new Date(now).toISOString(),kind,outboxId);});
+    await db.run('INSERT INTO mail_sends (id,at,kind,outbox_id) VALUES (?,?,?,?)',randomUUID(),new Date(now).toISOString(),kind,outboxId);});
 }
 /** Rows stuck in `sending` (crash, lost process) cannot be known to have sent: mark them uncertain, never retry automatically. */
 export async function recoverStuckMail(){
   const cutoff=new Date(Date.now()-STALE_SENDING_MS).toISOString();
-  const rows=await db.all("SELECT id,inquiry_id,version,kind FROM outbox WHERE status='sending' AND COALESCE(json_extract(data,'$.sendingAt'),'')<?",cutoff) as {id:string;inquiry_id:string;version:number;kind:string}[];
+  const rows=await db.all(`SELECT id,inquiry_id,version,kind FROM outbox WHERE status='sending' AND COALESCE(${jsonText(db,'data','sendingAt')},'')<?`,cutoff) as {id:string;inquiry_id:string;version:number;kind:string}[];
   for(const row of rows)await transaction(async()=>{
     if(!(await db.run("UPDATE outbox SET status='uncertain' WHERE id=? AND status='sending'",row.id)).changes)return;
     if(row.kind!=='proposal')return;
@@ -171,7 +173,7 @@ export async function recoverStuckMail(){
   });
 }
 async function claimOutbox(rowId:string,config:MailConfig){
-  if((await db.run("UPDATE outbox SET status='sending',data=json_set(data,'$.sendingAt',?,'$.mode',?,'$.redirectedTo',?) WHERE id=? AND status IN ('ready','failed')",new Date().toISOString(),attemptMode(config),maskedRedirect(config),rowId)).changes===1)return;
+  if((await db.run(`UPDATE outbox SET status='sending',data=${jsonMerge(db,'data',['sendingAt','mode','redirectedTo'])} WHERE id=? AND status IN ('ready','failed')`,new Date().toISOString(),attemptMode(config),maskedRedirect(config),rowId)).changes===1)return;
   const status=(await db.get('SELECT status FROM outbox WHERE id=?',rowId) as {status:string}|undefined)?.status;
   if(status==='uncertain')throw new AppError('The outcome of this email is unknown. Check the mailbox, then ask an administrator to confirm it. It is not retried automatically to avoid a duplicate.',409);
   if(status==='sent')throw new AppError('This approved reply was already sent.',409);
@@ -221,7 +223,7 @@ async function deliver(id:string,version:number,user:Staff,fail=false) {
       return;
     }
     const file=await storeEml('outbox/'+row.id+'.eml',result.eml),masked=maskedRedirect(config);
-    await transaction(async()=>{const record=await inquiry(id),revision=record.revision,latest=record.submissions.find(s=>s.version===version);if(!latest||latest.decision?.action!=='approve')throw new AppError('No approval exists for this package.',409);if(latest.delivery)return;startClientProtection(record,new Date().toISOString(),'proposal',latest.fields);latest.delivery={id:row.id,at:result.at,mode:result.mode,file,sentBy:user.id,...(masked?{redirectedTo:masked}:{})};record.status='Sent';delete record.mailFailure;delete record.mailUncertain;delete record.mailDryRun;audit(record,user,'Approved proposal v'+version+' '+text.audit);await persist(record,revision);await db.run('UPDATE outbox SET status=?,data=? WHERE id=?','sent',JSON.stringify({...JSON.parse((await db.get('SELECT data FROM outbox WHERE id=?',row.id) as {data:string}).data),file,error:''}),row.id);await notify(record,text.notice,`${config.mode==='local'?latest.email.to:'Agent'} · proposal v${version}. ${text.detail}`,[latest.submittedBy]);});
+    await transaction(async()=>{const record=await lockedInquiry(id),revision=record.revision,latest=record.submissions.find(s=>s.version===version);if(!latest||latest.decision?.action!=='approve')throw new AppError('No approval exists for this package.',409);if(latest.delivery)return;startClientProtection(record,new Date().toISOString(),'proposal',latest.fields);latest.delivery={id:row.id,at:result.at,mode:result.mode,file,sentBy:user.id,...(masked?{redirectedTo:masked}:{})};record.status='Sent';delete record.mailFailure;delete record.mailUncertain;delete record.mailDryRun;audit(record,user,'Approved proposal v'+version+' '+text.audit);await persist(record,revision);await db.run('UPDATE outbox SET status=?,data=? WHERE id=?','sent',JSON.stringify({...JSON.parse((await db.get('SELECT data FROM outbox WHERE id=?',row.id) as {data:string}).data),file,error:''}),row.id);await notify(record,text.notice,`${config.mode==='local'?latest.email.to:'Agent'} · proposal v${version}. ${text.detail}`,[latest.submittedBy]);});
   }catch{
     // The message left (or was prepared) but we could not record it. Never auto-retry: that could send twice.
     await recordFailure(id,version,user,row.id,{code:'UNKNOWN',safeReason:'The email was sent but the result could not be saved. Check the mailbox, then ask an administrator to confirm it.',uncertain:!result.dryRun});
@@ -248,7 +250,7 @@ export async function confirmSent(id:string,user:Staff,input:unknown) {
   needAdmin(user);const body=confirmInput.parse(input);
   await recoverStuckMail();
   return await transaction(async()=>{
-    const record=await inquiry(id);checkRevision(record,body.revision);
+    const record=await lockedInquiry(id);checkRevision(record,body.revision);
     const {latest,row}=await uncertainRow(id,record);
     await assertClientReady(record);
     const data=JSON.parse(row.data) as {mode?:DeliveryMode;redirectedTo?:string},at=new Date().toISOString();
@@ -289,11 +291,11 @@ export async function requestDetails(id:string,user:Staff,input:unknown) {
     if(await db.get("SELECT 1 FROM outbox WHERE inquiry_id=? AND kind='details' AND status='sending'",id))throw new AppError('A details request is already being sent for this inquiry.',409);
     const version=((await db.get("SELECT MAX(version) AS v FROM outbox WHERE inquiry_id=? AND kind='details'",id) as {v:number|null}).v||0)+1;
     const now=new Date().toISOString();
-    await db.run('INSERT INTO outbox VALUES (?,?,?,?,?,?)',outboxId,id,version,'details','sending',JSON.stringify({id:outboxId,createdAt:now,sendingAt:now,email,error:''}));
+    await db.run('INSERT INTO outbox (id,inquiry_id,version,kind,status,data) VALUES (?,?,?,?,?,?)',outboxId,id,version,'details','sending',JSON.stringify({id:outboxId,createdAt:now,sendingAt:now,email,error:''}));
     return email;
   });
   const config=mailConfig();
-  const settle=(status:string,error:string)=>db.run('UPDATE outbox SET status=?,data=json_set(data,\'$.error\',?) WHERE id=?',status,error,outboxId);
+  const settle=(status:string,error:string)=>db.run(`UPDATE outbox SET status=?,data=${jsonMerge(db,'data',['error'])} WHERE id=?`,status,error,outboxId);
   let result:SendResult;
   try{
     await reserveSend(config,'details',outboxId);
@@ -326,10 +328,14 @@ export async function intake(user:Staff,file:File,sender:string) {
   const source=filename.endsWith('.pdf')?await preservePdfForm(bytes,file.name,sender):await parseForm(bytes,file.name,sender);
   source.sourceHash=createHash('sha256').update(bytes).digest('hex');
   // The original is already stored under a fresh key; if the row cannot be committed, remove it again.
-  try{return await transaction(async()=>{const max=await inquiriesMax(),at=new Date().toISOString();const record:InquiryRecord={id:'INQ-'+new Date().getFullYear()+'-'+String(max+1).padStart(5,'0'),revision:1,status:'New inquiry',createdAt:at,updatedAt:at,fields:{...source.fields},source,email:defaultEmail(source.fields),emailOverrides:[],templateId:'',submissions:[],handledBy:[],history:[{id:randomUUID(),at,actorId:user.id,actor:user.name,action:'Imported agent email form. All active staff notified.'}],chat:[],notes:'',returnNote:'',returnFlags:[],detailRequests:[]};await updateClientReview(record,user);
+  try{return await transaction(async()=>{const at=new Date().toISOString();const record:InquiryRecord={id:'INQ-'+new Date().getFullYear()+'-'+'00000',revision:1,status:'New inquiry',createdAt:at,updatedAt:at,fields:{...source.fields},source,email:defaultEmail(source.fields),emailOverrides:[],templateId:'',submissions:[],handledBy:[],history:[{id:randomUUID(),at,actorId:user.id,actor:user.name,action:'Imported agent email form. All active staff notified.'}],chat:[],notes:'',returnNote:'',returnFlags:[],detailRequests:[]};
+    await lockRegistry(record); // client identity keys first (Postgres), then the counter row, so two imports of one client are ordered
+    record.id='INQ-'+new Date().getFullYear()+'-'+String(await nextInquiryNumber()).padStart(5,'0');
+    await updateClientReview(record,user);
     await persist(record);await notify(record,record.closure?'Request declined — previous registration expired':record.clientReview?.state==='duplicate'?'Duplicate import received — on hold':record.clientReview?.state==='identify'?'Client details needed':'New inquiry',`${record.fields.company||'Agent request'} is ready for form review.`,(await allUsers()).filter(u=>u.active).map(u=>u.id));return record;});}catch(error){await deleteQuietly(source.storage);throw error;}
 }
-async function inquiriesMax() { const rows=await db.all('SELECT id FROM inquiries') as {id:string}[];return Math.max(129,...rows.map(r=>Number(r.id.split('-').at(-1))||0)); }
+// One atomic statement on both databases: the row lock makes concurrent imports take distinct numbers and a rollback gives the number back.
+async function nextInquiryNumber() { const row=await db.get<{n:number}>("UPDATE counters SET n=n+1 WHERE name='inquiry' RETURNING n");if(!row)throw new Error('The inquiry counter is missing.');return Number(row.n); }
 export async function alternatives(record:InquiryRecord) { return suggestTemplates(record.fields,await catalog()).map(option=>option.template); }
 export async function chat(id:string,user:Staff,input:unknown) {
   canPrepare(user);

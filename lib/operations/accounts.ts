@@ -3,21 +3,26 @@ import { z } from 'zod';
 import { allUsers, AppError, db, passwordHash, passwordMatches, tokenHash, transaction } from './database';
 import type { Staff } from './types';
 
-export async function securityEvent(user:Staff,action:string){await db.run('INSERT INTO security_events VALUES (?,?,?,?)',randomUUID(),new Date().toISOString(),user.id,action);}
+export async function securityEvent(user:Staff,action:string){await db.run('INSERT INTO security_events (id,at,actor_id,action) VALUES (?,?,?,?)',randomUUID(),new Date().toISOString(),user.id,action);}
 const username=z.string().trim().min(3).max(50).regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,'Use letters, numbers, dots, dashes or underscores.').transform(value=>value.toLowerCase());
 const newPassword=z.string().min(14,'Use at least 14 characters.').max(200).refine(value=>!['Rmc2Local!2026','passwordpassword','12345678901234'].includes(value),'Choose a unique password.');
 async function unique(login:string,except?:string){if((await allUsers()).some(user=>user.id!==except&&[user.username||user.id,user.email].some(value=>value.toLowerCase()===login.toLowerCase())))throw new AppError('That username or email is already in use.',409);}
+const RATE_WINDOW_MS=15*60000,RATE_MAX_ATTEMPTS=8;
+// Counts this attempt BEFORE the password is checked, in one atomic statement (INSERT ... ON CONFLICT DO UPDATE ... RETURNING,
+// the same on SQLite and Postgres), so parallel guesses cannot all slip through a check-then-record gap: at most
+// RATE_MAX_ATTEMPTS attempts per window are ever verified, the next one gets 429 and the block lasts 15 minutes.
+// The window restarts 15 minutes after its first attempt; a successful sign-in deletes the row.
 export async function checkRate(key:string){
-  const row=await db.get('SELECT blocked_until FROM auth_attempts WHERE key=?',key) as {blocked_until:number}|undefined;
-  if(row&&row.blocked_until>Date.now())throw new AppError('Too many attempts. Wait 15 minutes before trying again.',429);
-}
-async function failed(key:string){
-  // Read-modify-write of the attempt counter: one failure at a time so parallel guesses are all counted.
-  await transaction(async()=>{
-  const now=Date.now(),row=await db.get('SELECT failures,window_start FROM auth_attempts WHERE key=?',key) as {failures:number;window_start:number}|undefined;
-  const fresh=!row||now-row.window_start>15*60000,count=fresh?1:row.failures+1;
-  await db.run('INSERT OR REPLACE INTO auth_attempts VALUES (?,?,?,?)',key,count,fresh?now:row!.window_start,count>=8?now+15*60000:0);
-  });
+  const now=Date.now(),W=RATE_WINDOW_MS;
+  const row=await db.get<{blocked_until:number}>(`INSERT INTO auth_attempts (key,failures,window_start,blocked_until) VALUES (?,1,CAST(? AS BIGINT),0)
+    ON CONFLICT(key) DO UPDATE SET
+      failures=CASE WHEN auth_attempts.blocked_until>CAST(? AS BIGINT) THEN auth_attempts.failures WHEN CAST(? AS BIGINT)-auth_attempts.window_start>${W} THEN 1 ELSE auth_attempts.failures+1 END,
+      window_start=CASE WHEN auth_attempts.blocked_until<=CAST(? AS BIGINT) AND CAST(? AS BIGINT)-auth_attempts.window_start>${W} THEN CAST(? AS BIGINT) ELSE auth_attempts.window_start END,
+      blocked_until=CASE WHEN auth_attempts.blocked_until>CAST(? AS BIGINT) THEN auth_attempts.blocked_until
+        WHEN CAST(? AS BIGINT)-auth_attempts.window_start>${W} THEN 0
+        WHEN auth_attempts.failures+1>${RATE_MAX_ATTEMPTS} THEN CAST(? AS BIGINT)+${W} ELSE 0 END
+    RETURNING blocked_until`,key,now,now,now,now,now,now,now,now,now);
+  if(row&&Number(row.blocked_until)>now)throw new AppError('Too many attempts. Wait 15 minutes before trying again.',429);
 }
 export async function authenticate(input:unknown){
   const body=z.object({email:z.string().trim().min(1).max(254),password:z.string().min(1).max(200)}).strict().parse(input);
@@ -26,13 +31,13 @@ export async function authenticate(input:unknown){
   // Constant-cost password verification also applies to unknown usernames.
   const fallback='00000000000000000000000000000000:'+ '00'.repeat(64);
   const valid=passwordMatches(body.password,row?.password||fallback);
-  if(!row||!valid||!JSON.parse(row.data).active){await failed(key);throw new AppError('The username or password is incorrect.',401);}
+  if(!row||!valid||!JSON.parse(row.data).active){throw new AppError('The username or password is incorrect.',401);}
   await db.run('DELETE FROM auth_attempts WHERE key=?',key);return JSON.parse(row.data) as Staff;
 }
 async function verifyCurrent(user:Staff,password:string){
   const key='settings:'+user.id;await checkRate(key);
   const row=await db.get('SELECT password FROM users WHERE id=?',user.id) as {password:string};
-  if(!passwordMatches(password,row.password)){await failed(key);throw new AppError('Your current password is incorrect.',403);}
+  if(!passwordMatches(password,row.password)){throw new AppError('Your current password is incorrect.',403);}
   await db.run('DELETE FROM auth_attempts WHERE key=?',key);
 }
 export async function updateOwnAccount(user:Staff,input:unknown){
@@ -41,6 +46,7 @@ export async function updateOwnAccount(user:Staff,input:unknown){
   if(user.mustChangePassword&&!body.password)throw new AppError('Set a new password to finish activating your account.');
   if(body.password===body.currentPassword)throw new AppError('Choose a different password from the current one.');
   return await transaction(async()=>{
+    await db.lock('users-admin'); // usernames/emails stay unique when two edits land together
     await unique(body.username,user.id);const updated={...user,username:body.username,mustChangePassword:false};
     await db.run('UPDATE users SET data=? WHERE id=?',JSON.stringify(updated),user.id);
     if(body.password)await db.run('UPDATE users SET password=? WHERE id=?',passwordHash(body.password),user.id);
@@ -54,10 +60,11 @@ export async function createAccount(user:Staff,input:unknown){
   const body=z.object({name:z.string().trim().min(2).max(100),username,email:z.string().trim().email().max(254),role:z.enum(['Employee','Supervisor','Admin']),position:z.string().trim().max(200),canApprove:z.boolean(),currentPassword:z.string().min(1).max(200)}).strict().parse(input);
   await verifyCurrent(user,body.currentPassword);
   return await transaction(async()=>{
+    await db.lock('users-admin');
     await unique(body.username);await unique(body.email);
     const temporaryPassword=randomBytes(18).toString('base64url');
     const person:Staff={id:randomUUID(),name:body.name,username:body.username,email:body.email.toLowerCase(),role:body.role,position:body.position,canApprove:body.role==='Supervisor'&&body.canApprove,active:true,mustChangePassword:true};
-    await db.run('INSERT INTO users VALUES (?,?,?)',person.id,JSON.stringify(person),passwordHash(temporaryPassword));
+    await db.run('INSERT INTO users (id,data,password) VALUES (?,?,?)',person.id,JSON.stringify(person),passwordHash(temporaryPassword));
     await securityEvent(user,'Created staff account '+person.id+' ('+person.role+')');return {user:person,temporaryPassword};
   });
 }

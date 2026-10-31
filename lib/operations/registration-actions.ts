@@ -1,5 +1,5 @@
 import { reviewClientRegistration } from './client-service';
-import { matchingInquiries } from './inquiry-index';
+import { lockedInquiry, matchingInquiries } from './inquiry-index';
 
 import { randomUUID } from 'node:crypto';
 
@@ -7,7 +7,7 @@ import path from 'node:path';
 
 import { z } from 'zod';
 
-import { allUsers, AppError, audit, db, inquiry, notify, persist, transaction } from './database';
+import { allUsers, AppError, audit, db, inquiry, lockInquiryRows, notify, persist, transaction } from './database';
 
 import { deleteQuietly, files } from './file-store';
 
@@ -20,6 +20,7 @@ import type { InquiryRecord, Staff } from './types';
 function transferIdentity(record:InquiryRecord){return JSON.stringify([clientIdentity(record),record.fields.agentName,record.fields.agentEmail,record.fields.agentPhone]);}
 async function available(id:string,user:Staff){
 
+  await db.lock('lease:'+id); // a colleague starting to handle this inquiry must wait for this decision to commit
   const owner=await db.get('SELECT user_id FROM inquiry_activity WHERE inquiry_id=? AND seen_at>? AND user_id<>?',id,new Date(Date.now()-90000).toISOString(),user.id);
 
   if(owner)throw new AppError('A colleague is handling this inquiry. Ask them to finish before changing the client registration.',423);
@@ -33,7 +34,7 @@ export async function declineInquiry(id:string,user:Staff,input:unknown){
 
   return await transaction(async()=>{
 
-    const record=await inquiry(id);if(record.revision!==body.revision)throw new AppError('Reload this inquiry before declining it.',409);
+    const record=await lockedInquiry(id);if(record.revision!==body.revision)throw new AppError('Reload this inquiry before declining it.',409);
 
     if(record.closure)return record;
 
@@ -84,7 +85,7 @@ export async function transferWithBor(id:string,user:Staff,form:FormData){
   // File first (never inside transaction()), then the row; every committed path below references this key.
   try{await files().put(storage,bytes,{contentType:mime});written=true;const saved=await transaction(async()=>{
 
-    const record=await inquiry(id),previous=await inquiry(body.previousId),records=await matchingInquiries(record);
+    const record=await lockedInquiry(id);await db.lock('lease:'+id,'lease:'+body.previousId);await lockInquiryRows([id,body.previousId]);const previous=await inquiry(body.previousId),records=await matchingInquiries(record);
 
     if(record.revision!==body.revision||previous.revision!==body.previousRevision)throw new AppError('The registration changed. Reload both inquiries before transferring.',409);
 
@@ -167,7 +168,7 @@ export async function decideAgentTransfer(id:string,user:Staff,input:unknown){
 
 export async function requestExpiredTransfer(id:string,user:Staff,input:unknown){
  const body=z.object({revision:z.number().int(),note:z.string().trim().min(10).max(3000)}).strict().parse(input);
- return await transaction(async()=>{const record=await inquiry(id);if(record.revision!==body.revision)throw new AppError('Reload this inquiry.',409);await available(id,user);
+ return await transaction(async()=>{const record=await lockedInquiry(id);if(record.revision!==body.revision)throw new AppError('Reload this inquiry.',409);await available(id,user);
  const matches=reviewClient(record,await matchingInquiries(record)).matches;
  if(record.closure||matches.length!==1||!matches[0].expired||matches[0].sameAgent)throw new AppError('Review one expired registration for a different agent before requesting a change.',409);
  if(record.agentTransferRequest&&!record.agentTransferRequest.decision)throw new AppError('An agent change is already pending.',409);

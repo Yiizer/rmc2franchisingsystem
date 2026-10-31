@@ -1,0 +1,27 @@
+# CLI deploys from this PC. resources/private (templates) is intentionally NOT ignored: it is bundled
+# into the API function only. Never upload data, secrets, test output or local tooling.
+.data
+test-results
+graphify-out
+.claude
+.next
+node_modules
+.git
+.env*
+!.env.example
+*.sqlite
+*.sqlite-*
+.vercel
+*.pem
+coverage
+out
+dist
+.vinext
+.wrangler
+.sites-runtime
+.agents
+.codex
+outputs
+work
+*.tsbuildinfo
+*.log

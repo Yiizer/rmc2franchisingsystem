@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppError, audit, db, inquiry, persist, transaction, notify, allUsers } from './database';
+import { rowOrder } from './sql-dialect';
 import { clientIdentity, clientIdentityKeys, normalizeClient } from './client-rules';
 import type { Staff, InquiryRecord } from './types';
 import {projectHistorical,manilaToday,statusStyles,type RegisterEntry,type HistoricalData,type DirectoryListing} from './directory-model';
@@ -12,7 +13,9 @@ let directoryCache:{stamp:string;items:RegisterEntry[];sheets:string[]}|undefine
 export async function directoryRecords(){
 
  const imports=await db.all('SELECT id,report FROM historical_imports ORDER BY id') as {id:string;report:string}[];
- const stamp=manilaToday()+JSON.stringify(imports);
+ // A 'historical' scope in workspace_versions (bumped by triggers) is the cheap cross-instance stamp; without it the reports themselves are.
+ const version=await db.get<{version:number}>("SELECT version FROM workspace_versions WHERE scope='historical'");
+ const stamp=manilaToday()+(version?':'+version.version:JSON.stringify(imports));
  if(!directoryCache||directoryCache.stamp!==stamp){
   const rows=await db.all('SELECT * FROM historical_accounts') as Row[];
   const sheets=new Set(rows.map(r=>r.sheet));
@@ -23,7 +26,7 @@ export async function directoryRecords(){
 }
 export async function directory(params:URLSearchParams):Promise<DirectoryListing>{
  const query=z.object({search:z.string().max(200).default(''),sheet:z.string().max(100).default(''),status:z.string().max(100).default(''),agent:z.string().max(500).default(''),branch:z.string().max(500).default(''),sort:z.enum(['account','date-new','date-old','age-old','age-new']).default('account'),page:z.coerce.number().int().min(1).max(100000).default(1)}).parse(Object.fromEntries(params));
- const source=await directoryRecords(),term=query.search.toLowerCase();
+ const source=await db.snapshot(()=>directoryRecords()),term=query.search.toLowerCase();
  const scoped=source.items.filter(r=>!query.sheet||r.sheet===query.sheet);
  const columns=new Map<string,string>();
  for(const row of scoped)for(const field of row.fields)columns.set(field.key,field.label);
@@ -49,7 +52,7 @@ export async function historicalMatches(record:InquiryRecord){
  const rows=await db.all('SELECT * FROM historical_accounts WHERE account_key IN ('+keys.map(()=>'?').join(',')+') ORDER BY sheet,source_row',...keys) as Row[];
  const identity=historicalIdentity(record);
   const result=[];
- for(const row of rows){const review=await db.get('SELECT identity,outcome,actor,at,reason FROM historical_reviews WHERE inquiry_id=? AND historical_id=? ORDER BY rowid DESC LIMIT 1',record.id,row.id) as {identity:string;outcome:string;actor:string;at:string;reason:string}|undefined;result.push({id:row.id,account:row.account,agent:row.agent,sheet:row.sheet,source_row:row.source_row,status:row.status,branch:row.branch,review:review?{...review,stale:review.identity!==identity}:null});}
+ for(const row of rows){const review=await db.get('SELECT identity,outcome,actor,at,reason FROM historical_reviews WHERE inquiry_id=? AND historical_id=? ORDER BY '+rowOrder(db)+' DESC LIMIT 1',record.id,row.id) as {identity:string;outcome:string;actor:string;at:string;reason:string}|undefined;result.push({id:row.id,account:row.account,agent:row.agent,sheet:row.sheet,source_row:row.source_row,status:row.status,branch:row.branch,review:review?{...review,stale:review.identity!==identity}:null});}
  return result;
 }
 export async function historicalAgentChangeBlocked(record:InquiryRecord){return (await historicalMatches(record)).some(match=>['request-agent-change','reject-agent-change'].includes(String(match.review?.outcome))||match.review?.outcome==='approve-agent-change'&&match.review.stale);}
@@ -59,7 +62,7 @@ export async function reviewHistorical(id:string,user:Staff,input:unknown){
  return await transaction(async()=>{const record=await inquiry(id);if(record.revision!==body.revision)throw new AppError('Reload the inquiry before reviewing this match.',409);
  if(record.closure)throw new AppError('Archived requests are view only.',409);
  const match=(await historicalMatches(record)).find(row=>row.id===body.historicalId);if(!match)throw new AppError('The matching details changed. Reload.',409);
- const owner=await db.get('SELECT user_id FROM inquiry_activity WHERE inquiry_id=? AND seen_at>? AND user_id<>?',id,new Date(Date.now()-90000).toISOString(),user.id);if(owner)throw new AppError('A colleague is handling this inquiry.',423);
+ await db.lock('lease:'+id);const owner=await db.get('SELECT user_id FROM inquiry_activity WHERE inquiry_id=? AND seen_at>? AND user_id<>?',id,new Date(Date.now()-90000).toISOString(),user.id);if(owner)throw new AppError('A colleague is handling this inquiry.',423);
  if(body.action==='same'&&normalizeClient(match.agent)!==normalizeClient(record.fields.agentName))throw new AppError('For the same client with a different agent, request supervisor approval instead.',409);
  if(body.action==='approve-agent-change'||body.action==='reject-agent-change'){
   if(user.role!=='Supervisor'||!user.canApprove)throw new AppError('Only an approving supervisor can decide agent changes.',403);
@@ -67,7 +70,7 @@ export async function reviewHistorical(id:string,user:Staff,input:unknown){
   if(match.review?.outcome!=='request-agent-change')throw new AppError('No pending agent-change request remains.',409);
  }
  if(match.review?.outcome==='request-agent-change'&&!(match.review.stale&&body.action==='request-agent-change')&&!['approve-agent-change','reject-agent-change'].includes(body.action))throw new AppError('A supervisor must decide the pending agent change.',409);
- await db.run('INSERT INTO historical_reviews VALUES (?,?,?,?,?,?,?,?)',randomUUID(),id,body.historicalId,historicalIdentity(record),body.action,user.id,new Date().toISOString(),body.reason);
+ await db.run('INSERT INTO historical_reviews (id,inquiry_id,historical_id,identity,outcome,actor,at,reason) VALUES (?,?,?,?,?,?,?,?)',randomUUID(),id,body.historicalId,historicalIdentity(record),body.action,user.id,new Date().toISOString(),body.reason);
  if(body.action==='request-agent-change')await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',id);
  audit(record,user,'Historical client review ('+body.action+') '+match.sheet+' row '+match.source_row+': '+body.reason);await persist(record,body.revision);
  if(body.action==='request-agent-change')await notify(record,'Historical agent change awaiting approval',record.fields.company+' · review the historical record',(await allUsers()).filter(p=>p.active&&p.role==='Supervisor'&&p.canApprove).map(p=>p.id));

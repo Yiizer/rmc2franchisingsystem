@@ -1,9 +1,9 @@
 import {historicalAgentChangeBlocked} from './historical';
-import { matchingInquiries } from './inquiry-index';
+import { lockedInquiry, matchingInquiries } from './inquiry-index';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { z } from 'zod';
-import { allUsers, AppError, audit, db, inquiry, notify, persist, transaction } from './database';
+import { allUsers, AppError, audit, db, inquiry, lockInquiryRows, notify, persist, transaction } from './database';
 import { deleteQuietly, files } from './file-store';
 import { CLIENT_PROTECTION_MS, clientIdentity, clientState, isRegistered, protectedAgent, protectionFor, reviewClient } from './client-rules';
 import type { AgentProgressReport, FormFields, InquiryRecord, Staff } from './types';
@@ -39,10 +39,11 @@ export function startClientProtection(record:InquiryRecord,at:string,kind:'propo
 export async function reviewClientRegistration(id:string,user:Staff,input:unknown){
   const body=z.object({revision:z.number().int(),action:z.enum(['recheck','distinct','reassign-expired']),matchId:z.string().optional(),note:z.string().trim().max(3000).default('')}).strict().parse(input);
   return await transaction(async()=>{
-    const record=await inquiry(id);if(record.revision!==body.revision)throw new AppError('This inquiry changed. Reload before reviewing it.',409);
+    const record=await lockedInquiry(id);if(record.revision!==body.revision)throw new AppError('This inquiry changed. Reload before reviewing it.',409);
     if(clientState(record,await matchingInquiries(record)).state==='archived')throw new AppError('Expired inquiries stay in Archives. Import a new agent form to register the client.',409);
     if(body.action==='distinct'&&record.agentTransferRequest&&!record.agentTransferRequest.decision)throw new AppError('A supervisor must decide the pending agent change first.',409);
     if(body.action==='distinct'||body.action==='reassign-expired'){
+      await db.lock('lease:'+id);
       const owner=await db.get('SELECT user_id FROM inquiry_activity WHERE inquiry_id=? AND seen_at>? AND user_id<>?',id,new Date(Date.now()-90000).toISOString(),user.id);
       if(owner)throw new AppError('A colleague is handling this inquiry.',423);
       if(body.action==='reassign-expired'&&!(user.role==='Supervisor'&&user.canApprove))throw new AppError('An approving supervisor must approve an agent change after expiry.',403);
@@ -55,6 +56,7 @@ export async function reviewClientRegistration(id:string,user:Staff,input:unknow
       if(body.action==='reassign-expired'&&fresh.matches.some(match=>!match.expired||match.sameAgent))throw new AppError('Only expired registrations for a different agent can be reassigned. Review the current matches first.',409);
       record.clientReview={...fresh,identity:clientIdentity(record),exceptions:[...(record.clientReview?.identity===clientIdentity(record)?record.clientReview.exceptions||[]:[]),...await Promise.all(fresh.matches.map(async match=>({inquiryId:match.inquiryId,identity:clientIdentity(await inquiry(match.inquiryId))})))],reviewedBy:user.id,reviewedAt:new Date().toISOString(),note:body.note};
       if(body.action==='reassign-expired'&&record.agentTransferRequest&&!record.agentTransferRequest.decision)record.agentTransferRequest.decision={by:user.id,at:new Date().toISOString(),action:'approve',note:body.note};
+      if(body.action==='reassign-expired'){await db.lock(...fresh.matches.map(match=>'lease:'+match.inquiryId));await lockInquiryRows([record.id,...fresh.matches.map(match=>match.inquiryId)]);}
       if(body.action==='reassign-expired')for(const match of fresh.matches){
         const previous=await inquiry(match.inquiryId),revision=previous.revision;
         if(await db.get('SELECT user_id FROM inquiry_activity WHERE inquiry_id=? AND seen_at>? AND user_id<>?',previous.id,new Date(Date.now()-90000).toISOString(),user.id))throw new AppError('A colleague is handling the previous registration.',423);
@@ -91,7 +93,7 @@ export async function addProgressReport(id:string,user:Staff,input:unknown,file?
     if(attachment&&bytes){await files().put(attachment.storage,bytes,{contentType:attachment.mime});written=true;}
     const saved=await transaction(async()=>{
     appended=false;
-    const record=await inquiry(id);
+    const record=await lockedInquiry(id);
     if(record.progressReports?.some(report=>report.id===body.requestId))return record;
     if(record.revision!==body.revision)throw new AppError('This inquiry changed. Reload before recording the report.',409);
     await assertClientReady(record);
