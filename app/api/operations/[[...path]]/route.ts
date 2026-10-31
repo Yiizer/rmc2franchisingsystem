@@ -5,9 +5,9 @@ import { declineInquiry, transferWithBor, decideAgentTransfer, requestExpiredTra
 import { beginSupervisorEdit, cancelSupervisorEdit } from '@/lib/operations/supervisor-edit';
 import { stageTemplate, publishTemplate, setTemplateActive, templateStage } from '@/lib/operations/template-admin';
 import { monitoring } from '@/lib/operations/monitoring';
-import { checkInbox, cronAllowed, dismissInbound, importInbound, inboundAttachment, listInbound } from '@/lib/operations/inbound';
+import { autoCheckInbox, checkInbox, cronAllowed, dismissInbound, importInbound, inboundAttachment, listInbound } from '@/lib/operations/inbound';
 import { chosen } from '@/lib/operations/service';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { clientStates } from '@/lib/operations/client-rules';
 import { addProgressReport, reviewClientRegistration } from '@/lib/operations/client-service';
 import { privateFile, logFileAccess } from '@/lib/operations/file-privacy';
@@ -52,7 +52,7 @@ export async function GET(request:NextRequest,context:Context){try{
   const user=await staff(request);
   if(route[0]==='inbound'&&!route[1])return response(await listInbound(user));
   if(route[0]==='inbound'&&route[1]&&route[2]==='attachment'){const file=await inboundAttachment(user,route[1],Number(route[3]));return fileResponse(file.bytes,file.type,file.name);}
-  if(route[0]==='workspace')return response(await workspaceView(user,request.nextUrl.searchParams));
+  if(route[0]==='workspace'){after(autoCheckInbox);return response(await workspaceView(user,request.nextUrl.searchParams));}
   if(user.mustChangePassword){if(route[0]!=='bootstrap')throw new AppError('Set your own password in Settings to activate your account.',403);return response({user,users:[user],inquiries:[],clientStates:{},packageRenderers:{},activity:[],templates:[],notifications:[],integrations:{database:'',gmail:'',ai:'',documents:''},mail:mailStatus()});}
 
   if(route[0]==='bootstrap'){await recoverStuckMail();const snap=await db.snapshot(async()=>{const notices=(await db.all('SELECT data FROM notifications') as {data:string}[]).map(r=>JSON.parse(r.data) as Notice).filter(n=>n.recipientIds.includes(user.id)).sort((a,b)=>b.at.localeCompare(a.at));return {notices,records:await inquiries(),users:await allUsers(),activity:await activeInquiryActivity(),templates:await catalog()};});const records=snap.records;return response({user,users:snap.users,inquiries:records,clientStates:clientStates(records),packageRenderers:await packageRenderers(records),activity:snap.activity,templates:snap.templates.map(({file,text,...t})=>({...t,text,file:''})),notifications:snap.notices,integrations:{database:databaseLabel(),gmail:'Local test mailbox · no real Gmail sends',ai:'Simulated · supplied proposal sources only',documents:conversionName()},mail:mailStatus()});}

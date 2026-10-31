@@ -10,16 +10,21 @@ import type { InquiryRecord, Staff } from './types';
 
 // Inbound email (phase 7, lean). The test inbox is read READ-ONLY over IMAP with the same Gmail app password as
 // sending: nothing is deleted, moved or marked as read. New messages are stored once (by Message-ID) with their
-// Excel/PDF attachments in private storage, and wait on the Requests page. Nothing becomes an inquiry
-// automatically: staff import a form attachment (the normal intake, so client checks apply) or dismiss it.
+// Excel/PDF attachments in private storage. Agents email their forms in, so a message with a form attachment is
+// imported AUTOMATICALLY through the normal intake (client checks, duplicate holds and notifications apply).
+// Messages without a form, or whose form cannot be read, stay on the Requests page for staff.
+// The inbox is checked every 2 minutes while anyone has the app open, plus the daily cron (production).
 // Mail I/O always happens outside transactions (TEAM_DECISIONS file and data rules).
 
 export type InboundAttachment = { name: string; type: string; size: number; key: string };
 export type InboundMessage = {
   id: string; messageId: string; receivedAt: string; from: string; fromName: string; replyTo: string; subject: string;
   snippet: string; attachments: InboundAttachment[]; auth: { spf: string; dkim: string; dmarc: string };
-  state: 'new' | 'imported' | 'dismissed'; inquiryId?: string; handledBy?: string; handledAt?: string;
+  state: 'new' | 'imported' | 'dismissed'; inquiryId?: string; handledBy?: string; handledAt?: string; importError?: string;
 };
+/** The actor recorded in history for automatic imports. Not a sign-in account. */
+const EMAIL_INTAKE: Staff = { id: 'email-intake', name: 'Email intake (automatic)', role: 'Employee', email: '', active: true, position: 'System', canApprove: false } as Staff;
+const AUTO_CHECK_MS = 2 * 60 * 1000;
 const MAILBOX = 'INBOX', FIRST_RUN_DAYS = 14, MAX_PER_CHECK = 25, MAX_ATTACHMENT = 7 * 1024 * 1024;
 const FORM_TYPES: Record<string, string> = { xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', pdf: 'application/pdf' };
 
@@ -36,9 +41,9 @@ const authResult = (header: string, name: string) => (header.match(new RegExp('\
 const safeName = (name: string) => name.replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '').slice(0, 80) || 'attachment';
 
 /** Reads new messages from the inbox (read-only) and stores them. Returns how many were added. */
-export async function checkInbox(): Promise<{ added: number; checkedAt: string; connected: boolean }> {
+export async function checkInbox(): Promise<{ added: number; imported: number; checkedAt: string; connected: boolean }> {
   const settings = imapSettings(), checkedAt = new Date().toISOString();
-  if (!settings) return { added: 0, checkedAt, connected: false };
+  if (!settings) return { added: 0, imported: 0, checkedAt, connected: false };
   const cursor = await db.get<{ uidvalidity: string; last_uid: number }>('SELECT uidvalidity,last_uid FROM inbound_cursor WHERE mailbox=?', MAILBOX);
   const client = new ImapFlow({ host: settings.host, port: settings.port, secure: true, auth: { user: settings.user, pass: settings.pass }, logger: false });
   const fetched: { uid: number; source: Buffer }[] = [];
@@ -56,7 +61,7 @@ export async function checkInbox(): Promise<{ added: number; checkedAt: string; 
     throw new AppError('The test inbox could not be checked right now. Try again shortly.', 503);
   } finally { await client.logout().catch(() => client.close()); }
 
-  let added = 0, lastUid = cursor && cursor.uidvalidity === uidValidity ? Number(cursor.last_uid) : 0;
+  let added = 0, imported = 0, lastUid = cursor && cursor.uidvalidity === uidValidity ? Number(cursor.last_uid) : 0;
   for (const item of fetched.sort((a, b) => a.uid - b.uid)) {
     const parsed = await simpleParser(item.source);
     const messageId = (parsed.messageId || 'uid-' + uidValidity + '-' + item.uid).slice(0, 300);
@@ -82,13 +87,34 @@ export async function checkInbox(): Promise<{ added: number; checkedAt: string; 
       };
       try {
         const result = await db.run('INSERT INTO inbound_messages (id,message_id,received_at,state,data) VALUES (?,?,?,?,?) ON CONFLICT (message_id) DO NOTHING', id, messageId, record.receivedAt, 'new', jsonParam(record));
-        if (result.changes) added++; else await deleteQuietly(...attachments.map(a => a.key)); // a parallel check stored it first
+        if (result.changes) added++; else { await deleteQuietly(...attachments.map(a => a.key)); continue; } // a parallel check stored it first
       } catch (error) { await deleteQuietly(...attachments.map(a => a.key)); throw error; }
+      // Agents email their forms in: an Excel franchise form is imported straight away (the form reader rejects other
+      // workbooks). PDFs could be anything (invoices, letters), so they wait on the Requests page for a person.
+      const formIndex = attachments.findIndex(a => a.type === 'xlsx');
+      if (formIndex >= 0) {
+        try { await importInbound(EMAIL_INTAKE, id, formIndex, true); imported++; }
+        catch (error) {
+          const reason = error instanceof AppError && error.status < 500 ? error.message : 'The form could not be imported automatically.';
+          await db.run('UPDATE inbound_messages SET data=? WHERE id=?', jsonParam({ ...record, importError: reason }), id);
+        }
+      }
     }
     lastUid = Math.max(lastUid, item.uid);
   }
   await db.run('INSERT INTO inbound_cursor (mailbox,uidvalidity,last_uid,checked_at) VALUES (?,?,?,?) ON CONFLICT (mailbox) DO UPDATE SET uidvalidity=excluded.uidvalidity,last_uid=excluded.last_uid,checked_at=excluded.checked_at', MAILBOX, uidValidity, lastUid, checkedAt);
-  return { added, checkedAt, connected: true };
+  return { added, imported, checkedAt, connected: true };
+}
+
+/** Called from the workspace poll: at most one inbox check every 2 minutes across all users and instances. */
+export async function autoCheckInbox(): Promise<void> {
+  if (!imapSettings()) return;
+  const now = Date.now(), due = new Date(now - AUTO_CHECK_MS).toISOString(), at = new Date(now).toISOString();
+  // Claim the slot atomically: only the request that moves checked_at forward runs the check.
+  await db.run("INSERT INTO inbound_cursor (mailbox,uidvalidity,last_uid,checked_at) VALUES (?,'',0,?) ON CONFLICT (mailbox) DO NOTHING", MAILBOX, new Date(0).toISOString());
+  const claimed = await db.run('UPDATE inbound_cursor SET checked_at=? WHERE mailbox=? AND checked_at<?', at, MAILBOX, due);
+  if (!claimed.changes) return;
+  try { await checkInbox(); } catch { /* logged in checkInbox; the next slot retries */ }
 }
 
 export async function listInbound(user: Staff) {
@@ -112,8 +138,8 @@ async function finish(id: string, record: InboundMessage) {
 }
 
 /** Creates an inquiry from one form attachment through the normal intake (client checks apply). */
-export async function importInbound(user: Staff, id: string, index: number): Promise<InquiryRecord> {
-  requireStaff(user);
+export async function importInbound(user: Staff, id: string, index: number, automatic = false): Promise<InquiryRecord> {
+  if (!automatic) requireStaff(user);
   const record = await claim(id, 'new', 'importing');
   try {
     const attachment = record.attachments[index];
@@ -121,7 +147,7 @@ export async function importInbound(user: Staff, id: string, index: number): Pro
     const bytes = await files().get(attachment.key);
     const sender = [record.replyTo, record.from].find(address => isSafeEmail(address)) || '';
     const inquiry = await intake(user, new File([new Uint8Array(bytes)], attachment.name, { type: FORM_TYPES[attachment.type] }), sender);
-    await finish(id, { ...record, state: 'imported', inquiryId: inquiry.id, handledBy: user.id, handledAt: new Date().toISOString() });
+    await finish(id, { ...record, state: 'imported', inquiryId: inquiry.id, handledBy: user.id, handledAt: new Date().toISOString(), importError: undefined });
     return inquiry;
   } catch (error) {
     await db.run("UPDATE inbound_messages SET state='new' WHERE id=? AND state='importing'", id);

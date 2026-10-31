@@ -209,9 +209,9 @@ Format: **Decision** — why — where it applies.
     - `vercel link` writes `VERCEL_OIDC_TOKEN` into `.env.local`.
 - **Inbound email, lean phase 7 (2026-10-31):**
   - **Reading:** IMAP read-only on `INBOX` of the test account, using the sending app password.
-  - **Requests page:** emails go to a staff-reviewed "Requests" page and are never auto-imported.
+  - **Requests page:** **PO decision (2026-10-31): agents email forms in and the system imports them automatically.** An email with an Excel franchise form becomes an inquiry through the normal intake, recorded as "Email intake (automatic)". PDFs and other emails wait on the Requests page with "Create inquiry", because a PDF could be anything. An unreadable form also waits there, with the reason shown.
   - **Import:** "Create inquiry" runs the normal intake on an attachment.
-  - **When it checks:** "Check mail now" and a daily cron at `/api/operations/inbound/cron` (`CRON_SECRET`).
+  - **When it checks:** an automatic check every 2 minutes while anyone has the app open (`after()` on the workspace poll, one claim per slot via `inbound_cursor.checked_at`), plus "Check mail now" and a daily cron at `/api/operations/inbound/cron` (`CRON_SECRET`).
   - **Lessons:**
     - Vercel Cron runs only on PRODUCTION deployments, so previews rely on the button.
     - **Online PDF files exceed Vercel's 4.5 MB body cap.** Convert through short-lived Supabase signed links (`/convert-url`), never in the request body.
