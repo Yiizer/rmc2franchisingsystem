@@ -12,6 +12,7 @@ node_modules
 *.sqlite
 *.sqlite-*
 .vercel
+converter
 *.pem
 coverage
 out

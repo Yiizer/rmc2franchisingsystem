@@ -42,9 +42,35 @@ function officePath() {
     'C:/Program Files/LibreOffice/program/soffice.exe', '/usr/bin/libreoffice', '/usr/bin/soffice', ...pathExecutables()]
     .find((candidate): candidate is string => !!candidate && existsSync(candidate));
 }
-export const conversionName = () => officePath() ? 'LibreOffice · original Word layout' : 'Document converter needs setup';
+// Online (Vercel): a separate LibreOffice container (converter/) when RMC2_CONVERTER_URL is set.
+const remoteConverter = () => {
+  const url = (process.env.RMC2_CONVERTER_URL || '').trim().replace(/\/+$/, ''), secret = (process.env.RMC2_CONVERTER_SECRET || '').trim();
+  return url && secret ? { url, secret, bypass: (process.env.RMC2_CONVERTER_BYPASS || '').trim() } : undefined;
+};
+export const conversionName = () => remoteConverter() ? 'LibreOffice (online converter) · original Word layout' : officePath() ? 'LibreOffice · original Word layout' : 'Document converter needs setup';
+
+async function convertRemote(bytes: Buffer, remote: NonNullable<ReturnType<typeof remoteConverter>>): Promise<Buffer> {
+  if (bytes.length > 4 * 1024 * 1024) throw new AppError('This proposal is too large for the online converter (over 4 MB).', 413);
+  let reply: Response;
+  try {
+    reply = await fetch(remote.url + '/convert', { method: 'POST', body: new Uint8Array(bytes), cache: 'no-store', signal: AbortSignal.timeout(150000),
+      headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'x-converter-secret': remote.secret, ...(remote.bypass ? { 'x-vercel-protection-bypass': remote.bypass } : {}) } });
+  } catch (error) {
+    console.error('Online document conversion unreachable:', error instanceof Error ? error.name : 'error');
+    throw new AppError('The document converter could not prepare the proposal. Your saved details are safe. Try again.', 503);
+  }
+  if (reply.status === 429) throw new AppError('The document converter is busy. Please try again shortly.', 429);
+  if (!reply.ok) { console.error('Online document conversion failed: status', reply.status); throw new AppError('The document converter could not prepare the proposal. Your saved details are safe. Try again.', 503); }
+  return Buffer.from(await reply.arrayBuffer());
+}
 
 async function convert(bytes: Buffer): Promise<{ bytes: Buffer; pageCount: number }> {
+  const remote = remoteConverter();
+  if (remote) {
+    const pdf = await restoreHeaderArtwork(bytes, await convertRemote(bytes, remote));
+    if (pdf.subarray(0, 5).toString() !== '%PDF-') throw new AppError('The converter returned an invalid document.', 503);
+    return { bytes: pdf, pageCount: pdf.toString('latin1').match(/\/Type\s*\/Page\b/g)?.length || 0 };
+  }
   const executable = officePath();
   if (!executable) throw new AppError('The proposal preview needs local LibreOffice to preserve the template layout. See LOCALHOST.md.', 503);
   const directory = await mkdtemp(path.join(tmpdir(), 'rmc2-document-'));
