@@ -26,15 +26,15 @@ const querySchema = z.object({
 });
 const preparing = ['Preparing proposal', 'Needs correction', 'Waiting for agent details'];
 const reviewing = ['Awaiting approval', 'Supervisor editing'];
-const versions = () => Object.fromEntries((db().prepare('SELECT scope,version FROM workspace_versions').all() as {scope:string;version:number}[]).map(row => [row.scope,row.version]));
+const versions = async () => Object.fromEntries(((await db.all('SELECT scope,version FROM workspace_versions')) as {scope:string;version:number}[]).map(row => [row.scope,row.version]));
 let cache: {version:number; until:number; today:string; summaries:InquirySummary[]; states:ReturnType<typeof clientStates>} | undefined;
 
-function collection(version: number, now: number) {
+async function collection(version: number, now: number) {
   if (cache?.version === version && now < cache.until && cache.today === day(now)) return cache;
-  synchronizeInquiryIndex();
-  const rows = db().prepare('SELECT data,summary FROM inquiry_summaries').all() as {data:string;summary:string}[];
+  await synchronizeInquiryIndex();
+  const rows = await db.all('SELECT data,summary FROM inquiry_summaries') as {data:string;summary:string}[];
   const records: InquiryRecord[] = rows.map(row => JSON.parse(row.data));
-  const historicalCounts=historicalMatchCounts();
+  const historicalCounts=await historicalMatchCounts();
   const summaries: InquirySummary[] = rows.map(row => {const summary=JSON.parse(row.summary);return {...summary,historicalMatchCount:historicalCounts.get(summary.id)||0};});
   summaries.sort((a,b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
   const states = clientStates(records, now);
@@ -53,12 +53,12 @@ function paginate<T>(items:T[], requested:number, pageSize=25): {items:T[]; pagi
   return {items:items.slice((page-1)*pageSize,page*pageSize),pagination:{page,pageSize,total:items.length,pages}};
 }
 
-export function inquiryDetails(id:string) {
-  const record = withHistoricalHold(inquiry(id));
-  return {inquiry:record, clientState:clientState(record,matchingInquiries(record)), packageRenderers:packageRenderers([record])};
+export async function inquiryDetails(id:string) {
+  const record = await withHistoricalHold(await inquiry(id));
+  return {inquiry:record, clientState:clientState(record,await matchingInquiries(record)), packageRenderers:packageRenderers([record])};
 }
 
-export function workspaceView(user: Staff, params: URLSearchParams): WorkspaceUpdate | {unchanged:true;cursor:string} {
+export async function workspaceView(user: Staff, params: URLSearchParams): Promise<WorkspaceUpdate | {unchanged:true;cursor:string}> {
   const query = querySchema.parse(Object.fromEntries(params));
   const emptyPage = {page:1,pageSize:25,total:0,pages:1};
   const mail = mailStatus();
@@ -68,15 +68,15 @@ export function workspaceView(user: Staff, params: URLSearchParams): WorkspaceUp
     cursor:'activate:'+user.id, metadataVersion:'activate', pagination:emptyPage,noticePagination:emptyPage,
     unreadCount:0,pendingCount:0,divisions:[],stats:{},attention:[],attentionCount:0,resume:[],
   };
-  recoverStuckMail();
-  const now = Date.now(), revision = versions(), data = collection(revision.inquiries, now);
-  const activity = activeInquiryActivity();
+  await recoverStuckMail();
+  const now = Date.now(), revision = await versions(), data = await collection(revision.inquiries, now);
+  const activity = await activeInquiryActivity();
   const metadataVersion = epoch + ':' + revision.metadata;
   // Lease heartbeat timestamps do not invalidate document/list payloads, while
   // ownership changes and expiry do. Time boundaries also invalidate idle views.
   const cursor = createHash('sha256').update(JSON.stringify([epoch,user.id,revision,query.view,query.search,query.filter,query.division,query.sort,query.page,query.noticePage,query.selected,data.until,data.today,activity.map(a=>[a.inquiryId,a.userId,a.startedAt])])).digest('hex');
   if (query.cursor === cursor && query.metadataVersion === metadataVersion) return {unchanged:true,cursor};
-  const users = allUsers(), names = new Map(users.map(person=>[person.id,person.name]));
+  const users = await allUsers(), names = new Map(users.map(person=>[person.id,person.name]));
   const active = data.summaries.filter(record=>data.states[record.id].state!=='archived');
   const pending = active.filter(record=>reviewing.includes(record.status)&&data.states[record.id].state==='clear');
   let records = query.view==='Archives' ? data.summaries.filter(record=>data.states[record.id].state==='archived')
@@ -114,24 +114,24 @@ export function workspaceView(user: Staff, params: URLSearchParams): WorkspaceUp
   const needsAttention = active.filter(record=>record.status!=='Sent'&&(record.status!=='Awaiting approval'||user.canApprove));
   const attention = query.view==='Dashboard'?needsAttention.slice().sort((a,b)=>(urgency[a.status]??3)-(urgency[b.status]??3)||b.createdAt.localeCompare(a.createdAt)||a.id.localeCompare(b.id)).slice(0,7):[];
   const resume = query.view==='Dashboard'?active.filter(record=>['New inquiry',...preparing].includes(record.status)&&(record.workProgress?.[user.id]||record.handledBy.includes(user.id))&&data.states[record.id].state==='clear').sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)||a.id.localeCompare(b.id)).slice(0,4).map(record=>({...record})):[];
-  const templates = catalog();
+  const templates = await catalog();
   for (const record of resume) {
-    const full = inquiry(record.id);
+    const full = await inquiry(record.id);
     // A fresh object avoids changing cached list summaries for another session.
     record.nextAction = unfinishedWork(full,user.id)?nextWorkAction(full,templates.find(t=>t.id===full.templateId)):'Open inquiry';
   }
-  const noticeCounts = db().prepare('SELECT COUNT(*) AS total,COALESCE(SUM(1-is_read),0) AS unread FROM notice_recipients WHERE user_id=?').get(user.id) as {total:number;unread:number};
+  const noticeCounts = await db.get('SELECT COUNT(*) AS total,COALESCE(SUM(1-is_read),0) AS unread FROM notice_recipients WHERE user_id=?',user.id) as {total:number;unread:number};
   const noticePages = Math.max(1,Math.ceil(noticeCounts.total/25)), noticePage = Math.min(query.noticePage,noticePages);
-  const notifications = query.view==='Notifications'?(db().prepare('SELECT n.data FROM notice_recipients r JOIN notifications n ON n.id=r.notice_id WHERE r.user_id=? ORDER BY r.at DESC,r.notice_id DESC LIMIT 25 OFFSET ?').all(user.id,(noticePage-1)*25) as {data:string}[]).map(row=>JSON.parse(row.data) as Notice):[];
+  const notifications = query.view==='Notifications'?(await db.all('SELECT n.data FROM notice_recipients r JOIN notifications n ON n.id=r.notice_id WHERE r.user_id=? ORDER BY r.at DESC,r.notice_id DESC LIMIT 25 OFFSET ?',user.id,(noticePage-1)*25) as {data:string}[]).map(row=>JSON.parse(row.data) as Notice):[];
   const visibleIds = new Set([...listing.items,...attention,...resume].map(record=>record.id));
   const selected = ['Inquiry Workspace','Supervisor Review'].includes(query.view)?query.selected:'';
   let current:InquiryRecord|undefined, renderers = {};
   if (selected) {
-    const row = db().prepare('SELECT revision FROM inquiries WHERE id=?').get(selected) as {revision:number}|undefined;
+    const row = await db.get('SELECT revision FROM inquiries WHERE id=?',selected) as {revision:number}|undefined;
     if (!row) throw new AppError('Inquiry not found',404);
     visibleIds.add(selected);
     if (row.revision!==query.knownRevision) {
-      current=withHistoricalHold(inquiry(selected));
+      current=await withHistoricalHold(await inquiry(selected));
       renderers=packageRenderers([current]);
     }
   }

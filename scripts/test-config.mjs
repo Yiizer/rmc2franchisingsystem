@@ -33,10 +33,10 @@ assert.equal(seedAllowed('production', undefined), false, 'production default do
 assert.equal(seedAllowed('production', '0'), false);
 assert.equal(seedAllowed('production', '1'), true, 'production explicit seeds');
 
-// 2. real database in child processes (db() is a per-process singleton)
+// 2. real database in child processes (the store is a per-process singleton)
 function run(name, o) {
   const data = path.join(base, name);
-  const script = `import('./lib/operations/database.ts').then(m=>{const d=m.db();const u=d.prepare('SELECT count(*) n FROM users').get().n,i=d.prepare('SELECT count(*) n FROM inquiries').get().n;console.log(JSON.stringify({u,i,cat:m.catalog().length}))})`;
+  const script = `import('./lib/operations/database.ts').then(async m=>{const u=(await m.db.get('SELECT count(*) n FROM users')).n,i=(await m.db.get('SELECT count(*) n FROM inquiries')).n;console.log(JSON.stringify({u,i,cat:(await m.catalog()).length}))})`;
   const r = spawnSync(process.execPath, ['--import', 'tsx', '-e', script], { cwd: root, env: env({ RMC2_DATA_DIR: data, RMC2_RESOURCES_DIR: path.join(base, 'res-' + name), ...o }), encoding: 'utf8' });
   assert.equal(r.status, 0, name + ': ' + r.stderr);
   return JSON.parse(r.stdout.trim().split('\n').pop());

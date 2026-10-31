@@ -8,16 +8,16 @@ import { allUsers, AppError, audit, db, inquiry, notify, persist, safeStorage, t
 import { CLIENT_PROTECTION_MS, clientIdentity, clientState, isRegistered, protectedAgent, protectionFor, reviewClient } from './client-rules';
 import type { AgentProgressReport, FormFields, InquiryRecord, Staff } from './types';
 
-export function assertClientReady(record:InquiryRecord,allowIdentify=false){
-  if(historicalAgentChangeBlocked(record))throw new AppError('A supervisor must resolve the historical agent-change request before processing.',409);
-  const state=clientState(record,matchingInquiries(record));
+export async function assertClientReady(record:InquiryRecord,allowIdentify=false){
+  if(await historicalAgentChangeBlocked(record))throw new AppError('A supervisor must resolve the historical agent-change request before processing.',409);
+  const state=clientState(record,await matchingInquiries(record));
   if(state.state==='archived')throw new AppError('This inquiry is archived and cannot be processed. Review its closure or expired registration in Archives.',409);
   if(state.state==='duplicate')throw new AppError('Duplicate client — processing is on hold. Open '+(state.matches[0]?.inquiryId||'the existing inquiry')+' or request a supervisor review.',409);
   if(state.state==='identify'&&!allowIdentify)throw new AppError('Enter the account/company or client name and save the details so duplicate checking can finish first.',409);
 }
-export function updateClientReview(record:InquiryRecord,user?:Staff){
+export async function updateClientReview(record:InquiryRecord,user?:Staff){
   const previous=record.clientReview?.state;
-  record.clientReview=reviewClient(record,matchingInquiries(record));
+  record.clientReview=reviewClient(record,await matchingInquiries(record));
   // Completed work is never held; its matches stay informational (clientState overlaps).
   if(isRegistered(record)&&record.clientReview.state==='duplicate')record.clientReview={...record.clientReview,state:'clear'};
   const expiredRepeat=record.clientReview.matches.find(match=>match.expiredSameAgent);
@@ -26,8 +26,8 @@ export function updateClientReview(record:InquiryRecord,user?:Staff){
     if(user)audit(record,user,'Automatically declined repeated request from an expired agent registration');
   }
   if(record.clientReview.state==='duplicate'){
-    db().prepare('DELETE FROM inquiry_activity WHERE inquiry_id=?').run(record.id);
-    if(previous!=='duplicate')notify(record,'Duplicate client — on hold',`${record.fields.company||'Client'} matches ${record.clientReview.matches.map(item=>item.inquiryId).join(', ')}. Open the existing inquiry before processing.`,allUsers().filter(person=>person.active).map(person=>person.id));
+    await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',record.id);
+    if(previous!=='duplicate')await notify(record,'Duplicate client — on hold',`${record.fields.company||'Client'} matches ${record.clientReview.matches.map(item=>item.inquiryId).join(', ')}. Open the existing inquiry before processing.`,(await allUsers()).filter(person=>person.active).map(person=>person.id));
   }
   return record.clientReview;
 }
@@ -36,34 +36,34 @@ export function startClientProtection(record:InquiryRecord,at:string,kind:'propo
   const existing=protectionFor(record);
   record.protection=existing||{startedAt:at,activityAt:at,expiresAt:new Date(Date.parse(at)+CLIENT_PROTECTION_MS).toISOString(),...protectedAgent(record,fields),activityKind:kind};
 }
-export function reviewClientRegistration(id:string,user:Staff,input:unknown){
+export async function reviewClientRegistration(id:string,user:Staff,input:unknown){
   const body=z.object({revision:z.number().int(),action:z.enum(['recheck','distinct','reassign-expired']),matchId:z.string().optional(),note:z.string().trim().max(3000).default('')}).strict().parse(input);
-  return transaction(()=>{
-    const record=inquiry(id);if(record.revision!==body.revision)throw new AppError('This inquiry changed. Reload before reviewing it.',409);
-    if(clientState(record,matchingInquiries(record)).state==='archived')throw new AppError('Expired inquiries stay in Archives. Import a new agent form to register the client.',409);
+  return await transaction(async()=>{
+    const record=await inquiry(id);if(record.revision!==body.revision)throw new AppError('This inquiry changed. Reload before reviewing it.',409);
+    if(clientState(record,await matchingInquiries(record)).state==='archived')throw new AppError('Expired inquiries stay in Archives. Import a new agent form to register the client.',409);
     if(body.action==='distinct'&&record.agentTransferRequest&&!record.agentTransferRequest.decision)throw new AppError('A supervisor must decide the pending agent change first.',409);
     if(body.action==='distinct'||body.action==='reassign-expired'){
-      const owner=db().prepare('SELECT user_id FROM inquiry_activity WHERE inquiry_id=? AND seen_at>? AND user_id<>?').get(id,new Date(Date.now()-90000).toISOString(),user.id);
+      const owner=await db.get('SELECT user_id FROM inquiry_activity WHERE inquiry_id=? AND seen_at>? AND user_id<>?',id,new Date(Date.now()-90000).toISOString(),user.id);
       if(owner)throw new AppError('A colleague is handling this inquiry.',423);
       if(body.action==='reassign-expired'&&!(user.role==='Supervisor'&&user.canApprove))throw new AppError('An approving supervisor must approve an agent change after expiry.',403);
       if(body.note.length<10)throw new AppError('Record the reason for this client review (at least 10 characters).');
-      const fresh=reviewClient(record,matchingInquiries(record));
+      const fresh=reviewClient(record,await matchingInquiries(record));
       if(body.action==='distinct'){if(!body.matchId)throw new AppError('Choose the specific match to review.');fresh.matches=fresh.matches.filter(match=>match.inquiryId===body.matchId);}
       if(!fresh.matches.length)throw new AppError('Recheck availability; no matching client remains.',409);
       if(body.action==='distinct'&&fresh.matches.some(match=>!match.expired)&&!(user.role==='Supervisor'&&user.canApprove))throw new AppError('An approving supervisor must decide whether an active or registered client is a different client.',403);
       if(fresh.matches.some(match=>match.expiredSameAgent))throw new AppError('The same agent cannot restart an expired registration. Recheck to decline this request.',409);
       if(body.action==='reassign-expired'&&fresh.matches.some(match=>!match.expired||match.sameAgent))throw new AppError('Only expired registrations for a different agent can be reassigned. Review the current matches first.',409);
-      record.clientReview={...fresh,identity:clientIdentity(record),exceptions:[...(record.clientReview?.identity===clientIdentity(record)?record.clientReview.exceptions||[]:[]),...fresh.matches.map(match=>({inquiryId:match.inquiryId,identity:clientIdentity(inquiry(match.inquiryId))}))],reviewedBy:user.id,reviewedAt:new Date().toISOString(),note:body.note};
+      record.clientReview={...fresh,identity:clientIdentity(record),exceptions:[...(record.clientReview?.identity===clientIdentity(record)?record.clientReview.exceptions||[]:[]),...await Promise.all(fresh.matches.map(async match=>({inquiryId:match.inquiryId,identity:clientIdentity(await inquiry(match.inquiryId))})))],reviewedBy:user.id,reviewedAt:new Date().toISOString(),note:body.note};
       if(body.action==='reassign-expired'&&record.agentTransferRequest&&!record.agentTransferRequest.decision)record.agentTransferRequest.decision={by:user.id,at:new Date().toISOString(),action:'approve',note:body.note};
       if(body.action==='reassign-expired')for(const match of fresh.matches){
-        const previous=inquiry(match.inquiryId),revision=previous.revision;
-        if(db().prepare('SELECT user_id FROM inquiry_activity WHERE inquiry_id=? AND seen_at>? AND user_id<>?').get(previous.id,new Date(Date.now()-90000).toISOString(),user.id))throw new AppError('A colleague is handling the previous registration.',423);
+        const previous=await inquiry(match.inquiryId),revision=previous.revision;
+        if(await db.get('SELECT user_id FROM inquiry_activity WHERE inquiry_id=? AND seen_at>? AND user_id<>?',previous.id,new Date(Date.now()-90000).toISOString(),user.id))throw new AppError('A colleague is handling the previous registration.',423);
         previous.closure={kind:'transferred',at:new Date().toISOString(),by:user.id,reason:'Supervisor approved a different agent after protection expired: '+body.note,relatedId:record.id};
-        previous.status='Transferred';audit(previous,user,'Approved new agent after expiry; registration continues in '+record.id);persist(previous,revision);
+        previous.status='Transferred';audit(previous,user,'Approved new agent after expiry; registration continues in '+record.id);await persist(previous,revision);
       }
     }
-    updateClientReview(record,user);
-    audit(record,user,body.action==='reassign-expired'?'Approved new agent registration after expiry: '+body.note:body.action==='distinct'?'Reviewed matching names/accounts as DIFFERENT CLIENTS: '+body.note:'Rechecked duplicate-client availability');persist(record,body.revision);
+    await updateClientReview(record,user);
+    audit(record,user,body.action==='reassign-expired'?'Approved new agent registration after expiry: '+body.note:body.action==='distinct'?'Reviewed matching names/accounts as DIFFERENT CLIENTS: '+body.note:'Rechecked duplicate-client availability');await persist(record,body.revision);
     return record;
   });
 }
@@ -82,11 +82,11 @@ export async function addProgressReport(id:string,user:Staff,input:unknown,file?
     attachment={storage:'progress-reports/'+randomUUID()+extension,filename:path.basename(file.name),mime:pdf?'application/pdf':png?'image/png':'image/jpeg'};
   }
   let written=false;
-  try{return transaction(()=>{
-    const record=inquiry(id);
+  try{return await transaction(async()=>{
+    const record=await inquiry(id);
     if(record.progressReports?.some(report=>report.id===body.requestId))return record;
     if(record.revision!==body.revision)throw new AppError('This inquiry changed. Reload before recording the report.',409);
-    assertClientReady(record);
+    await assertClientReady(record);
     const protection=protectionFor(record);if(!protection)throw new AppError('The 30-day countdown starts when a reply or proposal is successfully sent to the agent.');
     if(body.sender.toLowerCase()!==protection.agentEmail.trim().toLowerCase())throw new AppError('Only a progress report from the currently registered agent can reset this client’s countdown.',409);
     const sentAt=Date.parse(body.sentAt),now=Date.now();
@@ -96,7 +96,7 @@ export async function addProgressReport(id:string,user:Staff,input:unknown,file?
     const report:AgentProgressReport={id:body.requestId,sentAt:new Date(sentAt).toISOString(),recordedAt:new Date(now).toISOString(),recordedBy:user.id,sender:body.sender.toLowerCase(),summary:body.summary,reference:body.reference,...(attachment?{attachment}:{})};
     record.progressReports=[...(record.progressReports||[]),report];
     record.protection={...protection,activityAt:report.sentAt,expiresAt:new Date(sentAt+CLIENT_PROTECTION_MS).toISOString(),activityKind:'progress-report'};
-    audit(record,user,'Recorded agent progress report '+body.reference+' — protection reset from '+report.sentAt+' until '+record.protection.expiresAt);persist(record,body.revision);
-    notify(record,'Client protection renewed',`${protection.agentName} · 30 days from the report’s sent date.`,allUsers().filter(person=>person.active).map(person=>person.id));return record;
+    audit(record,user,'Recorded agent progress report '+body.reference+' — protection reset from '+report.sentAt+' until '+record.protection.expiresAt);await persist(record,body.revision);
+    await notify(record,'Client protection renewed',`${protection.agentName} · 30 days from the report’s sent date.`,(await allUsers()).filter(person=>person.active).map(person=>person.id));return record;
   });}catch(error){if(written&&attachment)try{unlinkSync(safeStorage(attachment.storage));}catch{}throw error;}
 }

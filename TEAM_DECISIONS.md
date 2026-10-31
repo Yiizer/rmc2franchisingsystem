@@ -44,6 +44,13 @@ Format: **Decision** — why — where it applies.
 - **Test sender changed to the PO's own personal Gmail** (2026-10-30; address kept out of git, see `.env.mail.test`) — chosen by the PO instead of a
   dedicated account, for testing only. Test mail is also redirected to that address. Its app password lives
   only in `.env.mail.test` on this PC and must be revoked when testing ends.
+- **PDF proof moved to Vercel** (2026-10-31, PO decision, replaces the WSL plan): templates will live in the cloud
+  in production anyway, and the PO owns the accounts during build. Guardrails: a separate throwaway Vercel project
+  (not the app repo, no Git auto-deploy), templates bundled into the function only (never public files), access
+  protected (Vercel Authentication + secret), project deleted after the proof with PO confirmation.
+- **Phase 1 proofs** (2026-10-31, superseded for the PDF part): the LibreOffice-on-Linux proof runs locally in WSL so
+  the private templates never leave the PC (the PO installs WSL); the inbox proof reads the PO's test Gmail **read-only**, only the app's own
+  `[TEST →` emails plus a Sent-folder lookup by Message-ID. Don't deploy the full app to Vercel before phase 4.
 - **Migration decisions** (2026-10-31, see `MIGRATION_PLAN.md`): the PO owns and pays for the Vercel and Supabase
   accounts during building/testing and transfers them to the client **before any real client data is imported**;
   PDFs via LibreOffice in a Vercel container with the "export from Word and upload" fallback (no CloudConvert);
@@ -82,6 +89,28 @@ Format: **Decision** — why — where it applies.
   silently beat it.
 - **Only one `next dev` can run per project folder.** To QA on 5190, stop the 5173 server first, and copy the
   data with SQLite's backup API (`.data` has a live WAL) into `test-results/<name>/qa-data`.
+- **PDF proof on Vercel, run 2 — PASSED (2026-10-31)**: the official LibreOffice **26.8.1** .deb (same as the PC,
+  sha256-verified, full package set — removing Impress breaks `ogltrans`; also needs `libglib2.0-0`) in the Vercel
+  container: page counts match on **11/11**, text 96.5–99 % similar, 9–10 of 14–15 pages identical, the D023 page-3
+  heading is back above the table, 8–30 s per template on Hobby (2 GB). Remaining drift is font substitution only
+  (Cambria→Caladea metric-compatible; Arial→Noto Sans in the header — map Arial→Liberation Sans via fontconfig in
+  phase 5). Decision pending PO/client sign-off on sample PDFs; the Word-upload fallback stays.
+- **PDF proof on Vercel, run 1 (2026-10-31)**: the Vercel container runtime works on Hobby — all 11 templates
+  converted in 7–22 s each (local 9–22 s), 2 GB was enough, protected preview. But Debian stable ships
+  LibreOffice **7.4.7** (local is 26.8) and fonts fall back (Cambria→Caladea, Calibri→Carlito, Arial/Times→Liberation,
+  Aptos/Tahoma→DejaVu): page counts matched in only 1 of 11, text 93–96 % similar, and on D023 page 3 the product
+  heading moved **below** the premium table. Not acceptable for client proposals as-is. Next: newer LibreOffice
+  in the image, then compare again; the "export from Word and upload" fallback stays.
+- A first `vercel deploy` on a new project goes to **production** even without `--prod`; use `--target=preview`.
+  In Git Bash set `MSYS_NO_PATHCONV=1` before `vercel curl /api/...` (it rewrites `/api` into a Windows path).
+- **`vercel link` inside this repo auto-connects the GitHub repo** (2026-10-31) — it linked the throwaway
+  `rmc2-pdf-proof` project to `Yiizer/rmc2franchisingsystem` (main), which would deploy on every push. Caught and
+  removed with `vercel git disconnect` before any deployment. After linking anything, check `link` via
+  `vercel api /v9/projects/<id>` and disconnect unless Git deploys are intended.
+- **IMAP proof passed (2026-10-31)**: the sending app password also works for IMAP; `readOnly:true` (EXAMINE) never
+  sets `\Seen`; UIDVALIDITY + UID checkpointing works; bodyStructure gives attachment type/size without downloading;
+  `\Sent` can be searched by exact Message-ID (use the special-use flag, not the localized name "[Gmail]/Sent Mail");
+  the same Message-ID can exist in INBOX and Sent, so dedup per folder. Script: `test-results/proofs/imap/probe.mjs`.
 - **The UI loads `GET /api/operations/workspace` (`workspace-query.ts`), not `/bootstrap`** — a field added only to
   bootstrap never reaches the screens (the email badge showed "LOCAL" while SMTP was on). Add shared payload fields to
   `workspaceView`, and have QA check the real browser, not just the API.
@@ -113,6 +142,31 @@ Format: **Decision** — why — where it applies.
   `RMC2_DATA_DIR=test-results/<name>/qa-data` on port 5190.
 - **The sign-in form is a username/email text field**, not the old account dropdown; older browser test
   scripts still select from a dropdown and need updating before they run.
+
+### Async data layer (phase 2, 2026-10-31)
+
+- **All data access is `await db.get/all/run/exec` and `await transaction(fn)`** (`lib/operations/store.ts`).
+  A check-then-write that must be atomic (duplicate client, revision, "keep one approving supervisor") goes
+  inside `transaction()`; awaits between separate statements can now interleave with other requests.
+- **Never await slow I/O inside a transaction** (PDF generation, SMTP, `fetch`, `arrayBuffer`, file uploads).
+  The transaction holds the one global write lock; do the slow work first, then re-check inside the transaction
+  (the `generate` pattern).
+- **Avoid `Promise.all` of writes inside a transaction.** If one rejects, the transaction rolls back; the store
+  now makes any sibling's later statement throw ("issued after its transaction was rolled back") instead of
+  silently autocommitting. Reads in `Promise.all` are fine.
+- **Statements outside a transaction queue FIFO on the lock** (not "wait until idle"), so a stream of
+  transactions cannot starve polls.
+- **Accepted for the SQLite phase:** multi-read endpoints (`bootstrap`, `workspace`, inquiry details, directory)
+  no longer read one snapshot; caches self-correct on the next poll. In the Postgres phase give them a
+  REPEATABLE READ read-only transaction. `activeInquiryActivity` prunes inside a transaction on every poll
+  (microseconds on SQLite; revisit with Postgres). Login rate-limit check and failure record are separate
+  statements; make them one transaction before any transaction can span I/O (security review in phase 4).
+- **Create schema when the connection opens, never lazily per request** behind an "installed" flag. The lazy
+  historical schema could run inside a request's transaction, roll back, and leave the flag set: two first-ever
+  requests on a new database both got 500 "no such table: historical_accounts" (pre-existing, fixed 2026-10-31).
+- **Phase 2 QA method:** run each failing e2e script against a baseline build of `main` too; identical failures
+  are stale scripts, not regressions. Scripts that edit SQLite directly (e.g. `test-exclusive-handling` expiring
+  leases) need the server on their own `test-results/<script>/qa-data` dir and a fresh dir per run.
 
 ## Process
 
