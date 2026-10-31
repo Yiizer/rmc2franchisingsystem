@@ -38,7 +38,7 @@ chosen there: Vercel Pro + Supabase Pro, client-owned accounts). Decisions get r
 | # | Work | Sessions | What you can test afterwards |
 |---|---|---|---|
 | 0 | Remove Cloudflare leftovers, portable config, no demo accounts in production | 1 | App unchanged locally |
-| 1 | Proofs: LibreOffice container renders all 11 active templates (time, memory, fonts); Gmail IMAP read | 2–3 | Side-by-side PDFs to approve |
+| 1 | Proofs: LibreOffice container renders all 11 active templates (time, memory, fonts); Gmail IMAP read | 2–3 | Side-by-side PDFs to approve — **done 2026-10-31**: both proofs passed (LibreOffice 26.8.1 container: 11/11 page counts; IMAP read-only + Sent lookup) |
 | 2 | Async data layer (repositories + transactions), still on SQLite | 4–6 | Full regression, no visible change |
 | 3 | File storage interface (local disk / Supabase) | 2–3 | No visible change |
 | 4 | Postgres implementation, SQL migrations (Supabase CLI), `RMC2_DB` switch | 5–8 | **App on a Vercel preview URL** with test data |

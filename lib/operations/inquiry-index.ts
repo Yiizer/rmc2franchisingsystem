@@ -39,41 +39,40 @@ function clientProjection(record: InquiryRecord): InquiryRecord {
   };
 }
 
-export function synchronizeInquiryIndex() {
-  const database = db();
-  if (!database.prepare('SELECT id FROM inquiry_index_pending LIMIT 1').get()) return;
-  // SAVEPOINT works both on reads and inside a registration transaction. Index
-  // changes roll back with a failed BOR transfer or conflicting update.
-  database.exec('SAVEPOINT inquiry_projection');
-  try {
-    const pending = database.prepare('SELECT id FROM inquiry_index_pending').all() as {id: string}[];
-    const read = database.prepare('SELECT data FROM inquiries WHERE id=?');
-    const save = database.prepare('INSERT INTO inquiry_summaries VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,summary=excluded.summary');
-    const key = database.prepare('INSERT OR IGNORE INTO inquiry_keys VALUES (?,?,?)');
-    for (const {id} of pending) {
-      database.prepare('DELETE FROM inquiry_keys WHERE inquiry_id=?').run(id);
-      const row = read.get(id) as {data: string} | undefined;
-      if (!row) database.prepare('DELETE FROM inquiry_summaries WHERE id=?').run(id);
-      else {
-        const record: InquiryRecord = JSON.parse(row.data);
-        save.run(id, JSON.stringify(clientProjection(record)), JSON.stringify(inquirySummary(record)));
-        if (!isSampleForm(record.source)) for (const [kind, value] of clientIdentityKeys(record)) key.run(id, kind, value);
+export async function synchronizeInquiryIndex() {
+  if (!await db.get('SELECT id FROM inquiry_index_pending LIMIT 1')) return;
+  // Runs inside a transaction (joining the caller's when there is one), so no other request can
+  // interleave. The SAVEPOINT keeps index changes rolling back with a failed BOR transfer or
+  // conflicting update without discarding the caller's earlier work.
+  await db.transaction(async () => {
+    await db.exec('SAVEPOINT inquiry_projection');
+    try {
+      const pending = await db.all<{id: string}>('SELECT id FROM inquiry_index_pending');
+      for (const {id} of pending) {
+        await db.run('DELETE FROM inquiry_keys WHERE inquiry_id=?', id);
+        const row = await db.get<{data: string}>('SELECT data FROM inquiries WHERE id=?', id);
+        if (!row) await db.run('DELETE FROM inquiry_summaries WHERE id=?', id);
+        else {
+          const record: InquiryRecord = JSON.parse(row.data);
+          await db.run('INSERT INTO inquiry_summaries VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,summary=excluded.summary', id, JSON.stringify(clientProjection(record)), JSON.stringify(inquirySummary(record)));
+          if (!isSampleForm(record.source)) for (const [kind, value] of clientIdentityKeys(record)) await db.run('INSERT OR IGNORE INTO inquiry_keys VALUES (?,?,?)', id, kind, value);
+        }
+        await db.run('DELETE FROM inquiry_index_pending WHERE id=?', id);
       }
-      database.prepare('DELETE FROM inquiry_index_pending WHERE id=?').run(id);
+      await db.exec('RELEASE inquiry_projection');
+    } catch (error) {
+      await db.exec('ROLLBACK TO inquiry_projection; RELEASE inquiry_projection');
+      throw error;
     }
-    database.exec('RELEASE inquiry_projection');
-  } catch (error) {
-    database.exec('ROLLBACK TO inquiry_projection; RELEASE inquiry_projection');
-    throw error;
-  }
+  });
 }
 
-export function matchingInquiries(record: InquiryRecord): InquiryRecord[] {
+export async function matchingInquiries(record: InquiryRecord): Promise<InquiryRecord[]> {
   if (isSampleForm(record.source)) return [];
-  synchronizeInquiryIndex();
+  await synchronizeInquiryIndex();
   const keys = clientIdentityKeys(record);
   if (!keys.length) return [];
   const where = keys.map(() => '(k.kind=? AND k.value=?)').join(' OR ');
-  const rows = db().prepare(`SELECT DISTINCT s.id,s.data FROM inquiry_keys k JOIN inquiry_summaries s ON s.id=k.inquiry_id WHERE ${where}`).all(...keys.flat()) as {data: string}[];
+  const rows = await db.all(`SELECT DISTINCT s.id,s.data FROM inquiry_keys k JOIN inquiry_summaries s ON s.id=k.inquiry_id WHERE ${where}`,...keys.flat()) as {data: string}[];
   return rows.map(row => JSON.parse(row.data));
 }

@@ -16,7 +16,7 @@ const metadata=z.object({templateId:z.string().max(100).default(''),expectedHash
 export async function stageTemplate(user:Staff,form:FormData){
   admin(user);const body=metadata.parse(Object.fromEntries(form)),file=form.get('file');
   if(!(file instanceof File)||!file.name.toLowerCase().endsWith('.docx')||!file.size||file.size>15*1024*1024)throw new AppError('Upload a Word .docx template up to 15 MB.');
-  const existing=body.templateId?catalog().find(template=>template.id===body.templateId):undefined;
+  const existing=body.templateId?(await catalog()).find(template=>template.id===body.templateId):undefined;
   if(body.templateId&&(!existing||existing.sourceHash!==body.expectedHash))throw new AppError('This template changed. Reload before uploading its replacement.',409);
   const bytes=Buffer.from(await file.arrayBuffer());let zip:PizZip;
   try{zip=new PizZip(bytes);}catch{throw new AppError('The uploaded file is not a readable Word document.');}
@@ -48,19 +48,19 @@ export async function stageTemplate(user:Staff,form:FormData){
   try{writeFileSync(safeStorage(storage),bytes,{flag:'wx'});}catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;if(createHash('sha256').update(readFileSync(safeStorage(storage))).digest('hex')!==hash)throw new AppError('The saved template could not be verified.',409);}
   writeFileSync(safeStorage(pdfStorage),pdf.bytes,{flag:'wx'});
   const staged:StagedTemplate={template,expectedHash:existing?.sourceHash||null,pdf:pdfStorage,pages:pdf.pageCount};
-  db().prepare('INSERT INTO template_versions VALUES (?,?,?,?,?,?)').run(stageId,id,JSON.stringify(staged),'staged',user.id,new Date().toISOString());
-  securityEvent(user,'Staged template '+id+' source '+hash);return {id:stageId,template:{...template,file:'',storage:undefined},pages:pdf.pageCount};
+  await db.run('INSERT INTO template_versions VALUES (?,?,?,?,?,?)',stageId,id,JSON.stringify(staged),'staged',user.id,new Date().toISOString());
+  await securityEvent(user,'Staged template '+id+' source '+hash);return {id:stageId,template:{...template,file:'',storage:undefined},pages:pdf.pageCount};
 }
-export function templateStage(user:Staff,id:string){admin(user);const row=db().prepare('SELECT data,state FROM template_versions WHERE id=?').get(id) as {data:string;state:string}|undefined;if(!row)throw new AppError('Template preview not found.',404);return {...JSON.parse(row.data) as StagedTemplate,state:row.state};}
-export function publishTemplate(user:Staff,input:unknown){
+export async function templateStage(user:Staff,id:string){admin(user);const row=await db.get('SELECT data,state FROM template_versions WHERE id=?',id) as {data:string;state:string}|undefined;if(!row)throw new AppError('Template preview not found.',404);return {...JSON.parse(row.data) as StagedTemplate,state:row.state};}
+export async function publishTemplate(user:Staff,input:unknown){
   admin(user);const body=z.object({id:z.string().uuid(),reviewed:z.literal(true)}).strict().parse(input);
-  return transaction(()=>{
-    const staged=templateStage(user,body.id);if(staged.state==='published')return staged.template;
-    const current=catalog().find(template=>template.id===staged.template.id);
+  return await transaction(async()=>{
+    const staged=await templateStage(user,body.id);if(staged.state==='published')return staged.template;
+    const current=(await catalog()).find(template=>template.id===staged.template.id);
     if((current?.sourceHash||null)!==staged.expectedHash)throw new AppError('Another administrator updated this template. Upload and review again.',409);
-    if(current)db().prepare('INSERT INTO template_versions VALUES (?,?,?,?,?,?)').run(randomUUID(),current.id,JSON.stringify({template:current}),'previous',user.id,new Date().toISOString());
-    db().prepare('INSERT OR REPLACE INTO template_overrides VALUES (?,?)').run(staged.template.id,JSON.stringify(staged.template));
-    db().prepare("UPDATE template_versions SET state='published' WHERE id=?").run(body.id);securityEvent(user,'Published template '+staged.template.id+' source '+staged.template.sourceHash);return staged.template;
+    if(current)await db.run('INSERT INTO template_versions VALUES (?,?,?,?,?,?)',randomUUID(),current.id,JSON.stringify({template:current}),'previous',user.id,new Date().toISOString());
+    await db.run('INSERT OR REPLACE INTO template_overrides VALUES (?,?)',staged.template.id,JSON.stringify(staged.template));
+    await db.run("UPDATE template_versions SET state='published' WHERE id=?",body.id);await securityEvent(user,'Published template '+staged.template.id+' source '+staged.template.sourceHash);return staged.template;
   });
 }
-export function setTemplateActive(user:Staff,input:unknown){admin(user);const body=z.object({id:z.string(),expectedHash:z.string(),active:z.boolean()}).strict().parse(input);return transaction(()=>{const template=catalog().find(template=>template.id===body.id);if(!template||template.sourceHash!==body.expectedHash)throw new AppError('Reload the template library first.',409);const next={...template,active:body.active};db().prepare('INSERT OR REPLACE INTO template_overrides VALUES (?,?)').run(next.id,JSON.stringify(next));securityEvent(user,(body.active?'Activated':'Retired')+' template '+next.id);return next;});}
+export async function setTemplateActive(user:Staff,input:unknown){admin(user);const body=z.object({id:z.string(),expectedHash:z.string(),active:z.boolean()}).strict().parse(input);return await transaction(async()=>{const template=(await catalog()).find(template=>template.id===body.id);if(!template||template.sourceHash!==body.expectedHash)throw new AppError('Reload the template library first.',409);const next={...template,active:body.active};await db.run('INSERT OR REPLACE INTO template_overrides VALUES (?,?)',next.id,JSON.stringify(next));await securityEvent(user,(body.active?'Activated':'Retired')+' template '+next.id);return next;});}
