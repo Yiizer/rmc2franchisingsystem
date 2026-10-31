@@ -1,10 +1,10 @@
 import {historicalAgentChangeBlocked} from './historical';
 import { matchingInquiries } from './inquiry-index';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { allUsers, AppError, audit, db, inquiry, notify, persist, safeStorage, transaction } from './database';
+import { allUsers, AppError, audit, db, inquiry, notify, persist, transaction } from './database';
+import { deleteQuietly, files } from './file-store';
 import { CLIENT_PROTECTION_MS, clientIdentity, clientState, isRegistered, protectedAgent, protectionFor, reviewClient } from './client-rules';
 import type { AgentProgressReport, FormFields, InquiryRecord, Staff } from './types';
 
@@ -81,8 +81,16 @@ export async function addProgressReport(id:string,user:Staff,input:unknown,file?
     if(!pdf&&!png&&!jpg)throw new AppError('Attach the original progress report as a PDF, PNG or JPEG file.');
     attachment={storage:'progress-reports/'+randomUUID()+extension,filename:path.basename(file.name),mime:pdf?'application/pdf':png?'image/png':'image/jpeg'};
   }
-  let written=false;
-  try{return await transaction(async()=>{
+  // File first (never inside transaction()), then the row. The key is deleted again unless this call appended the report.
+  // Cheap read-only pre-checks so a repeat or stale request uploads nothing; the transaction re-checks everything.
+  const early=await inquiry(id);
+  if(early.progressReports?.some(report=>report.id===body.requestId))return early;
+  if(early.revision!==body.revision)throw new AppError('This inquiry changed. Reload before recording the report.',409);
+  let written=false,appended=false,keep=false;
+  try{
+    if(attachment&&bytes){await files().put(attachment.storage,bytes,{contentType:attachment.mime});written=true;}
+    const saved=await transaction(async()=>{
+    appended=false;
     const record=await inquiry(id);
     if(record.progressReports?.some(report=>report.id===body.requestId))return record;
     if(record.revision!==body.revision)throw new AppError('This inquiry changed. Reload before recording the report.',409);
@@ -92,11 +100,13 @@ export async function addProgressReport(id:string,user:Staff,input:unknown,file?
     const sentAt=Date.parse(body.sentAt),now=Date.now();
     if(sentAt>now)throw new AppError('A progress report cannot have a future sent date.');
     if(sentAt<=Date.parse(protection.activityAt)||sentAt>=Date.parse(protection.expiresAt))throw new AppError('Use a report sent after the last recorded activity and before the protection deadline.');
-    if(attachment&&bytes){mkdirSync(path.dirname(safeStorage(attachment.storage)),{recursive:true});writeFileSync(safeStorage(attachment.storage),bytes,{flag:'wx'});written=true;}
     const report:AgentProgressReport={id:body.requestId,sentAt:new Date(sentAt).toISOString(),recordedAt:new Date(now).toISOString(),recordedBy:user.id,sender:body.sender.toLowerCase(),summary:body.summary,reference:body.reference,...(attachment?{attachment}:{})};
-    record.progressReports=[...(record.progressReports||[]),report];
+    record.progressReports=[...(record.progressReports||[]),report];appended=true;
     record.protection={...protection,activityAt:report.sentAt,expiresAt:new Date(sentAt+CLIENT_PROTECTION_MS).toISOString(),activityKind:'progress-report'};
     audit(record,user,'Recorded agent progress report '+body.reference+' — protection reset from '+report.sentAt+' until '+record.protection.expiresAt);await persist(record,body.revision);
     await notify(record,'Client protection renewed',`${protection.agentName} · 30 days from the report’s sent date.`,(await allUsers()).filter(person=>person.active).map(person=>person.id));return record;
-  });}catch(error){if(written&&attachment)try{unlinkSync(safeStorage(attachment.storage));}catch{}throw error;}
+    });
+    keep=appended;
+    return saved;
+  }finally{if(written&&!keep)await deleteQuietly(attachment?.storage);}
 }

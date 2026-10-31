@@ -11,6 +11,7 @@
 - Progress reports accept PDF/PNG/JPEG attachments up to 7 MB, check their file signatures, use generated private filenames, and retain the uploaded bytes. These checks are not a malware scanner.
 - Progress-report recording and duplicate decisions retain the actor, timestamps and reason/reference in the audit history.
 - AI assistance and email delivery are still simulated/local test features. No live AI provider receives these files through the current app.
+- All data files go through one storage layer. By default (`RMC2_STORAGE=local`) they stay under `RMC2_DATA_DIR` as described above. With `RMC2_STORAGE=supabase` they live in a private Supabase Storage bucket instead: the bucket must not be public (the admin health check reports a public bucket as unhealthy), the Supabase secret key is used by the server only and is never sent to the browser, and Supabase encrypts stored data at rest. Staff still reach files only through the authenticated, access-logged routes above.
 
 ## Before using confidential production data online
 

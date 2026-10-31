@@ -1,6 +1,6 @@
 # Move to Vercel + Supabase — migration plan
 
-Status: **approved; phase 0 in progress** (2026-10-31). Decisions: PO-owned accounts during build (transfer to the client before real data), LibreOffice container + Word fallback, Supabase Auth. Built from the software architect, database
+Status: **approved; phases 0–3 done** (2026-10-31; next: phase 4, Postgres). Decisions: PO-owned accounts during build (transfer to the client before real data), LibreOffice container + Word fallback, Supabase Auth. Built from the software architect, database
 engineer and integration engineer reviews, checked against the code. Extends `HOSTING_PLAN.md` (target already
 chosen there: Vercel Pro + Supabase Pro, client-owned accounts). Decisions get recorded in `TEAM_DECISIONS.md`.
 
@@ -39,8 +39,8 @@ chosen there: Vercel Pro + Supabase Pro, client-owned accounts). Decisions get r
 |---|---|---|---|
 | 0 | Remove Cloudflare leftovers, portable config, no demo accounts in production | 1 | App unchanged locally |
 | 1 | Proofs: LibreOffice container renders all 11 active templates (time, memory, fonts); Gmail IMAP read | 2–3 | Side-by-side PDFs to approve — **done 2026-10-31**: both proofs passed (LibreOffice 26.8.1 container: 11/11 page counts; IMAP read-only + Sent lookup) |
-| 2 | Async data layer (repositories + transactions), still on SQLite | 4–6 | Full regression, no visible change |
-| 3 | File storage interface (local disk / Supabase) | 2–3 | No visible change |
+| 2 | Async data layer (repositories + transactions), still on SQLite | 4–6 | Full regression, no visible change — **done 2026-10-31** (PR #6) |
+| 3 | File storage interface (local disk / Supabase) | 2–3 | No visible change — **done 2026-10-31**: `RMC2_STORAGE=local|supabase`, verified against the Supabase test bucket; missing files now 404 with a safe message |
 | 4 | Postgres implementation, SQL migrations (Supabase CLI), `RMC2_DB` switch | 5–8 | **App on a Vercel preview URL** with test data |
 | 5 | Converter + signed uploads/downloads | 2–4 | Uploads and PDFs online |
 | 6 | Supabase Auth | 3–4 | Invites, password reset, sign-in |

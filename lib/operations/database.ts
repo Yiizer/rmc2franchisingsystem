@@ -7,9 +7,11 @@ import { defaultEmail } from './types';
 import { installWorkspaceIndexes } from './workspace-schema';
 import { createSqliteStore } from './store';
 import type { Store } from './store';
+import { AppError } from './errors';
 import { dataRoot, resourceFile, demoSeedAllowed, historicalSchemaFile } from './paths';
 
-export { dataRoot };
+// AppError lives in errors.ts so storage code can throw it without opening the database; re-exported for callers.
+export { dataRoot, AppError };
 
 export const LOCAL_PASSWORD='Rmc2Local!2026';
 // The only synchronous SQLite access: opens the file, creates the schema and seeds once per process.
@@ -59,9 +61,6 @@ export async function catalog():Promise<CatalogTemplate[]> { const file=resource
   const merged=new Map(base.map(template=>[template.id,{...template,active:['D091','D092','D093'].includes(template.sourceId)?false:template.active}]));
   for(const template of overrides)merged.set(template.id,template);
   return [...merged.values()]; }
-export function sourceFile(template:CatalogTemplate) { return template.storage?safeStorage(template.storage):resourceFile(path.basename(template.file)); }
-export function safeStorage(relative:string) { const full=path.resolve(dataRoot,relative);if(!full.startsWith(dataRoot+path.sep))throw new AppError('Invalid stored file path',400);return full; }
-export class AppError extends Error { constructor(message:string,public status=400){super(message);} }
 
 function seed(database:DatabaseSync) {
   const people:Staff[]=[

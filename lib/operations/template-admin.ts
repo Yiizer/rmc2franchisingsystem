@@ -1,10 +1,10 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import PizZip from 'pizzip';
 import { DOMParser } from '@xmldom/xmldom';
 import { z } from 'zod';
-import { AppError, catalog, db, safeStorage, transaction } from './database';
+import { AppError, catalog, db, transaction } from './database';
+import { MIME, deleteQuietly, files, putContentAddressed } from './file-store';
 import { pdfFromDocx } from './document-renderer';
 import { securityEvent } from './accounts';
 import type { CatalogTemplate, Staff } from './types';
@@ -44,11 +44,12 @@ export async function stageTemplate(user:Staff,form:FormData){
   const template:CatalogTemplate={id,name:body.family+' · '+body.variant,family:body.family,variant:body.variant,sector:body.sector,sourceName:path.basename(file.name),sourceId:existing?.sourceId||id.toUpperCase(),sourceHash:hash,file:'',storage,text,placeholders,warnings:body.warnings.split('\n').map(line=>line.trim()).filter(Boolean),annualOnly:body.annualOnly==='true',active:true,updatedAt:new Date().toISOString(),updatedBy:user.id};
   // Validate the exact uploaded bytes with the same converter used for proposals.
   const pdf=await pdfFromDocx(bytes,true),stageId=randomUUID(),pdfStorage='templates/previews/'+stageId+'.pdf';
-  mkdirSync(path.dirname(safeStorage(pdfStorage)),{recursive:true});
-  try{writeFileSync(safeStorage(storage),bytes,{flag:'wx'});}catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;if(createHash('sha256').update(readFileSync(safeStorage(storage))).digest('hex')!==hash)throw new AppError('The saved template could not be verified.',409);}
-  writeFileSync(safeStorage(pdfStorage),pdf.bytes,{flag:'wx'});
+  // The template key is content-addressed (kept even if staging fails); the preview key is per request and removed if the row fails.
+  await putContentAddressed(storage,bytes,hash,MIME.docx,'The saved template could not be verified.');
+  await files().put(pdfStorage,pdf.bytes,{contentType:MIME.pdf});
   const staged:StagedTemplate={template,expectedHash:existing?.sourceHash||null,pdf:pdfStorage,pages:pdf.pageCount};
-  await db.run('INSERT INTO template_versions VALUES (?,?,?,?,?,?)',stageId,id,JSON.stringify(staged),'staged',user.id,new Date().toISOString());
+  try{await db.run('INSERT INTO template_versions VALUES (?,?,?,?,?,?)',stageId,id,JSON.stringify(staged),'staged',user.id,new Date().toISOString());}
+  catch(error){await deleteQuietly(pdfStorage);throw error;}
   await securityEvent(user,'Staged template '+id+' source '+hash);return {id:stageId,template:{...template,file:'',storage:undefined},pages:pdf.pageCount};
 }
 export async function templateStage(user:Staff,id:string){admin(user);const row=await db.get('SELECT data,state FROM template_versions WHERE id=?',id) as {data:string;state:string}|undefined;if(!row)throw new AppError('Template preview not found.',404);return {...JSON.parse(row.data) as StagedTemplate,state:row.state};}

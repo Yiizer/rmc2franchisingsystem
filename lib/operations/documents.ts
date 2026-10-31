@@ -1,9 +1,9 @@
 import PizZip from 'pizzip';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { pdfFromDocx } from './document-renderer';
-import { AppError, dataRoot, sourceFile } from './database';
+import { AppError } from './errors';
+import { MIME, deleteQuietly, files, putContentAddressed } from './file-store';
+import { templateBytes } from './template-source';
 import { customDocument } from './custom-documents';
 import type { CatalogTemplate, FormFields, GeneratedPackage, CustomizedProposal } from './types';
 import { addresseeName, philippinePhone } from './proposal-fields';
@@ -28,8 +28,8 @@ export function fillParagraph(xml:string,values:Record<string,string>) {
   for(const slot of slots){const key=slot[1].trim().toLowerCase();const replacement=values[key];if(replacement===undefined)continue;const start=slot.index!,end=start+slot[0].length;let offset=0;for(let i=0;i<texts.length;i++){const length=unescapeXml(matches[i][1]).length,lo=Math.max(0,start-offset),hi=Math.min(length,end-offset);if(hi>lo){texts[i]=texts[i].slice(0,lo)+(start>=offset&&start<offset+length?replacement:'')+texts[i].slice(hi);}offset+=length;}}
   let index=0;return xml.replace(/(<w:t(?:\s[^>]*)?>)([\s\S]*?)(<\/w:t>)/g,(_whole,open,_text,close)=>open+escapeXml(texts[index++])+close);
 }
-export async function fillDocx(template:CatalogTemplate, fields:FormFields, preview=false):Promise<Buffer> {
-  const original=await readFile(sourceFile(template));
+export async function fillDocx(template:CatalogTemplate, fields:FormFields, preview=false, master?:Buffer):Promise<Buffer> {
+  const original=master??await templateBytes(template);
   if(createHash('sha256').update(original).digest('hex')!==template.sourceHash)throw new AppError('The proposal source changed. Import and review the new version before generating.');
   const dateValue=fields.proposalDate??fields.requestDate??'';
   const date = /^\d{4}-\d{2}-\d{2}$/.test(dateValue)?new Date(dateValue+'T12:00:00+08:00'):null;
@@ -48,15 +48,14 @@ export async function fillDocx(template:CatalogTemplate, fields:FormFields, prev
 }
 export async function generatePackage(id:string,template:CatalogTemplate,fields:FormFields,preparedBy:string,customization?:CustomizedProposal):Promise<GeneratedPackage> {
   if(customization&&(customization.templateId!==template.id||customization.sourceHash!==template.sourceHash))throw new AppError('This customized draft uses an earlier template. Create a fresh customized copy and review its edits before generating.',409);
-  const base=await fillDocx(template,fields),custom=customization?customDocument(base,customization.edits):undefined,bytes=custom?.bytes||base,pdf=await pdfFromDocx(bytes),packageId=randomUUID();
-  await mkdir(path.join(dataRoot,'generated'),{recursive:true});
-  await mkdir(path.join(dataRoot,'sources'),{recursive:true});
-  const original=await readFile(sourceFile(template));
-  if(createHash('sha256').update(original).digest('hex')!==template.sourceHash)throw new AppError('The proposal source changed during generation. Review the new source before trying again.',409);
+  // Read the master once; fillDocx verifies its hash, and the same verified bytes are archived below.
+  const original=await templateBytes(template);
+  const base=await fillDocx(template,fields,false,original),custom=customization?customDocument(base,customization.edits):undefined,bytes=custom?.bytes||base,pdf=await pdfFromDocx(bytes),packageId=randomUUID();
+  // Content-addressed archive of the master (shared by every package from this source; never deleted on rollback).
   const sourceDocx='sources/'+template.sourceHash+'.docx';
-  await writeFile(path.join(dataRoot,sourceDocx),original,{flag:'wx'}).catch(error=>{if(error.code!=='EEXIST')throw error;});
-  if(createHash('sha256').update(await readFile(path.join(dataRoot,sourceDocx))).digest('hex')!==template.sourceHash)throw new AppError('The archived proposal source could not be verified.',409);
+  await putContentAddressed(sourceDocx,original,template.sourceHash,MIME.docx,'The archived proposal source could not be verified.');
   const docx='generated/'+packageId+'.docx',pdfPath='generated/'+packageId+'.pdf';
-  await writeFile(path.join(dataRoot,docx),bytes);await writeFile(path.join(dataRoot,pdfPath),pdf.bytes);
+  try{await files().put(docx,bytes,{contentType:MIME.docx});await files().put(pdfPath,pdf.bytes,{contentType:MIME.pdf});}
+  catch(error){await deleteQuietly(docx,pdfPath);throw error;}
   return {id:packageId,renderer:'native-word-v2',templateId:template.id,sourceHash:template.sourceHash,sourceDocx,sourceName:template.sourceName,templateName:template.name,docx,pdf:pdfPath,filename:id+'-'+template.sourceId+(customization?'-CUSTOMIZED':''),generatedAt:new Date().toISOString(),preparedBy,fingerprint:fingerprint(fields,template,customization),fields:{...fields},pageCount:pdf.pageCount,...(customization?{customization:{...structuredClone(customization),changes:custom!.changes}}:{})};
 }
