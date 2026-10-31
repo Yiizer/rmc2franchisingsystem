@@ -207,6 +207,14 @@ Format: **Decision** — why — where it applies.
   - Lessons:
     - The Vercel-only guards must skip `NEXT_PHASE=phase-production-build`.
     - `vercel link` writes `VERCEL_OIDC_TOKEN` into `.env.local`.
+- **Online PDFs and real email on the preview (2026-10-31, approved by the PO):**
+  - Converter: `converter/`, a separate Vercel container project `rmc2-converter`, alias `rmc2-converter-yiizer.vercel.app`, behind Vercel Authentication.
+    - The app passes `RMC2_CONVERTER_BYPASS` for Vercel protection and `RMC2_CONVERTER_SECRET` for the converter's own check.
+    - **`vercel env add` via stdin can store a trailing newline: always `.trim()` secrets read from env.**
+  - Mail: `RMC2_MAIL_ENV=staging` with dry-run off.
+    - All mail is redirected to the yiizer17 test inbox, with caps of 5 per hour and 20 per day.
+    - `RMC2_DATA_DIR=/tmp/rmc2-preview` on Vercel. The staging guard refuses sending from `<cwd>/.data`.
+    - SMTP from Vercel to Gmail port 465 is unverified until the first approval sends.
 - **Postgres on the TEST project (phase 4, 2026-10-31):**
   - The three `supabase/migrations` files were applied to schema `rmc2`, with the security self-check passing.
   - The `rmc2_app` password is generated into `.env.supabase.test` as `RMC2_DATABASE_URL` (transaction pooler, port 6543). The owner connection for migrations is `RMC2_DATABASE_ADMIN_URL` (session pooler, port 5432). Neither is ever printed.
