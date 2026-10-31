@@ -1,6 +1,7 @@
 # Move to Vercel + Supabase — migration plan
 
-Status: **approved; phases 0–3 done** (2026-10-31; next: phase 4, Postgres). Decisions: PO-owned accounts during build (transfer to the client before real data), LibreOffice container + Word fallback, Supabase Auth. Built from the software architect, database
+Status: **approved; phases 0–3 merged; phase 4 plus lean parts of 5 and 7 built on branch `phase-4-postgres`,
+working online, final check pending** (2026-10-31). **What is left: see `REMAINING_WORK.md`.** Decisions: PO-owned accounts during build (transfer to the client before real data), LibreOffice container + Word fallback, Supabase Auth. Built from the software architect, database
 engineer and integration engineer reviews, checked against the code. Extends `HOSTING_PLAN.md` (target already
 chosen there: Vercel Pro + Supabase Pro, client-owned accounts). Decisions get recorded in `TEAM_DECISIONS.md`.
 
