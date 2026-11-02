@@ -35,6 +35,7 @@ export async function declineInquiry(id:string,user:Staff,input:unknown){
   return await transaction(async()=>{
 
     const record=await lockedInquiry(id);if(record.revision!==body.revision)throw new AppError('Reload this inquiry before declining it.',409);
+    await db.lock('lease:'+id); // lock order: ck: → lease: → rows → idx-sync (matchingInquiries below takes idx-sync)
 
     if(record.closure)return record;
 
@@ -169,6 +170,7 @@ export async function decideAgentTransfer(id:string,user:Staff,input:unknown){
 export async function requestExpiredTransfer(id:string,user:Staff,input:unknown){
  const body=z.object({revision:z.number().int(),note:z.string().trim().min(10).max(3000)}).strict().parse(input);
  return await transaction(async()=>{const record=await lockedInquiry(id);if(record.revision!==body.revision)throw new AppError('Reload this inquiry.',409);await available(id,user);
+ // The previous registration is only known after matching (idx-sync), so its lease comes later; a rare deadlock here is detected and retried (40P01).
  const matches=reviewClient(record,await matchingInquiries(record)).matches;
  if(record.closure||matches.length!==1||!matches[0].expired||matches[0].sameAgent)throw new AppError('Review one expired registration for a different agent before requesting a change.',409);
  if(record.agentTransferRequest&&!record.agentTransferRequest.decision)throw new AppError('An agent change is already pending.',409);

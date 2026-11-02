@@ -305,6 +305,17 @@ await check('retry: a connection failure before the first statement is retried; 
   const down = makeStore(fakeDriver({ onBegin: () => { throw err('ECONNREFUSED', 'connect ECONNREFUSED 10.1.2.3:6543'); } }));
   await assert.rejects(down.transaction(async () => 1), e => e.status === 503 && !/10\.1\.2\.3/.test(e.message));
 });
+await check('stripNul: raw NULs and unescaped \\u0000 escapes removed from string params; other values untouched', async () => {
+  assert.equal(pg.stripNul('a\0b\0'), 'ab');
+  assert.equal(pg.stripNul(JSON.stringify({ name: 'Juan\0 Cruz\0\0' })), '{"name":"Juan Cruz"}');
+  assert.equal(pg.stripNul('\\\\u0000'), '\\\\u0000', 'an escaped backslash + "u0000" is literal text, kept');
+  assert.equal(pg.stripNul('\\\\\\u0000'), '\\\\', 'an escaped backslash, then a NUL escape: only the NUL goes');
+  assert.equal(pg.stripNul(42), 42);
+  const buffer = Buffer.from([0, 1]); assert.equal(pg.stripNul(buffer), buffer);
+  const driver = fakeDriver();
+  await makeStore(driver).run('INSERT INTO t VALUES (?,?)', 'x\0y', 7);
+  assert.deepEqual(driver.log.statements.at(-1).params, ['xy', 7]);
+});
 await check('retry: a serialization failure at COMMIT is retried (the transaction rolled back)', async () => {
   const driver = fakeDriver();
   let commits = 0;

@@ -40,10 +40,10 @@ export async function reviewClientRegistration(id:string,user:Staff,input:unknow
   const body=z.object({revision:z.number().int(),action:z.enum(['recheck','distinct','reassign-expired']),matchId:z.string().optional(),note:z.string().trim().max(3000).default('')}).strict().parse(input);
   return await transaction(async()=>{
     const record=await lockedInquiry(id);if(record.revision!==body.revision)throw new AppError('This inquiry changed. Reload before reviewing it.',409);
+    if(body.action!=='recheck')await db.lock('lease:'+id); // lock order: ck: → lease: → rows → idx-sync (matchingInquiries takes idx-sync)
     if(clientState(record,await matchingInquiries(record)).state==='archived')throw new AppError('Expired inquiries stay in Archives. Import a new agent form to register the client.',409);
     if(body.action==='distinct'&&record.agentTransferRequest&&!record.agentTransferRequest.decision)throw new AppError('A supervisor must decide the pending agent change first.',409);
     if(body.action==='distinct'||body.action==='reassign-expired'){
-      await db.lock('lease:'+id);
       const owner=await db.get('SELECT user_id FROM inquiry_activity WHERE inquiry_id=? AND seen_at>? AND user_id<>?',id,new Date(Date.now()-90000).toISOString(),user.id);
       if(owner)throw new AppError('A colleague is handling this inquiry.',423);
       if(body.action==='reassign-expired'&&!(user.role==='Supervisor'&&user.canApprove))throw new AppError('An approving supervisor must approve an agent change after expiry.',403);

@@ -285,7 +285,8 @@ export async function requestDetails(id:string,user:Staff,input:unknown) {
   canPrepare(user);const body=z.object({revision:z.number().int(),body:z.string().min(1).max(20000)}).parse(input);
   await recoverStuckMail();
   const outboxId=randomUUID(),file='outbox/'+outboxId+'.eml';
-  const draft=await transaction(async()=>{const record=await inquiry(id);checkRevision(record,body.revision);await assertClientReady(record);if(record.supervisorEdit||!canEditInquiry(user,record))throw new AppError('The submitted proposal is locked.',409);await requireInquiryHandler(id,user);
+  // Client keys, then the lease, before assertClientReady's duplicate check (idx-sync): lock order ck: → lease: → idx-sync.
+  const draft=await transaction(async()=>{const record=await lockedInquiry(id);checkRevision(record,body.revision);await db.lock('lease:'+id);await assertClientReady(record);if(record.supervisorEdit||!canEditInquiry(user,record))throw new AppError('The submitted proposal is locked.',409);await requireInquiryHandler(id,user);
     const email=mailSchema.parse({to:record.fields.agentEmail,subject:'Details needed — '+record.fields.company,body:body.body});
     await db.run("UPDATE outbox SET status='failed' WHERE inquiry_id=? AND kind='details' AND status='ready'",id);
     if(await db.get("SELECT 1 FROM outbox WHERE inquiry_id=? AND kind='details' AND status='sending'",id))throw new AppError('A details request is already being sent for this inquiry.',409);

@@ -155,6 +155,16 @@ export function mapPgError(error: unknown): unknown {
   return error;
 }
 
+// ---------------------------------------------------------------- NUL characters
+// Postgres text cannot hold U+0000 (22021) and jsonb refuses the \u0000 escape (22P05), while SQLite accepts both, so a
+// pasted or imported value with a NUL would fail only online. Every string parameter drops raw NULs and unescaped
+// \u0000 escapes (JSON text); an escaped backslash followed by "u0000" (\\u0000, literal text) is kept.
+const NUL_ESCAPE = /(?<=(?:^|[^\\])(?:\\\\)*)\\u0000/g;
+export function stripNul(value: SqlParam): SqlParam {
+  if (typeof value !== 'string' || (!value.includes('\0') && !value.includes('\\u0000'))) return value;
+  return value.replace(/\0/g, '').replace(NUL_ESCAPE, '');
+}
+
 // ---------------------------------------------------------------- client options
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 function hostOf(url: string): string {
@@ -240,10 +250,11 @@ export function createPostgresStore(url: string, deps: PostgresStoreDeps = {}): 
     const target = scope?.active ? scope.tx : sql;
     try {
       let rows: Rows;
-      if (scope?.active) rows = await target.unsafe(toPositional(text), [...params], { simple: false });
+      const values = params.map(stripNul);
+      if (scope?.active) rows = await target.unsafe(toPositional(text), values, { simple: false });
       else {
         const release = await gate.acquire(waitMs, waitError);
-        rows = await bounded(target.unsafe(toPositional(text), [...params], { simple: false }), release);
+        rows = await bounded(target.unsafe(toPositional(text), values, { simple: false }), release);
       }
       if (scope?.active) scope.completed++;
       return rows;
