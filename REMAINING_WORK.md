@@ -23,6 +23,37 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
   - the real email being Sent
 - **Weekly Claude usage was about 86% on 2026-10-31.** The reset is on Nov 5. The full reviews below were deferred to save usage.
 
+## 0. Built but never tested (try these first)
+
+**Online app in a real browser.** Online, everything so far was driven through the API only.
+- [ ] The Requests page: layout, "Check mail now", the error notes, "Imported automatically".
+- [ ] **Automatic import of an emailed Excel form, end to end.** Use the sample form in `test-results/Franchise-Form-Mabini-Integrated-School.xlsx`.
+- [ ] An emailed PDF goes to Requests, then **Create inquiry** by hand.
+- [ ] Phone and tablet layout of the online version. This was tested locally only.
+
+**Online workflow steps never run.** Only import → PDF → submit → approve → send has been verified.
+- [ ] Supervisor returns a proposal, then the employee corrects and resubmits.
+- [ ] Request missing details (sends an email).
+- [ ] Decline, a duplicate-client hold, and the supervisor's decision on the duplicate.
+- [ ] Progress reports with attachments, and BOR / agent transfer.
+- [ ] Template admin online: upload, preview, publish. Template files over 4.5 MB will fail online.
+- [ ] Users & roles, account settings and password change, notifications, and the monitoring page.
+- [ ] Downloads over about 4.5 MB (large PDFs and .eml files). These likely fail online until phase 5.
+- [ ] Uploads over 4.5 MB. These are refused online; this is known.
+
+**Email edge cases, with real Gmail.**
+- [ ] A send failure and an "uncertain" send, with the admin confirming or retrying.
+- [ ] Hitting the 5/hour or 20/day cap.
+- [ ] An email with several attachments, a very large attachment, or a non-form Excel file.
+- [ ] A duplicate client arriving by email.
+- [ ] Inbox unreachable, or the app password revoked.
+
+**Data and environment.**
+- [ ] **The real data (`.data`, port 5173) has never run the phase 2–4 code.** Back up `.data` first, then start the local app once and check it.
+- [ ] The historical client directory is empty online (never imported to Postgres), so directory features are untested there.
+- [ ] Two or more people using the online version at the same time. The stress tests were stopped part-way.
+- [ ] A cold start after the free Supabase project pauses (it pauses after 7 idle days).
+
 ## 1. Must do before sharing the online link with anyone else
 
 - [ ] **Rotate the demo passwords.** All 6 demo accounts, including Admin, share a password that is written in the code and the README.
