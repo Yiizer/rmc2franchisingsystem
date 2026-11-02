@@ -1,4 +1,4 @@
-# Remaining work (as of 2026-10-31)
+# Remaining work (as of 2026-11-02)
 
 This is the one checklist of what is left before RMC2 runs on real data. Details and the reasons behind
 each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entries) and `MIGRATION_PLAN.md`.
@@ -56,10 +56,12 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 
 ## 1. Must do before sharing the online link with anyone else
 
-- [ ] **Rotate the demo passwords.** All 6 demo accounts, including Admin, share a password that is written in the code and the README.
-  - Replace the automatic demo seed with a manual script that sets random passwords and writes them to a git-ignored file.
-  - Add a `VERCEL_ENV=production` guard so production can never seed.
-  - Remove the password from `README.md` and `LOCALHOST.md`.
+- [x] **Rotate the demo passwords.** Done on the test project 2026-11-02: the shared password no longer works for any of the 6 accounts.
+  - [x] Script `scripts/rotate-demo-passwords.mjs` sets a random password per account, signs everyone out, and writes them to the git-ignored `test-results/online-credentials/CREDENTIALS.txt` (2026-11-02).
+  - [x] Ran on the test project (2026-11-02): 6 accounts rotated, all sessions cleared, verified the old password fails and the new ones match. Rerun the same command to rotate again: `node --env-file=.env.supabase.test scripts/rotate-demo-passwords.mjs --project-ref pgoiqwixaeqbxlwbmren`.
+  - [x] `VERCEL_ENV=production` guard: production never seeds demo data, whatever `RMC2_SEED_DEMO` says.
+  - [x] A fresh online (Vercel) seed now gets random, unknown passwords, never the shared local one.
+  - [x] Password removed from `README.md`, `LOCALHOST.md` and `PROJECT_GUIDE.md` (the local tests still use it locally).
 - [ ] Then create a Vercel Shareable Link (Deployment Protection) for testers' phones, and revoke it after testing.
 - [ ] Optional: tidy the dashboard and Inquiries layouts so they match (page width, table style, column names "Inquiry"/"Account" and "Received"/"Updated").
 
@@ -72,16 +74,16 @@ The full specialist reviews were deferred. Run all of them together over everyth
   - Online checks: PDFs over 4.5 MB through the storage links, real email send, automatic email import, a PDF waiting on Requests, and an unreadable form.
 - [ ] **Code review majors** (not yet fixed in code):
   - [ ] **M1, lost index enqueue.** The database fix is written in `supabase/migrations/20261101000400_index_and_bump_fixes.sql` but **not applied**.
-  - [ ] **M2, deadlocks at commit.** 40001/40P01 raised at COMMIT must be retried (`lib/operations/store-postgres.ts`). The bump-order fix is also in migration 400.
+  - [x] **M2, deadlocks at commit.** 40001/40P01 raised at COMMIT are now retried (2026-11-02, unit + live checks pass). The bump-order fix in migration 400 is still not applied (see M1).
 - [ ] **Code review minors:**
   - lock order (lease vs `idx-sync`; sort the `lease:` locks)
-  - try/catch around the poll's activity prune
+  - [x] try/catch around the poll's activity prune (2026-11-02)
   - batched reindex
   - activity query filtered by inquiry
-  - `updateOwnAccount` re-reads the user
+  - [x] `updateOwnAccount` re-reads the user and refuses a deactivated account (2026-11-02; typecheck only, not run end to end)
   - `requestDetails` takes the client lock
   - strip NUL characters on every write
-  - log-safe `mapPgError`
+  - [x] log-safe `mapPgError`: any other server error becomes a detail-free 500, logs carry the code only (2026-11-02)
 - [ ] **Security:**
   - [ ] Apply `supabase/migrations/20261101000500_security_hardening.sql`: append-only audit tables, a role connection limit, an environment marker, and stricter self-checks.
   - [ ] Verified TLS to Supabase using the Supabase CA (it is currently `ssl:'require'`, which encrypts but does not verify the certificate).

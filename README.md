@@ -15,7 +15,7 @@ npm run dev
 
 Open **http://127.0.0.1:5173/**. For the production build, use `npm run build` followed by `npm start`. On a new, empty data directory production mode creates no demo accounts; set `RMC2_SEED_DEMO=1` to get the local test accounts.
 
-Sign in with your username or email. Initial local accounts share the password **Rmc2Local!2026**. These credentials are for local testing.
+Sign in with your username or email. Initial local accounts share the demo password set by `LOCAL_PASSWORD` in `lib/operations/database.ts`; it is for local testing only and never works online. Online test accounts get random passwords from `scripts/rotate-demo-passwords.mjs`, kept in a git-ignored file.
 
 See [LOCALHOST.md](LOCALHOST.md) for account details, source import, workflow testing, storage and document conversion.
 

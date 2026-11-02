@@ -52,12 +52,13 @@ export async function pruneActivity():Promise<void>{
   }
 }
 // Polls prune at most this often per process (and only when no other request holds the prune lock).
+// Housekeeping only: a failed prune never fails the poll (readers already ignore stale leases); the next poll tries again.
 const POLL_PRUNE_MS=10000;
 let lastPollPrune=0;
 export async function pruneActivityThrottled():Promise<void>{
   if(Date.now()-lastPollPrune<POLL_PRUNE_MS)return;
   lastPollPrune=Date.now();
-  await transaction(pruneActivity);
+  try{await transaction(pruneActivity);}catch{console.error('[rmc2] activity prune skipped after an error');}
 }
 
 export async function requireInquiryHandler(id:string,user:Staff){

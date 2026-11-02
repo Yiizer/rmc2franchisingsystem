@@ -21,8 +21,10 @@ export function historicalSchemaFile():string {
 }
 
 // Demo staff and sample inquiries on an empty database. Default on locally; off in production unless explicit.
+// Never on a Vercel production deployment, whatever the flag says.
 export function demoSeedAllowed():boolean {
   const flag=process.env.RMC2_SEED_DEMO;
+  if(process.env.VERCEL_ENV==='production')return false;
   if(process.env.NODE_ENV==='production')return flag==='1';
   return flag!=='0';
 }

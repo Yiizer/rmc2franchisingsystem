@@ -89,8 +89,22 @@ await check('mapPgError: connection, pool, auth and paused-project failures -> 5
   } finally { console.error = originalError; }
   assert.ok(logged.every(line => !/secret-host|10\.0\.0\.9|rmc2_app|postgres:\/\//.test(line)), 'logs carry codes only');
 });
-await check('mapPgError passes through unrelated errors and existing AppErrors', () => {
-  const plain = new Error('syntax error'); plain.code = '42601';
+await check('mapPgError: other server errors -> 500 with no details; non-database errors pass through', () => {
+  const originalError = console.error; const logged = []; console.error = (...args) => logged.push(args.join(' '));
+  try {
+    for (const error of [
+      Object.assign(new Error('null value in column "secret_col" violates not-null constraint'), { code: '23502', detail: 'Failing row contains (Juan Dela Cruz)' }),
+      Object.assign(new Error('syntax error at or near "secret"'), { code: '42601' }),
+      Object.assign(new Error('raised secret'), { name: 'PostgresError', code: 'P0001' }),
+    ]) {
+      const mapped = pg.mapPgError(error);
+      assert.ok(mapped instanceof AppError, error.code);
+      assert.equal(mapped.status, 500);
+      assert.ok(!/secret|Juan/.test(mapped.message));
+    }
+  } finally { console.error = originalError; }
+  assert.ok(logged.every(line => !/secret|Juan/.test(line)), 'logs carry codes only');
+  const plain = new Error('not a database error'); plain.code = 'ENOENT';
   assert.equal(pg.mapPgError(plain), plain);
   const app = new AppError('nope', 403);
   assert.equal(pg.mapPgError(app), app);
@@ -291,9 +305,17 @@ await check('retry: a connection failure before the first statement is retried; 
   const down = makeStore(fakeDriver({ onBegin: () => { throw err('ECONNREFUSED', 'connect ECONNREFUSED 10.1.2.3:6543'); } }));
   await assert.rejects(down.transaction(async () => 1), e => e.status === 503 && !/10\.1\.2\.3/.test(e.message));
 });
-await check('retry: never after the callback finished (COMMIT failure)', async () => {
+await check('retry: a serialization failure at COMMIT is retried (the transaction rolled back)', async () => {
   const driver = fakeDriver();
-  const store = makeStore({ ...driver, sql: { ...driver.sql, begin: async (run) => { await driver.sql.begin(run); throw err('40001', 'could not serialize at commit'); } } });
+  let commits = 0;
+  const store = makeStore({ ...driver, sql: { ...driver.sql, begin: async (run) => { const result = await driver.sql.begin(run); if (++commits === 1) throw err('40001', 'could not serialize at commit'); return result; } } });
+  let runs = 0;
+  assert.equal(await store.transaction(async () => { runs++; return 'ok'; }), 'ok');
+  assert.equal(runs, 2);
+});
+await check('retry: never after the callback finished on a connection failure (COMMIT may have happened)', async () => {
+  const driver = fakeDriver();
+  const store = makeStore({ ...driver, sql: { ...driver.sql, begin: async (run) => { await driver.sql.begin(run); throw err('CONNECTION_CLOSED'); } } });
   let runs = 0;
   await assert.rejects(store.transaction(async () => { runs++; return 1; }), e => e.status === 503);
   assert.equal(runs, 1);
@@ -438,7 +460,7 @@ if (!liveUrl) {
     });
     await check('live: snapshot is read-only', async () => {
       const store = live();
-      await assert.rejects(store.snapshot(async () => { await store.exec('CREATE TEMP TABLE t_ro (x int)'); }), e => /read-only/i.test(String(e.message)) || e.code === '25006');
+      await assert.rejects(store.snapshot(async () => { await store.exec('CREATE TEMP TABLE t_ro (x int)'); }), e => e.pgCode === '25006' && !/read-only/i.test(String(e.message))); // mapped: code kept, driver text hidden
       assert.equal((await store.snapshot(() => store.get('SHOW transaction_isolation'))).transaction_isolation, 'repeatable read');
     });
     await check('live: advisory locks exclude across transactions; tryLock is non-blocking; lock timeout -> 503', async () => {
@@ -492,9 +514,9 @@ if (!liveUrl) {
       for (let round = 0; round < 3; round++) await Promise.all(Array.from({ length: 25 }, () => store.get('SELECT 1 AS one')));
       assert.ok(Date.now() - t0 < 20000, 'finished well inside the 15 s wait bound');
     });
-    await check('live: SQL errors outside the mapped set pass through; an aborted store still serves the next statement', async () => {
+    await check('live: other SQL errors become a detail-free 500 (code kept); an aborted store still serves the next statement', async () => {
       const store = live();
-      await assert.rejects(store.get('SELECT * FROM definitely_missing_table_xyz'), e => e.code === '42P01');
+      await assert.rejects(store.get('SELECT * FROM definitely_missing_table_xyz'), e => e.status === 500 && e.pgCode === '42P01' && !/definitely_missing/.test(e.message));
       assert.equal((await store.get('SELECT 1 AS one')).one, 1);
     });
   } finally {

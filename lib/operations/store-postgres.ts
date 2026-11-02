@@ -17,8 +17,9 @@ import type { RunResult, SqlParam, Store, TransactionOptions } from './store';
 //  * int8 comes back as a JS Number; json/jsonb come back as the raw JSON text, so `JSON.parse(row.data)` keeps working.
 //  * transaction() is sql.begin with the same AsyncLocalStorage scope as SQLite: nested calls join the outer
 //    transaction, and a statement from a sibling still running after the rollback throws.
-//  * The outermost transaction is retried (max 3 tries) on deadlock/serialization failures and on a connection
-//    failure before any statement completed. It is never retried once the callback finished (COMMIT was sent).
+//  * The outermost transaction is retried (max 3 tries) on deadlock/serialization failures, including one raised at COMMIT
+//    (Postgres has then rolled the whole transaction back, so running it again is safe), and on a connection failure before
+//    any statement completed. A connection failure once the callback finished is never retried: COMMIT may have happened.
 //  * Connection strings and driver messages never reach callers or logs: failures become AppError with fixed text.
 //  * Pool exhaustion cannot hang a request: postgres.js has no queue timeout, so waiting for one of the 3 connections is bounded
 //    here (15 s, DB_WAIT_MS), both in the gate and, as a second line, in the driver. A pool statement that is still queued is cancelled and removed from the driver's queue; a running one is
@@ -139,7 +140,10 @@ function tagged(message: string, status: number, code: string): AppError {
   return error;
 }
 
-/** Maps driver/server errors to AppError with fixed, non-leaky text. Other errors pass through unchanged. */
+// A server error (any SQLSTATE) can quote row values or names in its message/detail: callers and logs get the code only.
+const isServerError = (error: unknown, code: string) => (error as { name?: unknown } | null)?.name === 'PostgresError' || /^[0-9][0-9A-Z]{4}$/.test(code);
+
+/** Maps driver/server errors to AppError with fixed, non-leaky text. Non-database errors pass through unchanged. */
 export function mapPgError(error: unknown): unknown {
   if (error instanceof AppError) return error;
   const code = codeOf(error);
@@ -147,6 +151,7 @@ export function mapPgError(error: unknown): unknown {
   if (code === '23505') return tagged('This record already exists. Reload to see the latest changes.', 409, code);
   if (isRetryableCode(code)) return tagged(BUSY, 503, code);
   if (isConnectionFailure(error) || UNAVAILABLE_CODES.has(code)) { logOnce(code); return tagged(BUSY, 503, code || 'XX000'); }
+  if (isServerError(error, code)) { console.error('[rmc2] database error, code', code || 'unknown'); return tagged('Database error.', 500, code || 'XX000'); }
   return error;
 }
 
@@ -274,8 +279,9 @@ export function createPostgresStore(url: string, deps: PostgresStoreDeps = {}): 
         try { return await Promise.race([begun, noConnection]); } finally { clearTimeout(timer); }
       } catch (error) {
         scope.aborted = true;
-        // Never after the callback finished: COMMIT may or may not have happened.
-        const retryable = !finished && (isRetryableCode(codeOf(error)) || (isConnectionFailure(error) && scope.completed === 0));
+        // A deadlock/serialization failure always means the transaction rolled back, even at COMMIT. A connection failure never
+        // after the callback finished: COMMIT may or may not have happened.
+        const retryable = isRetryableCode(codeOf(error)) || (!finished && isConnectionFailure(error) && scope.completed === 0);
         if (retryable && attempt < tries) { await sleep(20 + Math.floor(random() * 81)); continue; }
         throw mapPgError(error);
       }

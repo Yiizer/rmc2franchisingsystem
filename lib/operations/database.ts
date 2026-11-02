@@ -142,7 +142,10 @@ function seedData() {
     {id:'zeo',name:'Zeo Enorasa',email:'zeo@rmc2.local',role:'Supervisor',position:'AfterSales Operations and Client Relations Supervisor',active:true,canApprove:true},
     {id:'admin',name:'System Administrator',email:'admin@rmc2.local',role:'Admin',position:'System Administrator',active:true,canApprove:false},
   ];
-  const users=people.map(person=>({id:person.id,data:JSON.stringify(person),password:passwordHash(LOCAL_PASSWORD)}));
+  // Online (Vercel) the shared local password must never work: seed random, unknown passwords, then set known ones with
+  // scripts/rotate-demo-passwords.mjs, which writes them to a git-ignored file.
+  const online=!!process.env.VERCEL;
+  const users=people.map(person=>({id:person.id,data:JSON.stringify(person),password:passwordHash(online?randomBytes(18).toString('base64url'):LOCAL_PASSWORD)}));
   const records:InquiryRecord[]=[],notices:Notice[]=[];
   const companies=['Sampaguita National High School','Harbor Logistics Corporation','Evergreen Services, Inc.','Meridian Packaging Co.'];
   companies.forEach((company,index)=>{

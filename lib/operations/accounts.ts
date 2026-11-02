@@ -47,7 +47,10 @@ export async function updateOwnAccount(user:Staff,input:unknown){
   if(body.password===body.currentPassword)throw new AppError('Choose a different password from the current one.');
   return await transaction(async()=>{
     await db.lock('users-admin'); // usernames/emails stay unique when two edits land together
-    await unique(body.username,user.id);const updated={...user,username:body.username,mustChangePassword:false};
+    // Build on the stored record, not the session copy: an admin may have changed role/access or deactivated the account meanwhile.
+    const row=await db.get<{data:string}>('SELECT data FROM users WHERE id=?',user.id);const current=row?JSON.parse(row.data) as Staff:undefined;
+    if(!current?.active)throw new AppError('This account is no longer active.',403);
+    await unique(body.username,user.id);const updated={...current,username:body.username,mustChangePassword:false};
     await db.run('UPDATE users SET data=? WHERE id=?',JSON.stringify(updated),user.id);
     if(body.password)await db.run('UPDATE users SET password=? WHERE id=?',passwordHash(body.password),user.id);
     await db.run('DELETE FROM sessions WHERE user_id=?',user.id);

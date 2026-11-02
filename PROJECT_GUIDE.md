@@ -134,7 +134,7 @@ Progress-report recording and duplicate review are client-registration actions, 
 | `zeo@rmc2.local` | Zeo Enorasa | Supervisor, can approve |
 | `admin@rmc2.local` | System Administrator | Admin |
 
-The initial local password is `Rmc2Local!2026`. These are demonstration credentials, not a production account policy. Roles may have been changed through the admin screen after initial seeding.
+The initial local password is `LOCAL_PASSWORD` in `lib/operations/database.ts` (local only). These are demonstration credentials, not a production account policy. Roles may have been changed through the admin screen after initial seeding.
 
 Admin changes invalidate the affected user's existing sessions. The system protects the current administrator from disabling or demoting their own account through that screen, and requires at least one active approving supervisor to remain.
 

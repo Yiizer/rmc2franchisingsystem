@@ -25,7 +25,7 @@ Reconnect validation passed: all 13 master-layout checks, 56 workflow checks, ni
 
 ## Local accounts
 
-Sign in with the staff username or email. Every initial local account has password `Rmc2Local!2026`.
+Sign in with the staff username or email. Every initial local account has the demo password set by `LOCAL_PASSWORD` in `lib/operations/database.ts` (local only; online accounts are seeded with random passwords and rotated with `scripts/rotate-demo-passwords.mjs`).
 
 | Account | Role |
 | --- | --- |
