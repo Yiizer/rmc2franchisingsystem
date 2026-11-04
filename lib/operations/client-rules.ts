@@ -25,7 +25,8 @@ export function protectionFor(record:InquiryRecord):ClientProtection|null {
   return first?{startedAt:first.at,activityAt:first.at,expiresAt:new Date(Date.parse(first.at)+CLIENT_PROTECTION_MS).toISOString(),...protectedAgent(record,first.fields),activityKind:first.kind}:null;
 }
 export function isClientArchived(record:InquiryRecord,now=Date.now()){const protection=protectionFor(record);return !!record.closure||!!protection&&Date.parse(protection.expiresAt)<=now;}
-export function protectionDaysLeft(protection:ClientProtection,now=Date.now()){return Math.max(0,Math.ceil((Date.parse(protection.expiresAt)-now)/86400000));}
+// Capped: a "now" taken a little before protection started (page opened earlier, or a client clock behind the server) must never show 31.
+export function protectionDaysLeft(protection:ClientProtection,now=Date.now()){return Math.min(CLIENT_PROTECTION_DAYS,Math.max(0,Math.ceil((Date.parse(protection.expiresAt)-now)/86400000)));}
 export function sameAgent(a:FormFields,b:FormFields){
   if(a.agentEmail?.trim()&&b.agentEmail?.trim())return a.agentEmail.trim().toLowerCase()===b.agentEmail.trim().toLowerCase();
   const phone=(value:string='')=>value.replace(/\D/g,'').replace(/^(?:0063|63|0)/,'');

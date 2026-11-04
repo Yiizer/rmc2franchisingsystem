@@ -59,7 +59,10 @@ export function parseMailConfig(env: Record<string, string | undefined>, dataDir
     if (!allowlist.length || allowlist.length > 10 || !allowlist.every(a => !a.includes('*') && isSafeEmail(a))) return refuse('the allowlist must contain 1-10 exact addresses.');
     if (!redirectTo.length || redirectTo.length > 3 || !redirectTo.every(a => isSafeEmail(a) && allowlist.includes(a))) return refuse('the redirect inbox must be on the allowlist.');
   }
-  const config: MailConfig = { mode: 'smtp', env: mailEnv, redirectTo, allowlist, dryRun, caps: MAIL_CAPS, from: { name, address } };
+  // Staging may raise the caps for a demo day (all mail still goes to the redirect inbox), never above 60/hour and 200/day.
+  const cap = (value: string | undefined, fallback: number, max: number) => { const n = Number(clean(value)); return mailEnv === 'staging' && Number.isInteger(n) && n > 0 ? Math.min(n, max) : fallback; };
+  const caps = { perHour: cap(env.RMC2_MAIL_CAP_PER_HOUR, MAIL_CAPS.perHour, 60), perDay: cap(env.RMC2_MAIL_CAP_PER_DAY, MAIL_CAPS.perDay, 200) };
+  const config: MailConfig = { mode: 'smtp', env: mailEnv, redirectTo, allowlist, dryRun, caps, from: { name, address } };
   Object.defineProperty(config, 'smtp', { value: { host, port, user, pass }, enumerable: false });
   return config;
 }

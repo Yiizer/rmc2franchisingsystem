@@ -1,13 +1,13 @@
 'use client';
-import {useLayoutEffect,useRef,type ReactNode} from 'react';
-import {ArrowRight} from 'lucide-react';
+import {useLayoutEffect,useRef,useState,type ReactNode} from 'react';
+import {ArrowRight,MoreHorizontal} from 'lucide-react';
 import type {PrimaryAction} from './operations-next-action';
 
 const toneClass={action:'primary',start:'primary',secondary:'secondary'};
 
 // Handling and save controls stay left; the workflow action stays right.
 export default function ActionBar({action,reason,left,right}:{action?:PrimaryAction;reason?:string;left?:ReactNode;right?:ReactNode}){
- const bar=useRef<HTMLElement>(null);
+ const bar=useRef<HTMLElement>(null),[moreOpen,setMoreOpen]=useState(false);
  // Publish the bar's real height so the page can always clear it, however many rows it wraps to.
  useLayoutEffect(()=>{const element=bar.current,host=element?.closest<HTMLElement>('.ops-workspace-redesign');if(!element||!host)return;const root=document.documentElement,set=()=>{const height=Math.ceil(element.offsetHeight)+'px';host.style.setProperty('--ops-action-bar-h',height);root.style.setProperty('--ops-action-bar-h',height);};set();const observer=new ResizeObserver(set);observer.observe(element);return()=>{observer.disconnect();host.style.removeProperty('--ops-action-bar-h');root.style.removeProperty('--ops-action-bar-h');};},[]);
  const className='ops-btn ops-next-main '+toneClass[action?.tone||'action'];
@@ -19,7 +19,11 @@ export default function ActionBar({action,reason,left,right}:{action?:PrimaryAct
   </div>
   <div className="ops-action-bar-right">
    {hint&&<p className="ops-locked-reason" role="status">{hint}</p>}
-   {right}
+   {/* Phones fold the secondary actions into a More menu beside the main action (CSS shows the toggle only at ≤760px). */}
+   {right&&<div className={'ops-more ops-action-bar-extra'+(moreOpen?' open':'')}>
+    <button type="button" className="ops-btn secondary ops-action-bar-more-btn" aria-expanded={moreOpen} onClick={()=>setMoreOpen(open=>!open)}><MoreHorizontal size={16} aria-hidden="true"/>More</button>
+    <div className="ops-action-bar-extra-items" onClick={()=>setMoreOpen(false)}>{right}</div>
+   </div>}
    {action&&(action.href?<a className={className} href={action.href}>{label}</a>:<button className={className} disabled={action.disabled} title={action.disabled?hint:undefined} onClick={()=>void action.onClick?.()}>{label}</button>)}
   </div>
  </section>;

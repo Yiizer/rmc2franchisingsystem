@@ -109,6 +109,7 @@ try{
   pass('A successful details reply starts exactly 30 days of protection',Date.parse(original.protection.expiresAt)-Date.parse(original.protection.startedAt)===CLIENT_PROTECTION_MS);
   pass('The registered agent owns protection, independently of the handling employee',original.protection.agentEmail==='alpha@example.test'&&original.protection.agentName==='Agent Alpha');
   pass('Countdown includes the final moment and expires at the exact deadline',!isClientArchived(original,Date.parse(original.protection.expiresAt)-1)&&isClientArchived(original,Date.parse(original.protection.expiresAt))&&protectionDaysLeft(original.protection,Date.parse(original.protection.expiresAt))===0);
+  pass('A page opened a minute before protection started shows 30 days left, never 31',protectionDaysLeft(original.protection,Date.parse(original.protection.startedAt)-60000)===30);
 
   const sourceBytes=await workbook(company,person),same=await intake(company,person,'alpha@example.test','Agent Alpha',sourceBytes);
   const identical=await intake(company,person,'beta@example.test','Agent Beta',sourceBytes);

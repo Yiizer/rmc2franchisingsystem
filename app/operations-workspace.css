@@ -515,7 +515,16 @@
  .ops-action-bar-left,.ops-action-bar-right{flex:1 1 100%;flex-wrap:wrap}
  .ops-action-bar-left>.ops-btn{flex:1;white-space:nowrap}
  .ops-action-bar .ops-locked-reason{font-size:11px;line-height:1.35}
+ /* The next step goes on top; secondary actions (Return / Edit before approval, Not received / Confirm sent) open from More. */
+ .ops-action-bar-right{order:-1;flex-wrap:nowrap}
+ .ops-action-bar-right:has(.ops-locked-reason){flex-wrap:wrap}
+ .ops-action-bar-more-btn{flex:none;gap:6px;white-space:nowrap}
+ .ops-action-bar-extra-items{display:none}
+ .ops-action-bar-extra.open .ops-action-bar-extra-items{display:flex;position:absolute;bottom:calc(100% + 8px);left:0;min-width:230px;flex-direction:column;gap:6px;padding:8px;background:#fff;border:1px solid var(--ops-line);border-radius:10px;box-shadow:var(--ops-popover-shadow);z-index:var(--ops-z-drawer)}
+ .ops-action-bar-extra-items>.ops-btn{width:100%;justify-content:flex-start;white-space:nowrap}
 }
+/* Desktop and tablet: no toggle, the secondary actions sit inline as before. */
+@media(min-width:761px){.ops-action-bar-more-btn{display:none}.ops-action-bar-extra,.ops-action-bar-extra-items{display:contents}}
 
 /* The step heading and its intro read as one block. */
 .ops-workspace-redesign[data-stage="1"] .ops-stage-guide{margin-bottom:-10px}

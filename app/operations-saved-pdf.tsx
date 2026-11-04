@@ -1,11 +1,27 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Check, Download, FileText, RefreshCw } from 'lucide-react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { endpoint } from './operations-common';
 import { DocumentPage } from './operations-document-editor';
 import './operations-saved-pdf.css';
 import { useProposalDetailCheck, ProposalCheckButton, ProposalCheckResults, type ProposalCheckInputs, type ProposalCheckState } from './operations-proposal-checks';
+
+/** True at phone width (≤760px). Starts false so the server render and first paint match the desktop layout. */
+const PHONE_QUERY='(max-width:760px)';
+const subscribePhone=(change:()=>void)=>{const query=window.matchMedia(PHONE_QUERY);query.addEventListener('change',change);return()=>query.removeEventListener('change',change);};
+export function usePhoneWidth(){
+  return useSyncExternalStore(subscribePhone,()=>window.matchMedia(PHONE_QUERY).matches,()=>false);
+}
+
+/** Phones: a sent proposal is final, so show a short file card instead of drawing every page with pdf.js. */
+export function SentProposalCard({src,wordHref,filename,pageCount}:{src:string;wordHref:string;filename:string;pageCount?:number}){
+  return <div className="ops-sent-file-card" role="region" aria-label="Sent proposal file">
+    <div className="ops-sent-file-name"><FileText size={22} aria-hidden="true"/><span><b>{filename}.pdf</b><small>{pageCount?pageCount+' pages · ':''}Sent to the agent</small></span></div>
+    <a className="ops-btn primary" href={src} target="_blank" rel="noreferrer">Open PDF</a>
+    <a className="ops-btn secondary" href={wordHref}><Download size={15}/>Word</a>
+  </div>;
+}
 
 export default function SavedProposalPdf({src,title,legacy=false,onCurrentLayout,checkInput,check,hideChecker=false,hideDownload=false}:{checkInput?:ProposalCheckInputs;check?:ProposalCheckState;hideChecker?:boolean;hideDownload?:boolean;src:string;title:string;legacy?:boolean;onCurrentLayout?:()=>void}){
   const [pdf,setPdf]=useState<PDFDocumentProxy|null>(null),[ready,setReady]=useState(false),[error,setError]=useState(''),[retry,setRetry]=useState(0),[zoom,setZoom]=useState('fit'),[width,setWidth]=useState(760);

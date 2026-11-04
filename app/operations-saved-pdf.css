@@ -10,3 +10,10 @@
 .ops-saved-pdf-legacy b{display:block;font-size:12px;margin-bottom:3px}
 .ops-saved-pdf-legacy .ops-btn{font-size:11px;min-height:32px;padding:6px 10px;border-color:#e7c18c;background:#fff;color:#8a591a}
 @media(max-width:760px){.ops-saved-pdf-toolbar{padding:12px}.ops-saved-pdf .ops-saved-pdf-pages{height:65dvh;min-height:380px}}
+
+.ops-sent-file-card{display:grid;grid-template-columns:1fr auto;gap:10px;padding:18px 16px;background:#fafcff}
+.ops-sent-file-name{grid-column:1/-1;display:flex;align-items:center;gap:12px;min-width:0;color:#3d5c83}
+.ops-sent-file-name span{display:flex;flex-direction:column;min-width:0}
+.ops-sent-file-name b{font-size:14px;color:var(--ops-ink);overflow-wrap:anywhere}
+.ops-sent-file-name small{font-size:12px;color:var(--ops-muted)}
+.ops-sent-file-card .ops-btn{min-height:44px;justify-content:center}

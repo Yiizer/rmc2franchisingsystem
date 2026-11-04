@@ -132,3 +132,40 @@ The full specialist reviews were deferred. Run all of them together over everyth
 - [ ] The old Cloudflare staging copy (`scripts/start-staging.ps1` plus the tunnel) is replaced by the Vercel test version, so stop it.
 - [ ] Older browser test scripts have stale selectors or need missing data, and fail the same way on `main`. Update or retire them.
 - [ ] Next session: start by reading this file, `TEAM_DECISIONS.md` and `MIGRATION_PLAN.md`.
+
+## 5. Mobile fixes (noted 2026-11-02, build on Thursday 2026-11-05)
+
+The three layout fixes apply only at phone width (760px and below). The desktop layout does not change.
+
+- [ ] **Before building anything, check every item properly and question it.**
+  - Open each problem in the app at phone width and confirm it happens the way it's described here. Take screenshots.
+  - Question each plan and its assumptions, such as what "not the go" meant for the checker. Bring the questions to the product owner before writing code.
+  - After each fix, check it again in the app with the same screens. Don't mark an item done until that check passes.
+
+- [ ] **Sent proposals: no inline PDF on phones.**
+  - Now: the review step (`app/operations-workspace.tsx`, the `ops-ws-package` card) always shows `SavedProposalPdf`, which downloads the PDF and draws every page with pdf.js. On a phone this is slow, uses data, and the pages are too small to read.
+  - Plan: once the proposal is sent, phones get a short file card instead: file name, page count, a full-width **Open PDF** button (opens in the phone's own viewer) and **Word**. Use a `matchMedia('(max-width:760px)')` check so pdf.js never loads on phones. The **Email to agent** tab stays as it is.
+  - Decided 2026-11-02: only sent proposals. Drafts and records awaiting approval keep the inline preview on phones.
+- [ ] **"Check proposal details" at the top of the document card.**
+  - Now: on phones the card header stacks the tabs, then Open PDF / Word / Check proposal details on two rows. The check results then appear above the document and push it down.
+  - Plan:
+    - (a) Hide the checker once the proposal is sent, because nothing can be changed by then.
+    - (b) Before sending, phones show one header row: tabs, Open PDF and Word. The checker moves into its own card **below** the document. Its results open in that card, not above the PDF.
+  - Confirm with the product owner that this is what "not the go" meant.
+- [ ] **Bottom bar overflows for supervisors.**
+  - Now: `ActionBar` (`app/operations-action-bar.tsx`) puts the handling controls and Save on the left. When a record is awaiting approval, the right side holds Return for correction, Edit before approval and Approve. At 375px this wraps to 3–4 rows and covers much of the screen. The page padding grows to match (`--ops-action-bar-h`).
+  - Plan: on phones, keep at most two rows:
+    - row 1: the main action at full width (Approve & send), with a **⋯ More** button beside it. More opens the existing `.ops-more` menu, which holds Return for correction and Edit before approval.
+    - row 2: the handling control and Save, compact.
+  - Use the same pattern for the admin Not received… / Confirm sent… pair.
+- [ ] Verify at 360px and 390px wide:
+  - supervisor approving a record;
+  - staff member on a draft;
+  - a sent record.
+- [ ] **Protection shows "31d left" right after approval.** This is not a phone-only bug.
+  - Cause: the workspace freezes the current time when the page opens (`renderNow`, `app/operations-workspace.tsx:37`). Protection starts later, at approval, so its end date is a little more than 30 days after that frozen time. `protectionDaysLeft` (`lib/operations/client-rules.ts:28`) rounds up with `Math.ceil`, which turns this into 31.
+  - Fix:
+    - Refresh `renderNow` whenever the record changes.
+    - Cap `protectionDaysLeft` at `CLIENT_PROTECTION_DAYS`, so a small difference between the phone's clock and the server's can never show 31 either.
+    - Add a unit test: protection started 1 minute after "now" shows 30.
+- [ ] Update `scripts/test-workspace-compact-browser.mjs`. It clicks the checker inside `.ops-saved-pdf-toolbar`, which this change moves.
