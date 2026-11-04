@@ -47,7 +47,7 @@ export default function RequestsPage({ now, onOpen }: { now: number; onOpen: (re
           {m.state === 'new' && <button className="ops-btn primary" disabled={!!busy} onClick={() => void importForm(m, i)}>{busy === m.id ? 'Creating…' : 'Create inquiry'}</button>}</div>)
           : <small>No Excel or PDF form attached.</small>}</div>
         <div className="ops-request-foot">{m.state === 'new' ? <button className="ops-btn" disabled={!!busy} onClick={() => void dismiss(m)}><X size={14} />Dismiss</button>
-          : m.state === 'imported' ? <span className="ops-badge green">{m.handledBy === 'email-intake' ? 'Imported automatically as ' : 'Imported as '}{m.inquiryId}</span> : <span className="ops-badge">Dismissed</span>}</div>
+          : m.state === 'imported' ? <span className="ops-badge green">{m.handledBy === 'email-intake' ? 'Imported automatically as ' : 'Imported as '}{m.inquiryId}</span> : <span className="ops-badge">{m.handledBy === 'email-filter' ? 'Skipped automatically · newsletter or notification' : 'Dismissed'}</span>}</div>
       </article>)}</div>}</section>
   </>;
 }

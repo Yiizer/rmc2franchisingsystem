@@ -85,8 +85,11 @@ export async function checkInbox(): Promise<{ added: number; imported: number; c
         replyTo: replyTo.toLowerCase(), subject: (parsed.subject || '(no subject)').slice(0, 300), snippet: (parsed.text || '').replace(/\s+/g, ' ').trim().slice(0, 400),
         attachments, auth: { spf: authResult(authHeader, 'spf'), dkim: authResult(authHeader, 'dkim'), dmarc: authResult(authHeader, 'dmarc') }, state: 'new',
       };
+      // Newsletters and notifications (no-reply senders, mailing lists, bulk mail) with no form attached are never agent
+      // requests: they are recorded as skipped (still listed under All) instead of waiting in "To review".
+      if (!attachments.length && automatedEmail(record.from, parsed.headers)) Object.assign(record, { state: 'dismissed', handledBy: 'email-filter', handledAt: new Date().toISOString() });
       try {
-        const result = await db.run('INSERT INTO inbound_messages (id,message_id,received_at,state,data) VALUES (?,?,?,?,?) ON CONFLICT (message_id) DO NOTHING', id, messageId, record.receivedAt, 'new', jsonParam(record));
+        const result = await db.run('INSERT INTO inbound_messages (id,message_id,received_at,state,data) VALUES (?,?,?,?,?) ON CONFLICT (message_id) DO NOTHING', id, messageId, record.receivedAt, record.state, jsonParam(record));
         if (result.changes) added++; else { await deleteQuietly(...attachments.map(a => a.key)); continue; } // a parallel check stored it first
       } catch (error) { await deleteQuietly(...attachments.map(a => a.key)); throw error; }
       // Agents email their forms in: an Excel franchise form is imported straight away (the form reader rejects other
@@ -138,6 +141,12 @@ async function finish(id: string, record: InboundMessage) {
 }
 
 /** Creates an inquiry from one form attachment through the normal intake (client checks apply). */
+const AUTOMATED_SENDER = /^(?:no-?reply|do-?not-?reply|notifications?|newsletters?|news|marketing|updates|mailer-daemon|bounces?)(?:[+._-]|@)/i;
+/** A machine-sent email: a no-reply style sender, a mailing list (List-Unsubscribe / List-Id) or bulk precedence. */
+export function automatedEmail(from: string, headers: Map<string, unknown>) {
+  const precedence = String(headers.get('precedence') ?? '').toLowerCase();
+  return AUTOMATED_SENDER.test(from) || headers.has('list-unsubscribe') || headers.has('list-id') || ['bulk', 'list', 'junk'].includes(precedence);
+}
 export async function importInbound(user: Staff, id: string, index: number, automatic = false): Promise<InquiryRecord> {
   if (!automatic) requireStaff(user);
   const record = await claim(id, 'new', 'importing');

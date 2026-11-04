@@ -34,6 +34,7 @@ Sign-in passwords are in `test-results/online-credentials/CREDENTIALS.txt` (git-
 | Cedar Digital Services Inc. | Needs correction | Returned by Zeo with a note and a flag |
 | Harbor Point Hotel and Suites | Sent | Exact PDF emailed, 30-day protection, a progress report |
 | Silverline Trading Co. | Declined | Archives keep everything, with the reason |
+| Pacific Crest Builders Inc. | Sent, **Customized** | A customized proposal (one paragraph edited), approved and emailed |
 
 The IDs are in `test-results/demo-online/demo-records.json`.
 

@@ -142,17 +142,17 @@ The three layout fixes apply only at phone width (760px and below). The desktop 
   - Question each plan and its assumptions, such as what "not the go" meant for the checker. Bring the questions to the product owner before writing code.
   - After each fix, check it again in the app with the same screens. Don't mark an item done until that check passes.
 
-- [ ] **Sent proposals: no inline PDF on phones.**
+- [x] **Sent proposals: no inline PDF on phones.** Done 2026-11-04 (`SentProposalCard`, checked at 375px and desktop).
   - Now: the review step (`app/operations-workspace.tsx`, the `ops-ws-package` card) always shows `SavedProposalPdf`, which downloads the PDF and draws every page with pdf.js. On a phone this is slow, uses data, and the pages are too small to read.
   - Plan: once the proposal is sent, phones get a short file card instead: file name, page count, a full-width **Open PDF** button (opens in the phone's own viewer) and **Word**. Use a `matchMedia('(max-width:760px)')` check so pdf.js never loads on phones. The **Email to agent** tab stays as it is.
   - Decided 2026-11-02: only sent proposals. Drafts and records awaiting approval keep the inline preview on phones.
-- [ ] **"Check proposal details" at the top of the document card.**
+- [ ] **"Check proposal details" at the top of the document card.** (a) done 2026-11-04: hidden once sent. (b) still open: ask the PO first.
   - Now: on phones the card header stacks the tabs, then Open PDF / Word / Check proposal details on two rows. The check results then appear above the document and push it down.
   - Plan:
     - (a) Hide the checker once the proposal is sent, because nothing can be changed by then.
     - (b) Before sending, phones show one header row: tabs, Open PDF and Word. The checker moves into its own card **below** the document. Its results open in that card, not above the PDF.
   - Confirm with the product owner that this is what "not the go" meant.
-- [ ] **Bottom bar overflows for supervisors.**
+- [x] **Bottom bar overflows for supervisors.** Done 2026-11-04: one row, main action + More menu (checked at 375px and desktop).
   - Now: `ActionBar` (`app/operations-action-bar.tsx`) puts the handling controls and Save on the left. When a record is awaiting approval, the right side holds Return for correction, Edit before approval and Approve. At 375px this wraps to 3–4 rows and covers much of the screen. The page padding grows to match (`--ops-action-bar-h`).
   - Plan: on phones, keep at most two rows:
     - row 1: the main action at full width (Approve & send), with a **⋯ More** button beside it. More opens the existing `.ops-more` menu, which holds Return for correction and Edit before approval.
@@ -162,10 +162,21 @@ The three layout fixes apply only at phone width (760px and below). The desktop 
   - supervisor approving a record;
   - staff member on a draft;
   - a sent record.
-- [ ] **Protection shows "31d left" right after approval.** This is not a phone-only bug.
+- [x] **Protection shows "31d left" right after approval.** Done 2026-11-04: capped at 30 (`renderNow` refresh not done; the cap covers it). This is not a phone-only bug.
   - Cause: the workspace freezes the current time when the page opens (`renderNow`, `app/operations-workspace.tsx:37`). Protection starts later, at approval, so its end date is a little more than 30 days after that frozen time. `protectionDaysLeft` (`lib/operations/client-rules.ts:28`) rounds up with `Math.ceil`, which turns this into 31.
   - Fix:
     - Refresh `renderNow` whenever the record changes.
     - Cap `protectionDaysLeft` at `CLIENT_PROTECTION_DAYS`, so a small difference between the phone's clock and the server's can never show 31 either.
     - Add a unit test: protection started 1 minute after "now" shows 30.
 - [ ] Update `scripts/test-workspace-compact-browser.mjs`. It clicks the checker inside `.ops-saved-pdf-toolbar`, which this change moves.
+
+## 6. Demo prep (2026-11-04, client demo on 2026-11-05)
+
+- Online demo data: `scripts/demo-seed-online.mjs` (8 fictional clients, one per state) and `scripts/demo-check-online.mjs`
+  (Pacific Crest Builders, customized and sent). Run sheet: `DEMO_SCRIPT.md`. Forms to email live: `scripts/demo-email-forms.mjs`.
+- Verified online through the API: inbox check, Requests list, customized proposal to email, duplicate recheck, password change.
+- Still not clicked through in a browser online.
+- Demo-day mail caps on the preview: `RMC2_MAIL_CAP_PER_HOUR=30`, `RMC2_MAIL_CAP_PER_DAY=100` (staging only, max 60/200). Remove after the demo if wanted.
+- Requests: no-reply senders, mailing lists and bulk mail with no form attached are now skipped automatically (listed under All).
+- [ ] After the demo: revoke the Vercel Shareable Link; optionally rotate the demo passwords.
+- [ ] Gap: an agent email with details in the body and no attachment can't become an inquiry from Requests (staff must fill the blank form). Consider "Create inquiry from this email".
