@@ -1,5 +1,6 @@
 // Replaces the shared demo password on an online TEST database (Supabase Postgres) with a random password per account.
-// Usage: node --env-file=.env.supabase.test scripts/rotate-demo-passwords.mjs --project-ref <ref>
+// Usage: node --env-file=.env.supabase.test scripts/rotate-demo-passwords.mjs --project-ref <ref> [--easy]
+//   --easy  easy-to-type passwords (Word-Word-NN, about 30 bits) for a small trusted group; default is 24 random characters.
 //   --project-ref must match the project in RMC2_DATABASE_URL, so the script cannot hit another database by accident.
 // Writes the new passwords to test-results/online-credentials/CREDENTIALS.txt (git-ignored) and never prints them.
 // Every session and login-attempt record is cleared, so anyone signed in with the old password is signed out.
@@ -28,6 +29,11 @@ mkdirSync(outDir, { recursive: true });
 if (spawnSync('git', ['check-ignore', '-q', credFile], { cwd: root }).status !== 0) fail(credFile + ' is not git-ignored; refusing to write passwords there.');
 
 // Same format as passwordHash() in lib/operations/database.ts.
+// Easy passwords: two everyday words and a two-digit number, e.g. Sunny-River-42 (about 28 bits; login attempts are rate limited).
+const WORDS = ['Apple','Beach','Brave','Bright','Cloud','Coral','Daisy','Eagle','Field','Flame','Forest','Garden','Gold','Happy','Harbor','Honey','Island','Jolly','Lemon','Lucky','Mango','Maple','Meadow','Moon','Ocean','Olive','Pearl','Pine','Quiet','Rain','River','Rose','Silver','Sky','Snow','Spring','Star','Stone','Summer','Sunny','Swift','Tiger','Valley','Wave','Willow','Wind','Winter','Zebra'];
+const pick = () => WORDS[randomBytes(2).readUInt16BE(0) % WORDS.length];
+const easyPassword = () => { let a = pick(), b = pick(); while (b === a) b = pick(); return a + '-' + b + '-' + String(10 + (randomBytes(1)[0] % 90)); };
+const easy = args.includes('--easy');
 const hashPassword = password => { const salt = randomBytes(16).toString('hex'); return salt + ':' + scryptSync(password, salt, 64).toString('hex'); };
 
 const sql = postgres(url, { prepare: false, ssl: 'require', max: 1, connect_timeout: 15, onnotice: () => {} });
@@ -37,7 +43,7 @@ try {
     const users = await tx`SELECT id, data::text AS data FROM rmc2.users ORDER BY id`;
     if (!users.length) fail('the database has no users.');
     for (const row of users) {
-      const user = JSON.parse(row.data), password = randomBytes(18).toString('base64url');
+      const user = JSON.parse(row.data), password = easy ? easyPassword() : randomBytes(18).toString('base64url');
       await tx`UPDATE rmc2.users SET password = ${hashPassword(password)} WHERE id = ${row.id}`;
       lines.push(`${user.email}   username: ${user.username}   role: ${user.role}   password: ${password}`);
     }
