@@ -50,9 +50,7 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
   - the Head re-enters their password for role and deactivation changes;
   - temporary-password sessions cannot read Requests;
   - an owner picker on manual import.
-- [ ] **Pre-existing, needs a PO decision:**
-  - The case: agent B is turned away while A protects a client. A's protection expires and a supervisor approves agent C. A later recheck now lets B's inquiry become active too.
-  - The rule ("oldest request wins") and the failing check in `scripts/test-client-protection.mjs` both date from commit bed125e, and they contradict each other.
+- [x] **Rule (a), PO decision 2026-11-06 (`4dbcce6`):** once a supervisor approves a new agent after expiry, older held requests stay on hold when rechecked.
 
 **Phase 3 (done, commit `f963db5`, live on test 2026-11-06):**
 - **Division table:**
