@@ -7,6 +7,16 @@ import {synchronizeInquiryIndex} from './inquiry-index';
 import {jsonRaw,jsonText,rowOrder} from './sql-dialect';
 import {directoryGroups,statusGroup,statusStyles,manilaToday,displayDate,type DirectoryClient,type ClientListing,type ClientDetail,type DirectoryEdit,type RegisterEntry,type StatusKey} from './directory-model';
 import type {InquiryRecord,Staff} from './types';
+import {classifyBranch,categoryForSheet,CATEGORIES,UNASSIGNED,type DivisionTable} from './divisions';
+import {getDivisionTable} from './division-store';
+import {DIVISIONS} from './permissions';
+/** Division, branch (today's table) and categories for a directory client; the original branch text stays in `branch`. */
+function place(table:DivisionTable,branchText:string,sheets:string[],liveDivision?:string){
+ const c=classifyBranch(branchText,table),known=liveDivision&&(DIVISIONS as readonly string[]).includes(liveDivision)?liveDivision:'';
+ const division=known||c.division,branchName=c.division===division?c.branch:null;
+ const categories=[...new Set(sheets.filter(Boolean).map(categoryForSheet))];
+ return {division,branchName,categories,...(division===UNASSIGNED||['conflict','unknown'].includes(c.basis)||c.labelMismatch||c.unknownPlaces?.length?{branchUnclear:true}:{})};
+}
 export const editableDirectoryFields=['status','remarks','agent','branch','plan','account'] as const;
 const EDIT_COLUMNS='id,historical_id,field,old_value,new_value,actor,at,reason';
 async function editsFor(id:string){return await db.all(`SELECT ${EDIT_COLUMNS} FROM historical_edits WHERE historical_id=? ORDER BY ${rowOrder(db)}`,id) as DirectoryEdit[];}
@@ -38,7 +48,8 @@ async function collection():Promise<Collection>{
  // Reads only: runs inside a snapshot, so the index was synchronised by the caller. A queued projection means the summaries lag
  // the version stamps, so such a result is served but never cached.
  const original=await directoryRecords(),projecting=!!await db.get('SELECT id FROM inquiry_index_pending LIMIT 1');
- const stamp=original.stamp+JSON.stringify(await db.all('SELECT scope,version FROM workspace_versions ORDER BY scope'))+JSON.stringify(await db.get(`SELECT count(*) AS n,max(${rowOrder(db)}) AS "last" FROM historical_reviews`))+JSON.stringify(await db.get(`SELECT count(*) AS n,max(${rowOrder(db)}) AS "last" FROM historical_edits`))+Math.floor(Date.now()/60000);
+ const table=await getDivisionTable();
+ const stamp=JSON.stringify(table.updatedAt||'')+original.stamp+JSON.stringify(await db.all('SELECT scope,version FROM workspace_versions ORDER BY scope'))+JSON.stringify(await db.get(`SELECT count(*) AS n,max(${rowOrder(db)}) AS "last" FROM historical_reviews`))+JSON.stringify(await db.get(`SELECT count(*) AS n,max(${rowOrder(db)}) AS "last" FROM historical_edits`))+Math.floor(Date.now()/60000);
  if(cache?.stamp===stamp&&!projecting)return cache.value;
  const edits=await db.all(`SELECT ${EDIT_COLUMNS} FROM historical_edits ORDER BY ${rowOrder(db)}`) as DirectoryEdit[],byEdit=new Map<string,DirectoryEdit[]>();
  for(const edit of edits)byEdit.set(edit.historical_id,[...(byEdit.get(edit.historical_id)||[]),edit]);
@@ -46,7 +57,7 @@ async function collection():Promise<Collection>{
  for(const r of original.items){const key='historical:'+((r as RegisterEntry&{account_key?:string}).account_key||normalizeClient(r.account)||r.id);idKey.set(r.id,key);buckets.set(key,[...(buckets.get(key)||[]),overlay(r,byEdit.get(r.id)||[])]);}
  const clients=new Map<string,DirectoryClient>(),members=new Map<string,string[]>(),live=new Map<string,ClientDetail['inquiries']>();
  const distinctAgents=(names:string[])=>[...new Map(names.filter(Boolean).map(n=>[normalizeClient(n),n])).values()];
- for(const [key,rows] of buckets){rows.sort((a,b)=>(b.dateISO||'').localeCompare(a.dateISO||'')||b.source_row-a.source_row||a.id.localeCompare(b.id));const latest=rows[0];members.set(key,rows.map(r=>r.id));clients.set(key,{...latest,key,source:'historical',recordCount:rows.length,agents:distinctAgents(rows.map(r=>r.agent)),group:statusGroup(latest.statusKey),statusLabel:statusStyles[latest.statusKey].label,protectionDays:null,historicalIds:rows.map(r=>r.id)});}
+ for(const [key,rows] of buckets){rows.sort((a,b)=>(b.dateISO||'').localeCompare(a.dateISO||'')||b.source_row-a.source_row||a.id.localeCompare(b.id));const latest=rows[0];members.set(key,rows.map(r=>r.id));clients.set(key,{...latest,key,source:'historical',recordCount:rows.length,agents:distinctAgents(rows.map(r=>r.agent)),group:statusGroup(latest.statusKey),statusLabel:statusStyles[latest.statusKey].label,protectionDays:null,historicalIds:rows.map(r=>r.id),...place(table,latest.branch,rows.map(r=>r.sheet))});}
  const indexed=await db.all(`SELECT s.data,${jsonRaw(db,'i.data','fields')} AS fields,${jsonText(db,'i.data','notes')} AS notes FROM inquiry_summaries s JOIN inquiries i ON i.id=s.id`) as {data:string;fields:string;notes:string}[];
  const records=indexed.map(r=>({...JSON.parse(r.data),fields:JSON.parse(r.fields),notes:r.notes||''})) as InquiryRecord[];const states=clientStates(records);
  const reviews=await db.all(`SELECT inquiry_id,historical_id,identity,outcome FROM historical_reviews ORDER BY ${rowOrder(db)}`) as {inquiry_id:string;historical_id:string;identity:string;outcome:string}[];
@@ -60,27 +71,30 @@ async function collection():Promise<Collection>{
   const key=confirmed.length===1?confirmed[0]:'live:'+accountKey,history=clients.get(key),histKey='historical:'+accountKey;
   const historicalRows=buckets.get(histKey)||[];
   const possible=confirmed.length!==1&&historicalRows.some(h=>rows.some(item=>{const v=reviewMap.get(item.id+'|'+h.id);return !v||v.identity!==historicalIdentity(item)||v.outcome!=='distinct';}));
-  const dateISO=manilaToday(new Date(r.updatedAt)),age=Math.max(0,Math.round((Date.parse(manilaToday())-Date.parse(dateISO))/86400000));
+  const dateISO=manilaToday(new Date((r as InquiryRecord&{lastActivityAt?:string}).lastActivityAt||r.updatedAt)),age=Math.max(0,Math.round((Date.parse(manilaToday())-Date.parse(dateISO))/86400000));
   const group=r.closure||state?.state==='archived'?'lost':state?.state==='duplicate'||state?.state==='identify'?'review':r.status==='Sent'?'won':'active';
   const statusLabel=r.closure?(r.closure.kind==='declined'?'Declined':'Archived'):state?.state==='archived'?'Archived':state?.state==='duplicate'?'Duplicate on hold':state?.state==='identify'?'Client check needed':r.status;
-  clients.set(key,{id:r.id,account:r.fields.company||'Unnamed client',agent:r.fields.agentName||'',branch:r.fields.branch||r.fields.division||'',status:r.status,sheet:history?.sheet||'',source_row:0,plan:r.fields.requestedPlan||'',remarks:r.notes||'',serial:'',recordedDate:displayDate(dateISO),recordedLabel:'Last activity',dateISO,dateIssue:'',savedAge:'',age,statusKey:group==='won'?'sent':group==='lost'?'expired':group==='review'?'review':'processing',statusEvidence:'Current inquiry processing status',fields:history?.fields||[],key,source:history?'both':'live',recordCount:rows.length+(history?.recordCount||0),agents:distinctAgents([...rows.map(x=>x.fields.agentName),...(history?.agents||[])]),group,statusLabel,protectionDays:state?.protection?protectionDaysLeft(state.protection,Date.now()):null,inquiryId:r.id,possibleMatch:possible?r.id:undefined,historicalIds:members.get(key)||[]});
+  clients.set(key,{id:r.id,account:r.fields.company||'Unnamed client',agent:r.fields.agentName||'',branch:r.fields.branch||r.fields.division||'',status:r.status,sheet:history?.sheet||'',source_row:0,plan:r.fields.requestedPlan||'',remarks:r.notes||'',serial:'',recordedDate:displayDate(dateISO),recordedLabel:'Last activity',dateISO,dateIssue:'',savedAge:'',age,statusKey:group==='won'?'sent':group==='lost'?'expired':group==='review'?'review':'processing',statusEvidence:'Current inquiry processing status',fields:history?.fields||[],key,source:history?'both':'live',recordCount:rows.length+(history?.recordCount||0),agents:distinctAgents([...rows.map(x=>x.fields.agentName),...(history?.agents||[])]),group,statusLabel,protectionDays:state?.protection?protectionDaysLeft(state.protection,Date.now()):null,inquiryId:r.id,possibleMatch:possible?r.id:undefined,historicalIds:members.get(key)||[],...(()=>{const p=place(table,r.fields.branch||'',[],r.fields.division);return {...p,categories:[...new Set([...(history?.categories||[]),'Current inquiries'])]};})()});
   live.set(key,rows.map(x=>({id:x.id,account:x.fields.company,agent:x.fields.agentName,status:x.status,at:x.updatedAt})));
   if(possible){const h=clients.get(histKey);if(h)h.possibleMatch=r.id;}
  }
  const value={projected:new Map([...buckets.values()].flat().map(r=>[r.id,r])),clients:[...clients.values()],members,live,sheets:original.sheets};if(!projecting)cache={stamp,value};return value;
 }
 export async function clientDirectory(params:URLSearchParams):Promise<ClientListing>{
- const q=z.object({search:z.string().max(200).default(''),source:z.enum(['all','live','historical']).default('all'),group:z.enum(['','active','won','lost','notStarted','review']).default(''),sheet:z.string().max(100).default(''),agent:z.string().max(500).default(''),branch:z.string().max(500).default(''),sort:z.enum(['account','date-new','date-old','age-old','age-new']).default('account'),page:z.coerce.number().int().min(1).max(100000).default(1)}).parse(Object.fromEntries(params));
+ const q=z.object({search:z.string().max(200).default(''),source:z.enum(['all','live','historical']).default('all'),group:z.enum(['','active','won','lost','notStarted','review']).default(''),sheet:z.string().max(100).default(''),agent:z.string().max(500).default(''),branch:z.string().max(500).default(''),division:z.string().max(40).default(''),category:z.string().max(60).default(''),sort:z.enum(['account','date-new','date-old','age-old','age-new']).default('date-new'),page:z.coerce.number().int().min(1).max(100000).default(1)}).parse(Object.fromEntries(params));
  await synchronizeInquiryIndex();
  const all=await db.snapshot(collection),term=q.search.toLowerCase();
  const byId=all.projected;
  const scoped=all.clients.filter(c=>(q.source==='all'||c.source===q.source||c.source==='both')&&(!q.sheet||c.historicalIds.some(id=>byId.get(id)?.sheet===q.sheet)));
- const filtered=scoped.filter(c=>(!q.agent||c.agents.includes(q.agent))&&(!q.branch||c.branch===q.branch)&&(!term||[c.account,c.agents.join(' '),c.branch,c.remarks,c.plan,c.serial,...c.historicalIds.map(id=>{const r=byId.get(id);return r?[r.account,r.agent,r.serial,r.remarks,r.plan].join(' '):'';})].join(' ').toLowerCase().includes(term)));
+ const passes=(c:DirectoryClient,skip:''|'division'|'category'='')=>(!q.agent||c.agents.includes(q.agent))&&(!q.branch||c.branch===q.branch)&&(skip==='division'||!q.division||c.division===q.division)&&(skip==='category'||!q.category||c.categories.includes(q.category))&&(!term||[c.account,c.agents.join(' '),c.branch,c.remarks,c.plan,c.serial,...c.historicalIds.map(id=>{const r=byId.get(id);return r?[r.account,r.agent,r.serial,r.remarks,r.plan].join(' '):'';})].join(' ').toLowerCase().includes(term));
+ const filtered=scoped.filter(c=>passes(c));
  const counts=(Object.keys(directoryGroups) as DirectoryClient['group'][]).map(key=>({key,count:filtered.filter(c=>c.group===key).length}));
  const matches=filtered.filter(c=>!q.group||c.group===q.group).sort((a,b)=>{if(q.sort==='account')return a.account.localeCompare(b.account)||a.key.localeCompare(b.key);const av=q.sort.startsWith('age')?a.age:a.dateISO?Date.parse(a.dateISO):null,bv=q.sort.startsWith('age')?b.age:b.dateISO?Date.parse(b.dateISO):null;return av===null||bv===null?av===bv?a.key.localeCompare(b.key):av===null?1:-1:(av-bv)*(q.sort==='date-new'||q.sort==='age-old'?-1:1)||a.key.localeCompare(b.key);});
  const pages=Math.max(1,Math.ceil(matches.length/50)),page=Math.min(q.page,pages),columns=new Map<string,string>();
  for(const c of scoped)for(const id of c.historicalIds){const r=byId.get(id);if(r&&(!q.sheet||r.sheet===q.sheet))for(const f of r.fields)columns.set(f.key,f.label);}
- return {items:matches.slice((page-1)*50,page*50).map(c=>q.sheet?{...c,fields:c.historicalIds.map(id=>byId.get(id)).filter((r):r is RegisterEntry=>!!r&&r.sheet===q.sheet).sort((a,b)=>(b.dateISO||'').localeCompare(a.dateISO||'')||b.source_row-a.source_row)[0]?.fields||c.fields}:c),total:matches.length,page,pages,pageSize:50,counts,sheets:all.sheets,agents:[...new Set(scoped.flatMap(c=>c.agents))].sort(),branches:[...new Set(scoped.map(c=>c.branch).filter(Boolean))].sort(),columns:[...columns].map(([key,label])=>({key,label})),asOf:manilaToday()};
+ const tally=(names:readonly string[],skip:'division'|'category',pick:(c:DirectoryClient)=>string[])=>{const pool=scoped.filter(c=>passes(c,skip));return names.map(name=>({name,count:pool.filter(c=>pick(c).includes(name)).length}));};
+ const divisionCounts=tally([...DIVISIONS,UNASSIGNED],'division',c=>[c.division]),categoryCounts=tally([...CATEGORIES,'Current inquiries'],'category',c=>c.categories);
+ return {items:matches.slice((page-1)*50,page*50).map(c=>q.sheet?{...c,fields:c.historicalIds.map(id=>byId.get(id)).filter((r):r is RegisterEntry=>!!r&&r.sheet===q.sheet).sort((a,b)=>(b.dateISO||'').localeCompare(a.dateISO||'')||b.source_row-a.source_row)[0]?.fields||c.fields}:c),total:matches.length,page,pages,pageSize:50,divisionCounts,categoryCounts,counts,sheets:all.sheets,agents:[...new Set(scoped.flatMap(c=>c.agents))].sort(),branches:[...new Set(scoped.map(c=>c.branch).filter(Boolean))].sort(),columns:[...columns].map(([key,label])=>({key,label})),asOf:manilaToday()};
 }
 export async function directoryClient(key:string):Promise<ClientDetail>{
  await synchronizeInquiryIndex();

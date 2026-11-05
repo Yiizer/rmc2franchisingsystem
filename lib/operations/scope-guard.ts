@@ -1,0 +1,24 @@
+import { AppError } from './errors';
+import { isOwnerScoped } from './permissions';
+import type { Staff } from './types';
+
+// Division Heads and SOAs may call ONLY these routes (whitelist). Everything else, including every route added in the future, answers 403 for them
+// without touching any data. The route handler calls assertOwnerScopedRoute right after sign-in, before any lookup.
+//   GET   bootstrap | sample-form | pdf-worker | my-clients | my-clients/:id | my-clients/:id/proposal | my-clients/:id/report/:reportId
+//   POST  logout | account-settings | notifications | intake | my-clients/:id/progress-report
+const segment=(value:string|undefined)=>!!value&&value.length<=200;
+export function ownerRouteAllowed(method:'GET'|'POST',route:string[]):boolean{
+  const [a,b,c,d]=route;
+  if(method==='GET'){
+    if(route.length===1)return ['bootstrap','sample-form','pdf-worker','my-clients'].includes(a);
+    if(a!=='my-clients'||!segment(b))return false;
+    if(route.length===2)return true;
+    if(route.length===3)return c==='proposal';
+    return route.length===4&&c==='report'&&segment(d);
+  }
+  if(route.length===1)return ['logout','account-settings','notifications','intake'].includes(a);
+  return route.length===3&&a==='my-clients'&&segment(b)&&c==='progress-report';
+}
+export function assertOwnerScopedRoute(user:Pick<Staff,'role'>,method:'GET'|'POST',route:string[]){
+  if(isOwnerScoped(user)&&!ownerRouteAllowed(method,route))throw new AppError('Your account cannot use this part of the workspace.',403);
+}

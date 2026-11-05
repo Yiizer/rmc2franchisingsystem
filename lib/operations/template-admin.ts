@@ -8,9 +8,10 @@ import { MIME, deleteQuietly, files, putContentAddressed } from './file-store';
 import { pdfFromDocx } from './document-renderer';
 import { securityEvent } from './accounts';
 import type { CatalogTemplate, Staff } from './types';
+import { canManageTemplates } from './permissions';
 
 const W='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-function admin(user:Staff){if(user.role!=='Admin')throw new AppError('Only administrators can manage proposal templates.',403);}
+function admin(user:Staff){if(!canManageTemplates(user))throw new AppError('Only the Head can manage proposal templates.',403);}
 type StagedTemplate={template:CatalogTemplate;expectedHash:string|null;pdf:string;pages:number};
 const metadata=z.object({templateId:z.string().max(100).default(''),expectedHash:z.string().max(64).default(''),family:z.string().trim().min(2).max(100),variant:z.string().trim().min(2).max(100),sector:z.enum(['Government','All']),annualOnly:z.enum(['true','false']),warnings:z.string().max(5000).default('')});
 export async function stageTemplate(user:Staff,form:FormData){

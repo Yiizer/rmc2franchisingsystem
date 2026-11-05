@@ -1,6 +1,10 @@
 import {clientDirectory,directoryClient,directoryRecord,editDirectoryRecord} from '@/lib/operations/directory-clients';
 import { directory, historicalDetail, historicalMatches, reviewHistorical, withHistoricalHold } from '@/lib/operations/historical';
-import { authenticate, createAccount, updateOwnAccount } from '@/lib/operations/accounts';
+import { authenticate, createAccount, resetPassword, unlockAccount, updateAccount, updateOwnAccount } from '@/lib/operations/accounts';
+import { assertOwnerScopedRoute } from '@/lib/operations/scope-guard';
+import { canManageTemplates, isOwnerScoped } from '@/lib/operations/permissions';
+import { listOwnerClients, ownerBootstrap, ownerClient, ownerIntakeResult, ownerProposalFile, ownerReportFile } from '@/lib/operations/owner-view';
+import { setInquiryOwner } from '@/lib/operations/owners';
 import { declineInquiry, transferWithBor, decideAgentTransfer, requestExpiredTransfer } from '@/lib/operations/registration-actions';
 import { beginSupervisorEdit, cancelSupervisorEdit } from '@/lib/operations/supervisor-edit';
 import { stageTemplate, publishTemplate, setTemplateActive, templateStage } from '@/lib/operations/template-admin';
@@ -9,7 +13,7 @@ import { checkInbox, claimInboxCheck, runClaimedInboxCheck, cronAllowed, dismiss
 import { chosen } from '@/lib/operations/service';
 import { NextRequest, NextResponse, after } from 'next/server';
 import { clientStates } from '@/lib/operations/client-rules';
-import { addProgressReport, reviewClientRegistration } from '@/lib/operations/client-service';
+import { addProgressReport, decideProgressReport, reviewClientRegistration } from '@/lib/operations/client-service';
 import { privateFile, logFileAccess } from '@/lib/operations/file-privacy';
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -32,6 +36,7 @@ import { packageRenderers } from '@/lib/operations/package-rendering';
 import { inquiryDetails, workspaceView } from '@/lib/operations/workspace-query';
 import path from 'node:path';
 import type { Notice, Staff } from '@/lib/operations/types';
+import { readDivisionTable, saveDivisionTable } from '@/lib/operations/division-store';
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 type Context={params:Promise<{path?:string[]}>};
@@ -44,24 +49,37 @@ async function staff(request:NextRequest):Promise<Staff> {
 function response(data:unknown,status=200){return NextResponse.json(data,{status,headers:{'Cache-Control':'no-store'}});}
 function errorResponse(error:unknown){if(error instanceof ZodError)return response({error:error.issues.map(i=>i.path.join('.')+': '+i.message).join('; ')},400);if(isStorageError(error))return response({error:error.message},error.status);if(isAppError(error)){if(error.status>=500){console.error('Operations service error',error);return response({error:'We could not complete this request. Please try again. If it continues, contact your administrator.'},error.status);}return response({error:error.message},error.status);}console.error('Operations error',error);return response({error:'We could not complete this request. Please try again. If it continues, contact your administrator.'},500);}
 function fileResponse(bytes:Buffer,mime:string,name:string,attachment=true) {return new NextResponse(new Uint8Array(bytes),{headers:{'Content-Type':mime,'Content-Disposition':`${attachment?'attachment':'inline'}; filename="${name.replace(/[^a-zA-Z0-9_. -]/g,'_')}"`,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Cross-Origin-Resource-Policy':'same-origin'}});}
+/** Division Head / SOA reads. The route was already checked against the whitelist; returns undefined for the two static routes the normal handler serves. */
+async function ownerGet(request:NextRequest,route:string[],user:Staff):Promise<NextResponse|undefined>{
+  if(route[0]==='bootstrap')return response(await ownerBootstrap(user));
+  if(user.mustChangePassword)throw new AppError('Set your own password in Settings to activate your account.',403);
+  if(route[0]!=='my-clients')return undefined;
+  if(route.length===1)return response({clients:await listOwnerClients(user)});
+  if(route.length===2)return response({client:await ownerClient(user,route[1])});
+  if(route[2]==='proposal'){const file=await ownerProposalFile(user,route[1]);return fileResponse(await privateFile(user,route[1],'owner-proposal',file.storage),'application/pdf',file.name,request.nextUrl.searchParams.get('download')==='1');}
+  const file=await ownerReportFile(user,route[1],route[3]);return fileResponse(await privateFile(user,route[1],'owner-progress-report',file.attachment.storage),file.attachment.mime,file.attachment.filename);
+}
 export async function GET(request:NextRequest,context:Context){try{
   await ensureReady();
   const route=(await context.params).path||[];
   if(route[0]==='login-options')return response({users:[]});
   if(route[0]==='inbound'&&route[1]==='cron'){if(!cronAllowed(request.headers.get('authorization')))throw new AppError('Not allowed.',401);return response(await checkInbox());}
   const user=await staff(request);
+  // Division Heads / SOAs: whitelist first, before any lookup.
+  if(isOwnerScoped(user)){assertOwnerScopedRoute(user,'GET',route);const scoped=await ownerGet(request,route,user);if(scoped)return scoped;}
   if(route[0]==='inbound'&&!route[1])return response(await listInbound(user));
   if(route[0]==='inbound'&&route[1]&&route[2]==='attachment'){const file=await inboundAttachment(user,route[1],Number(route[3]));return fileResponse(file.bytes,file.type,file.name);}
   if(route[0]==='workspace'){const checking=await claimInboxCheck();if(checking)after(runClaimedInboxCheck);const view=await workspaceView(user,request.nextUrl.searchParams);return response(checking?{...view,inboxChecking:true}:view);}
   if(user.mustChangePassword){if(route[0]!=='bootstrap')throw new AppError('Set your own password in Settings to activate your account.',403);return response({user,users:[user],inquiries:[],clientStates:{},packageRenderers:{},activity:[],templates:[],notifications:[],integrations:{database:'',gmail:'',ai:'',documents:''},mail:mailStatus()});}
 
   if(route[0]==='bootstrap'){await recoverStuckMail();const snap=await db.snapshot(async()=>{const notices=(await db.all('SELECT data FROM notifications') as {data:string}[]).map(r=>JSON.parse(r.data) as Notice).filter(n=>n.recipientIds.includes(user.id)).sort((a,b)=>b.at.localeCompare(a.at));return {notices,records:await inquiries(),users:await allUsers(),activity:await activeInquiryActivity(),templates:await catalog()};});const records=snap.records;return response({user,users:snap.users,inquiries:records,clientStates:clientStates(records),packageRenderers:await packageRenderers(records),activity:snap.activity,templates:snap.templates.map(({file,text,...t})=>({...t,text,file:''})),notifications:snap.notices,integrations:{database:databaseLabel(),gmail:'Local test mailbox · no real Gmail sends',ai:'Simulated · supplied proposal sources only',documents:conversionName()},mail:mailStatus()});}
+  if(route[0]==='divisions')return response(await readDivisionTable(user));
   if(route[0]==='directory')return response(route[1]==='client'&&route[2]?await directoryClient(route[2]):route[1]?{record:await directoryRecord(route[1])}:await clientDirectory(request.nextUrl.searchParams));
   if(route[0]==='inquiries'&&route[1]&&route[2]==='historical-matches')return response({matches:await historicalMatches(await inquiry(route[1]))});
   if(route[0]==='monitoring')return response(await monitoring(user));
   if(route[0]==='inquiries'&&route.length===2)return response(await inquiryDetails(route[1]));
   if(route[0]==='template-stage'&&route[1]){const staged=await templateStage(user,route[1]);return fileResponse(await privateFile(user,'template:'+staged.template.id,'template-preview',staged.pdf),'application/pdf','template-preview.pdf',false);}
-  if(route[0]==='template-history'){if(user.role!=='Admin')throw new AppError('Admin access is required.',403);return response({versions:(await db.all("SELECT id,data,state,actor_id,at FROM template_versions WHERE state<>'staged' ORDER BY at DESC") as {id:string;data:string;state:string;actor_id:string;at:string}[]).map(row=>{const t=JSON.parse(row.data).template;return {id:row.id,templateId:t.id,name:t.name,hash:t.sourceHash,state:row.state,by:row.actor_id,at:row.at};})});}
+  if(route[0]==='template-history'){if(!canManageTemplates(user))throw new AppError('Only the Head can manage proposal templates.',403);return response({versions:(await db.all("SELECT id,data,state,actor_id,at FROM template_versions WHERE state<>'staged' ORDER BY at DESC") as {id:string;data:string;state:string;actor_id:string;at:string}[]).map(row=>{const t=JSON.parse(row.data).template;return {id:row.id,templateId:t.id,name:t.name,hash:t.sourceHash,state:row.state,by:row.actor_id,at:row.at};})});}
   if(route[0]==='pdf-worker')return new NextResponse(readFileSync(path.join(process.cwd(),'node_modules/pdfjs-dist/build/pdf.worker.min.mjs')),{headers:{'Content-Type':'text/javascript','Cache-Control':'private, max-age=3600','X-Content-Type-Options':'nosniff'}});
   if(route[0]==='sample-form')return fileResponse(await sampleForm(),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','RMC2-sample-franchise-form.xlsx');
   if(route[0]==='form-preview'&&route[1]){const record=await inquiry(route[1]);if(!record.source.storage&&!isSampleForm(record.source))throw new AppError('This inquiry has no submitted Excel attachment.',404);try{return response(await previewWorkbook(record.source.storage?await privateFile(user,record.id,'form-preview',record.source.storage):await sampleForm(record.source.fields)));}catch(error){if(isStorageError(error)&&(error.code==='not_found'||error.code==='unavailable'))throw error;throw new AppError(error instanceof Error&&/^(The attachment|Too many sheets|A populated sheet|The sheet layout)/.test(error.message)?error.message:'The attachment could not be previewed. Download the original Excel file.');}}
@@ -88,16 +106,24 @@ export async function POST(request:NextRequest,context:Context){try{
   if(route[0]==='login'){const user=await authenticate(await request.json()),token=randomBytes(32).toString('hex');await db.run('INSERT INTO sessions (token,user_id,expires) VALUES (?,?,?)',tokenHash(token),user.id,new Date(Date.now()+12*3600000).toISOString());const result=response({user});result.cookies.set('rmc2_session',token,{httpOnly:true,sameSite:'strict',secure:request.nextUrl.protocol==='https:',path:'/',maxAge:12*3600});return result;}
   const user=await staff(request);
   if(user.mustChangePassword&&!['account-settings','logout'].includes(route[0]))throw new AppError('Change your temporary password in Settings before continuing.',403);
+  // Division Heads / SOAs: whitelist first, before any lookup or write.
+  if(isOwnerScoped(user)){
+    assertOwnerScopedRoute(user,'POST',route);
+    if(route[0]==='my-clients'){const form=await request.formData(),file=form.get('file');const text=(name:string)=>{const value=form.get(name);return typeof value==='string'&&value.trim()?value:undefined;};await addProgressReport(route[1],user,{requestId:text('requestId'),sentAt:text('sentAt'),summary:form.get('summary'),reference:form.get('reference')},file instanceof File?file:undefined);return response({client:await ownerClient(user,route[1])},201);}
+  }
   if(route[0]==='inbound'&&route[1]==='check'){await listInbound(user);return response(await checkInbox());}
   if(route[0]==='inbound'&&route[1]&&route[2]==='import'){const body=z.object({index:z.number().int().min(0).max(50)}).parse(await request.json());return response({inquiry:await importInbound(user,route[1],body.index)},201);}
   if(route[0]==='inbound'&&route[1]&&route[2]==='dismiss'){await dismissInbound(user,route[1]);return response({ok:true});}
   if(route[0]==='account-settings'){const updated=await updateOwnAccount(user,await request.json());const result=response({user:updated});result.cookies.delete('rmc2_session');return result;}
   if(route[0]==='directory'&&route[1]&&route[2]==='edit')return response({record:await editDirectoryRecord(route[1],user,await request.json())});
   if(route[0]==='create-account')return response(await createAccount(user,await request.json()),201);
+  if(route[0]==='reset-password')return response(await resetPassword(user,await request.json()));
+  if(route[0]==='unlock-account')return response(await unlockAccount(user,await request.json()));
   if(route[0]==='monitoring-check')return response(await monitoring(user,true));
   if(route[0]==='template-upload')return response(await stageTemplate(user,await request.formData()),201);
   if(route[0]==='template-publish')return response({template:await publishTemplate(user,await request.json())});
   if(route[0]==='template-active')return response({template:await setTemplateActive(user,await request.json())});
+  if(route[0]==='divisions')return response(await saveDivisionTable(user,await request.json()));
   if(route[0]==='inquiries'&&route[1]&&route[2]==='bor-transfer')return response({inquiry:await transferWithBor(route[1],user,await request.formData())});
 
   if(route[0]==='proposal-preview'){
@@ -120,13 +146,15 @@ export async function POST(request:NextRequest,context:Context){try{
     return response({docx:result.bytes.toString('base64'),blocks:result.blocks,changes:result.changes});
   }
   if(route[0]==='logout'){const token=request.cookies.get('rmc2_session')?.value;if(token)await db.run('DELETE FROM sessions WHERE token=?',tokenHash(token));const result=response({ok:true});result.cookies.delete('rmc2_session');return result;}
-  if(route[0]==='intake'){const form=await request.formData(),file=form.get('file');if(!(file instanceof File))throw new AppError('Choose the agent’s submitted PDF or Excel form.');return response({inquiry:await intake(user,file,String(form.get('sender')||''))},201);}
+  if(route[0]==='intake'){const form=await request.formData(),file=form.get('file');if(!(file instanceof File))throw new AppError('Choose the agent’s submitted PDF or Excel form.');const ownerField=form.get('ownerId'),options=!isOwnerScoped(user)&&typeof ownerField==='string'&&ownerField?{ownerId:ownerField}:{};const record=await intake(user,file,String(form.get('sender')||''),options);return isOwnerScoped(user)?response(await ownerIntakeResult(record),201):response({inquiry:record},201);}
   if(route[0]==='notifications'){const body=z.union([z.object({all:z.literal(true)}).strict(),z.object({ids:z.array(z.string()).max(500)}).strict()]).parse(await request.json());if('all' in body){await transaction(async()=>{await db.all(`SELECT id FROM notifications WHERE id IN (SELECT notice_id FROM notice_recipients WHERE user_id=? AND is_read=0) ORDER BY id${forUpdate(db)}`,user.id);await db.run(`UPDATE notifications SET data=${jsonAppend(db,'data','readBy')} WHERE id IN (SELECT notice_id FROM notice_recipients WHERE user_id=? AND is_read=0) AND NOT COALESCE(${jsonArrayHas(db,'data','readBy')},false)`,user.id,user.id,user.id);});return response({ok:true});}await transaction(async()=>{for(const id of [...new Set(body.ids)].sort()){const row=await db.get('SELECT data FROM notifications WHERE id=?'+forUpdate(db),id) as {data:string}|undefined;if(!row)continue;const notice=JSON.parse(row.data) as Notice;if(notice.recipientIds.includes(user.id)&&!notice.readBy.includes(user.id)){notice.readBy.push(user.id);await db.run('UPDATE notifications SET data=? WHERE id=?',JSON.stringify(notice),id);}}});return response({ok:true});}
-  if(route[0]==='users'){if(user.role!=='Admin')throw new AppError('Admin access is required.',403);const body=z.object({id:z.string(),active:z.boolean(),role:z.enum(['Employee','Supervisor','Admin']),canApprove:z.boolean()}).parse(await request.json());await transaction(async()=>{await db.lock('users-admin');const target=(await allUsers()).find(u=>u.id===body.id);if(!target)throw new AppError('Staff member not found',404);if(body.id===user.id&&(!body.active||body.role!=='Admin'))throw new AppError('Keep your current admin account active.');const updated={...target,...body,canApprove:body.role==='Supervisor'&&body.canApprove};if(!(await allUsers()).map(u=>u.id===target.id?updated:u).some(u=>u.active&&u.canApprove&&u.role==='Supervisor'))throw new AppError('Keep at least one active approving supervisor.');await db.run('UPDATE users SET data=? WHERE id=?',JSON.stringify(updated),body.id);await db.run('DELETE FROM sessions WHERE user_id=?',body.id);});return response({ok:true});}
-  if(route[0]==='inquiries'&&route[1]&&route[2]==='progress-report'){const form=await request.formData(),file=form.get('file');const result=await addProgressReport(route[1],user,{revision:Number(form.get('revision')),requestId:form.get('requestId'),sender:form.get('sender'),sentAt:form.get('sentAt'),summary:form.get('summary'),reference:form.get('reference')},file instanceof File?file:undefined);return response({inquiry:await withHistoricalHold(result)});}
+  if(route[0]==='users')return response(await updateAccount(user,await request.json()));
+  if(route[0]==='inquiries'&&route[1]&&route[2]==='progress-report'&&route[3]&&route[4]==='decision'&&route.length===5)return response({inquiry:await withHistoricalHold(await decideProgressReport(route[1],route[3],user,await request.json()))});
+  // Filing is for the owning Division Head / SOA only (through my-clients/:id/progress-report); staff, and owner-scoped users here, are refused.
+  if(route[0]==='inquiries'&&route[1]&&route[2]==='progress-report'&&route.length===3)throw new AppError('Only the Division Head or SOA who owns this client can file a progress report.',403);
   if(route[0]==='inquiries'&&route[1]){const id=route[1],action=route[2],body=await request.json();
     if(action==='activity')return response(await updateInquiryActivity(id,user,tokenHash(request.cookies.get('rmc2_session')!.value),body));
-    const result=action==='request-expired-transfer'?await requestExpiredTransfer(id,user,body):action==='review-historical'?await reviewHistorical(id,user,body):action==='agent-transfer-decision'?await decideAgentTransfer(id,user,body):action==='decline'?await declineInquiry(id,user,body):action==='begin-review-edit'?await beginSupervisorEdit(id,user,body):action==='cancel-review-edit'?await cancelSupervisorEdit(id,user,body):action==='review-client'?await reviewClientRegistration(id,user,body):action==='customize'?await customize(id,user,body):action==='save'?await saveDraft(id,user,body):action==='generate'?await generate(id,user,z.object({revision:z.number().int()}).parse(body).revision):action==='submit'?await submit(id,user,z.object({revision:z.number().int()}).parse(body).revision):action==='decision'?await decide(id,user,body):action==='retry'?await retry(id,user,z.object({revision:z.number().int()}).parse(body).revision):action==='request-details'?await requestDetails(id,user,body):action==='confirm-sent'?await confirmSent(id,user,body):action==='confirm-not-sent'?await confirmNotSent(id,user,body):action==='chat'?await chat(id,user,body):null;
+    const result=action==='request-expired-transfer'?await requestExpiredTransfer(id,user,body):action==='review-historical'?await reviewHistorical(id,user,body):action==='agent-transfer-decision'?await decideAgentTransfer(id,user,body):action==='decline'?await declineInquiry(id,user,body):action==='begin-review-edit'?await beginSupervisorEdit(id,user,body):action==='cancel-review-edit'?await cancelSupervisorEdit(id,user,body):action==='review-client'?await reviewClientRegistration(id,user,body):action==='customize'?await customize(id,user,body):action==='save'?await saveDraft(id,user,body):action==='generate'?await generate(id,user,z.object({revision:z.number().int()}).parse(body).revision):action==='submit'?await submit(id,user,z.object({revision:z.number().int()}).parse(body).revision):action==='decision'?await decide(id,user,body):action==='retry'?await retry(id,user,z.object({revision:z.number().int()}).parse(body).revision):action==='owner'?await setInquiryOwner(id,user,body):action==='request-details'?await requestDetails(id,user,body):action==='confirm-sent'?await confirmSent(id,user,body):action==='confirm-not-sent'?await confirmNotSent(id,user,body):action==='chat'?await chat(id,user,body):null;
     if(!result)throw new AppError('Action not found',404);return response({inquiry:await withHistoricalHold(result)});}
   throw new AppError('Route not found',404);
 }catch(error){return errorResponse(error);}}

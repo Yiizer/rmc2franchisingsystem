@@ -3,10 +3,11 @@ import { allUsers, AppError, audit, catalog, db, inquiry, notify, persist, trans
 import { assertClientReady } from './client-service';
 import { requireInquiryHandler } from './activity';
 import type { Staff } from './types';
+import { canApproveProposal } from './permissions';
 import { z } from 'zod';
 
 export async function beginSupervisorEdit(id:string,user:Staff,input:unknown){
-  if(user.role!=='Supervisor'||!user.canApprove)throw new AppError('An approving supervisor is required.',403);
+  if(!canApproveProposal(user))throw new AppError('An approving supervisor is required.',403);
   const body=z.object({revision:z.number().int(),version:z.number().int()}).strict().parse(input);
   return await transaction(async()=>{
     const record=await inquiry(id);if(record.revision!==body.revision)throw new AppError('Reload the latest submitted version.',409);await assertClientReady(record);
@@ -21,12 +22,12 @@ export async function beginSupervisorEdit(id:string,user:Staff,input:unknown){
     // A separate editable copy retains the submitted master. The submitted PDF remains frozen.
     record.customization={id:randomUUID(),templateId:record.templateId,sourceHash:latest.generated.sourceHash,edits:structuredClone(latest.generated.customization?.edits||{}),createdAt:at,createdBy:user.id,updatedAt:at,updatedBy:user.id};
     record.status='Supervisor editing';audit(record,user,'Opened supervisor edits from submitted version '+latest.version);await persist(record,body.revision);
-    await notify(record,'Supervisor is editing the proposal',user.name+' is preparing a reviewed version.',[latest.submittedBy,...(await allUsers()).filter(person=>person.canApprove).map(person=>person.id)]);return record;
+    await notify(record,'Supervisor is editing the proposal',user.name+' is preparing a reviewed version.',[latest.submittedBy,...(await allUsers()).filter(person=>person.active&&canApproveProposal(person)).map(person=>person.id)]);return record;
   });
 }
 export async function cancelSupervisorEdit(id:string,user:Staff,input:unknown){
   const body=z.object({revision:z.number().int()}).strict().parse(input);
-  if(user.role!=='Supervisor'||!user.canApprove)throw new AppError('An approving supervisor is required.',403);
+  if(!canApproveProposal(user))throw new AppError('An approving supervisor is required.',403);
   return await transaction(async()=>{
     const record=await inquiry(id);if(record.revision!==body.revision||record.status!=='Supervisor editing')throw new AppError('Reload the proposal before canceling edits.',409);await assertClientReady(record);await requireInquiryHandler(id,user);
     const latest=record.submissions.at(-1)!;

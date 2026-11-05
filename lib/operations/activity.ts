@@ -29,7 +29,7 @@ export async function activeInquiryActivity():Promise<InquiryActivity[]>{
   const now=new Date(),cutoff=new Date(now.getTime()-ACTIVITY_TTL_MS).toISOString();
   const valid=`SELECT a.* FROM inquiry_activity a JOIN inquiries i ON i.id=a.inquiry_id JOIN users u ON u.id=a.user_id
       WHERE a.seen_at>=? AND a.session IN (SELECT token FROM sessions WHERE expires>?)
-      AND ${jsonBool(db,'u.data','active')} AND ${jsonText(db,'u.data','role')} IN ('Employee','Supervisor')
+      AND ${jsonBool(db,'u.data','active')} AND ${jsonText(db,'u.data','role')} IN ('Head','Employee','Supervisor')
       AND ${jsonText(db,'i.data','status')} IN ${ACTIVE_STATUSES}`;
   // The owner of an inquiry is its earliest lease (ties by user id); only that user's rows are reported.
   const owner=db.dialect==='postgres'
@@ -40,7 +40,7 @@ export async function activeInquiryActivity():Promise<InquiryActivity[]>{
     FROM valid v JOIN owner o ON o.inquiry_id=v.inquiry_id AND o.user_id=v.user_id
     GROUP BY v.inquiry_id,v.user_id ORDER BY "startedAt"`,cutoff,now.toISOString());
   const reserved=await db.all<{inquiry_id:string;user_id:string;by_user:string;at:string}>(`SELECT h.inquiry_id,h.user_id,h.by_user,h.at FROM inquiry_handover h JOIN inquiries i ON i.id=h.inquiry_id JOIN users u ON u.id=h.user_id
-      WHERE h.kind='reserve' AND h.until_at>=? AND ${jsonBool(db,'u.data','active')} AND ${jsonText(db,'u.data','role')} IN ('Employee','Supervisor')
+      WHERE h.kind='reserve' AND h.until_at>=? AND ${jsonBool(db,'u.data','active')} AND ${jsonText(db,'u.data','role')} IN ('Head','Employee','Supervisor')
       AND ${jsonText(db,'i.data','status')} IN ${ACTIVE_STATUSES}`,now.toISOString());
   const held=new Set(reserved.map(row=>row.inquiry_id));
   const all:InquiryActivity[]=[...rows.filter(row=>!held.has(row.inquiryId)),...reserved.map(row=>({inquiryId:row.inquiry_id,userId:row.user_id,startedAt:row.at,seenAt:row.at,reserved:true,reservedBy:row.by_user}))];
@@ -57,7 +57,7 @@ export async function pruneActivity():Promise<void>{
   if(!await db.tryLock('act-prune'))return;
   const now=new Date().toISOString(),cutoff=new Date(Date.now()-ACTIVITY_TTL_MS).toISOString();
   await db.run('DELETE FROM inquiry_activity WHERE seen_at < ? OR session NOT IN (SELECT token FROM sessions WHERE expires > ?)',cutoff,now);
-  await db.run(`DELETE FROM inquiry_activity WHERE user_id NOT IN (SELECT id FROM users WHERE ${jsonBool(db,'data','active')} AND ${jsonText(db,'data','role')} IN ('Employee','Supervisor'))
+  await db.run(`DELETE FROM inquiry_activity WHERE user_id NOT IN (SELECT id FROM users WHERE ${jsonBool(db,'data','active')} AND ${jsonText(db,'data','role')} IN ('Head','Employee','Supervisor'))
     OR inquiry_id NOT IN (SELECT id FROM inquiries WHERE ${jsonText(db,'data','status')} IN ${ACTIVE_STATUSES})`);
   await db.run('DELETE FROM inquiry_activity WHERE user_id <> (SELECT b.user_id FROM inquiry_activity b WHERE b.inquiry_id=inquiry_activity.inquiry_id ORDER BY b.started_at,b.user_id LIMIT 1)');
   await db.run(`DELETE FROM inquiry_handover WHERE (kind='reserve' AND until_at < ?) OR (kind='request' AND at < ?)

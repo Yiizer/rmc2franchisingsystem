@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { allUsers, AppError, db, passwordHash, passwordMatches, tokenHash, transaction } from './database';
 import type { Staff } from './types';
+import { DIVISIONS, STAFF_ROLES, canApproveProposal, canBeApprover, canManageAccounts, canResetPassword, isOwnerScoped } from './permissions';
 
 export async function securityEvent(user:Staff,action:string){await db.run('INSERT INTO security_events (id,at,actor_id,action) VALUES (?,?,?,?)',randomUUID(),new Date().toISOString(),user.id,action);}
 const username=z.string().trim().min(3).max(50).regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,'Use letters, numbers, dots, dashes or underscores.').transform(value=>value.toLowerCase());
@@ -58,16 +59,72 @@ export async function updateOwnAccount(user:Staff,input:unknown){
     await securityEvent(user,'Changed own account credentials; all sessions revoked');return updated;
   });
 }
+const divisionField=z.enum(DIVISIONS);
+const phoneField=z.string().trim().max(40).regex(/^[0-9+(). -]*$/,'Use digits, spaces and + ( ) - . only.');
+function roleFields(role:Staff['role'],division:string|undefined,canApprove:boolean){
+  if(isOwnerScoped({role})&&!division)throw new AppError('Choose a division for a Division Head or SOA account.',400);
+  return {division:isOwnerScoped({role})?division:undefined,canApprove:role==='Head'||(canBeApprover(role)&&canApprove)};
+}
+/** Head only. Admins keep password reset and unlock, not account management. */
 export async function createAccount(user:Staff,input:unknown){
-  if(user.role!=='Admin')throw new AppError('Admin access is required.',403);
-  const body=z.object({name:z.string().trim().min(2).max(100),username,email:z.string().trim().email().max(254),role:z.enum(['Employee','Supervisor','Admin']),position:z.string().trim().max(200),canApprove:z.boolean(),currentPassword:z.string().min(1).max(200)}).strict().parse(input);
+  if(!canManageAccounts(user))throw new AppError('Only the Head can manage accounts.',403);
+  const body=z.object({name:z.string().trim().min(2).max(100),username,email:z.string().trim().email().max(254),role:z.enum(STAFF_ROLES),position:z.string().trim().max(200),canApprove:z.boolean(),division:divisionField.optional(),phone:phoneField.optional(),currentPassword:z.string().min(1).max(200)}).strict().parse(input);
+  const extra=roleFields(body.role,body.division,body.canApprove);
   await verifyCurrent(user,body.currentPassword);
   return await transaction(async()=>{
     await db.lock('users-admin');
     await unique(body.username);await unique(body.email);
     const temporaryPassword=randomBytes(18).toString('base64url');
-    const person:Staff={id:randomUUID(),name:body.name,username:body.username,email:body.email.toLowerCase(),role:body.role,position:body.position,canApprove:body.role==='Supervisor'&&body.canApprove,active:true,mustChangePassword:true};
+    const person:Staff={id:randomUUID(),name:body.name,username:body.username,email:body.email.toLowerCase(),role:body.role,position:body.position,canApprove:extra.canApprove,active:true,mustChangePassword:true,...(extra.division?{division:extra.division}:{}),...(body.phone?{phone:body.phone}:{})};
     await db.run('INSERT INTO users (id,data,password) VALUES (?,?,?)',person.id,JSON.stringify(person),passwordHash(temporaryPassword));
     await securityEvent(user,'Created staff account '+person.id+' ('+person.role+')');return {user:person,temporaryPassword};
   });
+}
+/** Head only: role, active, approval flag, division, position, phone. Self-protection and the "at least one approver" rule hold. */
+export async function updateAccount(user:Staff,input:unknown){
+  if(!canManageAccounts(user))throw new AppError('Only the Head can manage accounts.',403);
+  const body=z.object({id:z.string().max(100),active:z.boolean(),role:z.enum(STAFF_ROLES),canApprove:z.boolean(),division:divisionField.nullable().optional(),position:z.string().trim().max(200).optional(),phone:phoneField.nullable().optional()}).strict().parse(input);
+  await transaction(async()=>{
+    await db.lock('users-admin');
+    const users=await allUsers(),target=users.find(u=>u.id===body.id);if(!target)throw new AppError('Staff member not found',404);
+    if(body.id===user.id&&(!body.active||body.role!=='Head'))throw new AppError('Keep your current account active as the Head.');
+    const extra=roleFields(body.role,body.division===undefined?target.division:body.division??undefined,body.canApprove);
+    const {division:_d,phone:_p,...rest}=target;
+    const phone=body.phone===undefined?target.phone:body.phone||undefined;
+    const updated:Staff={...rest,role:body.role,active:body.active,canApprove:extra.canApprove,...(body.position!==undefined?{position:body.position}:{}),...(extra.division?{division:extra.division}:{}),...(phone?{phone}:{})};
+    const after=users.map(u=>u.id===target.id?updated:u);
+    if(!after.some(u=>u.active&&canApproveProposal(u)))throw new AppError('Keep at least one active approver.');
+    if(!after.some(u=>u.active&&u.role==='Head'))throw new AppError('At least one active Head is required.');
+    await db.run('UPDATE users SET data=? WHERE id=?',JSON.stringify(updated),body.id);await db.run('DELETE FROM sessions WHERE user_id=?',body.id);await db.run('DELETE FROM inquiry_activity WHERE user_id=?',body.id);
+    await securityEvent(user,'Updated staff account '+body.id+' ('+updated.role+(updated.active?'':', inactive')+')');
+  });
+  return {ok:true};
+}
+/** Head and Admin. Sets a one-time temporary password and signs the person out everywhere. An Admin cannot reset the Head or another Admin (that would hand over account management). */
+export async function resetPassword(user:Staff,input:unknown){
+  if(!canResetPassword(user))throw new AppError('You cannot reset passwords.',403);
+  const body=z.object({userId:z.string().max(100),currentPassword:z.string().min(1).max(200)}).strict().parse(input);
+  if(body.userId===user.id)throw new AppError('Change your own password in Settings.');
+  await verifyCurrent(user,body.currentPassword);
+  return await transaction(async()=>{
+    await db.lock('users-admin');
+    const target=(await allUsers()).find(u=>u.id===body.userId);if(!target)throw new AppError('Staff member not found',404);
+    // An Admin holding a reset password could sign in as that person. So an Admin may reset only Employee accounts;
+    // approvers (Head, Supervisor) and Division Heads / SOAs, who own clients, are reset by the Head.
+    if(user.role==='Admin'&&target.role!=='Employee')throw new AppError('Ask the Head to reset this account.',403);
+    const temporaryPassword=randomBytes(18).toString('base64url'),updated:Staff={...target,mustChangePassword:true};
+    await db.run('UPDATE users SET data=?,password=? WHERE id=?',JSON.stringify(updated),passwordHash(temporaryPassword),target.id);
+    await db.run('DELETE FROM sessions WHERE user_id=?',target.id);await db.run('DELETE FROM inquiry_activity WHERE user_id=?',target.id);
+    await clearAttempts(target);
+    await securityEvent(user,'Reset password and signed out '+target.id);return {user:updated,temporaryPassword};
+  });
+}
+async function clearAttempts(target:Staff){for(const login of new Set([target.email,target.username||target.id]))await db.run('DELETE FROM auth_attempts WHERE key=?','login:'+tokenHash(login.toLowerCase()));await db.run('DELETE FROM auth_attempts WHERE key=?','settings:'+target.id);}
+/** Head and Admin: clears the sign-in lockout (too many wrong passwords) without changing the password. */
+export async function unlockAccount(user:Staff,input:unknown){
+  if(!canResetPassword(user))throw new AppError('You cannot unlock accounts.',403);
+  const body=z.object({userId:z.string().max(100)}).strict().parse(input);
+  const target=(await allUsers()).find(u=>u.id===body.userId);if(!target)throw new AppError('Staff member not found',404);
+  if(user.role==='Admin'&&(target.role==='Head'||target.role==='Admin'))throw new AppError('Ask the Head to unlock this account.',403);
+  await clearAttempts(target);await securityEvent(user,'Unlocked sign-in for '+target.id);return {ok:true};
 }

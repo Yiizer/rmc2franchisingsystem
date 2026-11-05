@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 
 import type { ClientState, InquiryRecord, Staff } from '@/lib/operations/types';
 
+import { canApproveProposal } from '@/lib/operations/permissions';
 import { api, Modal } from './operations-common';
 
 
@@ -18,7 +19,7 @@ export default function RegistrationActions({record,state,user,locked,lockedReas
 
   const [mode,setMode]=useState<'decline'|'bor'|'expiry'|null>(null),[reason,setReason]=useState(''),[reference,setReference]=useState(''),[file,setFile]=useState<File|null>(null),[confirmed,setConfirmed]=useState(false),[previous,setPrevious]=useState<InquiryRecord|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
 
-  if(record.closure||state.state==='archived'||record.status==='Awaiting approval'&&!(user.role==='Supervisor'&&user.canApprove)||['Sent','Approved — sending','Approved — email failed','Supervisor editing'].includes(record.status))return children?<div className="ops-resolution-options">{children}</div>:null;
+  if(record.closure||state.state==='archived'||record.status==='Awaiting approval'&&!(canApproveProposal(user))||['Sent','Approved — sending','Approved — email failed','Supervisor editing'].includes(record.status))return children?<div className="ops-resolution-options">{children}</div>:null;
 
   async function open(mode:'decline'|'bor'|'expiry'){
 
@@ -38,7 +39,7 @@ export default function RegistrationActions({record,state,user,locked,lockedReas
 
   }catch(e){setError((e as Error).message);}finally{setBusy(false);}}
 
-  const supervisor=user.role==='Supervisor'&&user.canApprove;
+  const supervisor=canApproveProposal(user);
 
   const pending=record.agentTransferRequest&&!record.agentTransferRequest.decision?record.agentTransferRequest:null;
 

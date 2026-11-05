@@ -80,6 +80,6 @@ export const directoryGroups = {active:{label:'Active',tone:'blue'},won:{label:'
 export type DirectoryGroup=keyof typeof directoryGroups;
 export function statusGroup(key:StatusKey):DirectoryGroup {return ['closed','sent'].includes(key)?'won':['expired','disapproved'].includes(key)?'lost':['todo','unknown'].includes(key)?'notStarted':key==='review'?'review':'active';}
 export type DirectoryEdit={id:string;historical_id:string;field:string;old_value:string;new_value:string;actor:string;at:string;reason:string};
-export type DirectoryClient=RegisterEntry&{key:string;source:'live'|'historical'|'both';recordCount:number;agents:string[];group:DirectoryGroup;statusLabel:string;protectionDays:number|null;inquiryId?:string;possibleMatch?:string;historicalIds:string[]};
-export type ClientListing=Omit<DirectoryListing,'items'|'counts'>&{items:DirectoryClient[];counts:{key:DirectoryGroup;count:number}[];pageSize:number};
+export type DirectoryClient=RegisterEntry&{key:string;source:'live'|'historical'|'both';recordCount:number;agents:string[];group:DirectoryGroup;statusLabel:string;protectionDays:number|null;inquiryId?:string;possibleMatch?:string;historicalIds:string[];division:string;branchName:string|null;categories:string[];branchUnclear?:boolean};
+export type ClientListing=Omit<DirectoryListing,'items'|'counts'>&{items:DirectoryClient[];counts:{key:DirectoryGroup;count:number}[];pageSize:number;divisionCounts:{name:string;count:number}[];categoryCounts:{name:string;count:number}[]};
 export type ClientDetail={client:DirectoryClient;records:(RegisterEntry&{data:HistoricalData;edits:DirectoryEdit[];editAt:string})[];inquiries:{id:string;account:string;agent:string;status:string;at:string}[]};

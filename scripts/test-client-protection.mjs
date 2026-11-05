@@ -12,9 +12,9 @@ const base=process.env.RMC2_TEST_URL||'http://127.0.0.1:5190';
 assert.match(base,/^http:\/\/(?:127\.0\.0\.1|localhost):5190$/,'Use the isolated QA server on port 5190.');
 const out=path.resolve('test-results/client-protection'),data=path.join(out,'qa-data');
 await mkdir(out,{recursive:true});
-for(const name of ['types','client-rules']){
+for(const name of ['types','permissions','client-rules']){
   const source=await readFile('lib/operations/'+name+'.ts','utf8');
-  await writeFile(path.join(out,name+'.mjs'),ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText.replaceAll("'./types'","'./types.mjs'"));
+  await writeFile(path.join(out,name+'.mjs'),ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText.replaceAll("'./types'","'./types.mjs'").replaceAll("'./permissions'","'./permissions.mjs'"));
 }
 const {CLIENT_PROTECTION_MS,clientState,isClientArchived,isRegistered,normalizeClient,protectionDaysLeft}=await import(pathToFileURL(path.join(out,'client-rules.mjs')));
 const checks=[],sessions={};let database;
@@ -126,8 +126,8 @@ try{
   }
   await act('emerson',otherAgent,'decision',{version:1,action:'approve',note:'',flags:[]},409);
   pass('Server blocks duplicate pickup, saving, customization, generation, submission, outbound requests and approval');
-  await act('cryssa',byPerson,'review-client',{action:'distinct',note:'These are unrelated accounts with matching names.'},403);
-  const distinct=await act('emerson',byPerson,'review-client',{action:'distinct',note:'The source forms show unrelated clients with matching full names.'});
+  await act('cryssa',byPerson,'review-client',{action:'distinct',matchId:byPerson.clientReview.matches[0].inquiryId,note:'These are unrelated accounts with matching names.'},403);
+  const distinct=await act('emerson',byPerson,'review-client',{action:'distinct',matchId:byPerson.clientReview.matches[0].inquiryId,note:'The source forms show unrelated clients with matching full names.'});
   pass('A supervisor can clear a false match with an audited reason',distinct.clientReview.state==='clear'&&distinct.clientReview.reviewedBy==='emerson'&&distinct.history.at(-1).action.includes('DIFFERENT CLIENTS'));
   pass('A false-match decision does not block the existing legitimate registration',(await state('cryssa')).clientStates[original.id].state==='clear');
 
@@ -135,19 +135,17 @@ try{
   const beforeMail=await readFile(path.join(data,original.detailRequests[0].file));
   const sentAt=new Date(Date.now()-2*86400000).toISOString(),requestId=randomUUID();
   const pdf=await PDFDocument.create();pdf.addPage().drawText('Fictional agent progress report');const pdfBytes=Buffer.from(await pdf.save());
-  original=await report(original,{sentAt,requestId},200,new File([pdfBytes],'agent-progress.pdf',{type:'application/pdf'}));
-  pass('Progress report resets protection from its sent date, rather than the date staff recorded it',Date.parse(original.protection.expiresAt)===Date.parse(sentAt)+CLIENT_PROTECTION_MS&&protectionDaysLeft(original.protection)===28);
-  pass('Report receipt, reference, summary and recording employee are retained',original.progressReports.at(-1).recordedBy==='cryssa'&&original.progressReports.at(-1).reference.includes('Verified'));
-  const revision=original.revision,expiry=original.protection.expiresAt;
-  const retried=await report(original,{sentAt,requestId,revision:revision-1});
-  pass('Retrying the same report cannot reset the timer twice',retried.revision===revision&&retried.progressReports.length===1&&retried.protection.expiresAt===expiry);
-  await report(original,{sender:'different-agent@example.test'},409);
-  await report(original,{sentAt:new Date(Date.now()+86400000).toISOString()},400);
-  await report(original,{sentAt:original.protection.activityAt},400);
-  await report(original,{},400,new File(['not a PDF'],'unsafe.pdf'));
-  pass('Reports from another agent, future reports, old reports and invalid attachments do not extend protection');
+  // PHASE 2 (PO decision): progress reports are filed by the owning Division Head / SOA and approved by the Head or a Supervisor. The old
+  // employee-recorded flow is gone: an Employee is refused with 403 and nothing changes. Legacy reports stay readable (no status = approved).
+  await report(original,{sentAt,requestId},403,new File([pdfBytes],'agent-progress.pdf',{type:'application/pdf'}));
+  await report(original,{},403);
+  pass('An Employee can no longer record a progress report: the server refuses (403) and the countdown is untouched',!(await current(original.id)).progressReports&&(await current(original.id)).protection.expiresAt===original.protection.expiresAt);
+  const legacyKey='progress-reports/'+randomUUID()+'.pdf',legacyId=randomUUID();await mkdir(path.dirname(path.join(data,legacyKey)),{recursive:true});await writeFile(path.join(data,legacyKey),pdfBytes);
+  original=fixture(await current(original.id),{progressReports:[{id:legacyId,sentAt,recordedAt:new Date().toISOString(),recordedBy:'cryssa',sender:original.protection.agentEmail,summary:'The agent reports an ongoing client discussion.',reference:'Verified agent email / progress report',attachment:{storage:legacyKey,filename:'agent-progress.pdf',mime:'application/pdf'}}]});
+  const revision=original.revision;
+  pass('A legacy employee-recorded report (no status) is kept and counts as approved',original.progressReports.length===1&&original.progressReports[0].status===undefined);
   pass('Recording progress does not rewrite previously sent files',sha(beforeMail)===sha(await readFile(path.join(data,original.detailRequests[0].file))));
-  const reportId=original.progressReports[0].id,download='file/'+original.id+'/progress?report='+reportId;
+  const reportId=legacyId,download='file/'+original.id+'/progress?report='+reportId;
   await call('anonymous',download,undefined,401);
   const retrieved=await call('jefferson',download);
   pass('Confidential reports require sign-in and preserve the uploaded bytes',sha(retrieved.value)===sha(pdfBytes));
@@ -175,7 +173,7 @@ try{
   expiring=fixture(expiring,{protection:{...expiring.protection,startedAt:new Date(Date.now()-31*86400000).toISOString(),activityAt:new Date(Date.now()-31*86400000).toISOString(),expiresAt:new Date(Date.now()-1000).toISOString()}});
   pass('Expired protection appears in Archives without altering original workflow status',(await state('cryssa')).clientStates[expiring.id].state==='archived'&&expiring.status==='Waiting for agent details');
   await act('cryssa',expiring,'activity',{tab:randomUUID(),action:'start'},409);
-  await report(expiring,{},409);
+  await report(expiring,{},403);
   let next=await intake(expiring.fields.company,expiring.fields.contactName,'fresh-agent@example.test','Fresh Agent');
   pass('A new agent waits for supervisor approval after expiry',next.clientReview.state==='duplicate');
   await act('cryssa',next,'review-client',{action:'reassign-expired',note:'Verified expiry and the new agent.'},403);
@@ -195,7 +193,18 @@ try{
   pass('The countdown starts only when the approved proposal is successfully delivered',proposal.status==='Sent'&&!!proposal.protection&&proposal.protection.agentEmail==='proposal-agent@example.test');
   const frozen=JSON.stringify(proposal.submissions);
   proposal=fixture(proposal,{protection:{...proposal.protection,startedAt:new Date(Date.now()-5*86400000).toISOString(),activityAt:new Date(Date.now()-5*86400000).toISOString(),expiresAt:new Date(Date.now()+25*86400000).toISOString()}});
-  proposal=await report(proposal);
+  // Phase 2: the owning Division Head files through my-clients/:id/progress-report; the Head (Emerson) approves. Frozen submissions must not change.
+  await call('cryssa','inquiries/'+proposal.id+'/owner',{revision:proposal.revision,ownerId:'division-head'});
+  await call('division-head','login',{email:'divisionhead@rmc2.local',password:'Rmc2Local!2026'});
+  const filing=new FormData();filing.set('summary','The agent reports an ongoing client discussion.');filing.set('reference','Call log');
+  const filed=await call('division-head','my-clients/'+proposal.id+'/progress-report',filing,201);
+  pass('The owning Division Head files a pending report through my-clients',filed.value.client.progressReports[0].status==='pending');
+  await call('cryssa','inquiries/'+proposal.id+'/progress-report/'+filed.value.client.progressReports[0].id+'/decision',{action:'approve'},403);
+  await call('emerson','inquiries/'+proposal.id+'/progress-report/'+filed.value.client.progressReports[0].id+'/decision',{action:'approve'});
+  proposal=await current(proposal.id);
+  for(const route of ['workspace','directory','inbound','inquiries/'+proposal.id,'file/'+proposal.id+'/source'])await call('division-head',route,undefined,403);
+  await call('division-head','my-clients/'+expiring.id,undefined,404);
+  pass('Over HTTP: a Division Head is refused everywhere outside My Clients, and another owner client is a 404',true);
   pass('Progress reports on sent proposals preserve all frozen submission data',JSON.stringify(proposal.submissions)===frozen);
   const availableCompany='Concurrent Account '+suffix,availablePerson='Concurrent Person '+suffix;
   const simultaneous=await Promise.all([intake(availableCompany,availablePerson,'one@example.test','Agent One'),intake(availableCompany,availablePerson,'two@example.test','Agent Two')]);

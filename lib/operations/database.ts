@@ -6,6 +6,7 @@ import path from 'node:path';
 import { randomUUID, randomBytes, scryptSync, createHash, timingSafeEqual } from 'node:crypto';
 import type { CatalogTemplate, InquiryRecord, Notice, Staff } from './types';
 import { defaultEmail } from './types';
+import { isOwnerScoped } from './permissions';
 import { installWorkspaceIndexes } from './workspace-schema';
 import { createSqliteStore } from './store';
 import { createPostgresStore } from './store-postgres';
@@ -35,6 +36,7 @@ function openDatabase() {
     CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS inquiry_activity (session TEXT NOT NULL, tab TEXT NOT NULL, inquiry_id TEXT NOT NULL, user_id TEXT NOT NULL, started_at TEXT NOT NULL, seen_at TEXT NOT NULL, PRIMARY KEY(session,tab));
     CREATE TABLE IF NOT EXISTS inquiry_handover (id TEXT PRIMARY KEY, inquiry_id TEXT NOT NULL, kind TEXT NOT NULL, user_id TEXT NOT NULL, by_user TEXT NOT NULL, at TEXT NOT NULL, until_at TEXT NOT NULL, state TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, data TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS handover_inquiry ON inquiry_handover (inquiry_id, kind, at);
     CREATE TABLE IF NOT EXISTS file_access (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, inquiry_id TEXT NOT NULL, kind TEXT NOT NULL, at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, inquiry_id TEXT NOT NULL, version INTEGER NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL, UNIQUE(inquiry_id,version,kind));
@@ -127,7 +129,9 @@ export async function persist(record:InquiryRecord, expected?:number) {
 }
 export function audit(record:InquiryRecord, staff:Staff, action:string, changes?:{field:string;before:string;after:string}[]) { const at=new Date().toISOString();record.updatedAt=at;record.revision++;record.handledBy=[...new Set([...record.handledBy,staff.id])];record.history.push({id:randomUUID(),at,actorId:staff.id,actor:staff.name,action,changes}); }
 function newNotice(record:InquiryRecord,title:string,message:string,recipientIds:string[]):Notice { return {id:randomUUID(),inquiryId:record.id,title,message,at:new Date().toISOString(),recipientIds:[...new Set(recipientIds)],readBy:[]}; }
-export async function notify(record:InquiryRecord,title:string,message:string,recipientIds:string[]) { const notice=newNotice(record,title,message,recipientIds);await db.run('INSERT INTO notifications(id,data) VALUES (?,?)',notice.id,jsonParam(notice)); }
+// Division Heads and SOAs are removed from every recipient list unless the caller passes toOwner=true, and then only the record's own owner stays:
+// a broadcast (or a duplicate-client notice naming other inquiries) never reaches them.
+export async function notify(record:InquiryRecord,title:string,message:string,recipientIds:string[],toOwner=false) { const scoped=new Set((await allUsers()).filter(isOwnerScoped).map(person=>person.id));const notice=newNotice(record,title,message,recipientIds.filter(id=>!scoped.has(id)||toOwner&&id===record.ownerId));if(!notice.recipientIds.length)return;await db.run('INSERT INTO notifications(id,data) VALUES (?,?)',notice.id,jsonParam(notice)); }
 export async function catalog():Promise<CatalogTemplate[]> { const file=resourceFile('catalog.json');const base:CatalogTemplate[]=existsSync(file)?JSON.parse(readFileSync(file,'utf8')):[];
   const overrides=(await db.all<{data:string}>('SELECT data FROM template_overrides')).map(row=>JSON.parse(row.data) as CatalogTemplate);
   const merged=new Map(base.map(template=>[template.id,{...template,active:['D091','D092','D093'].includes(template.sourceId)?false:template.active}]));
@@ -140,9 +144,11 @@ function seedData() {
     {id:'cryssa',name:'Cryssa Kate Aban',email:'cryssa@rmc2.local',role:'Employee',position:'Franchising Coordinator · Divisions 4–5',active:true,canApprove:false},
     {id:'jefferson',name:'Jefferson Silot',email:'jefferson@rmc2.local',role:'Employee',position:'Franchising Coordinator · Divisions 1–3',active:true,canApprove:false},
     {id:'judy',name:'Judy Villaruel',email:'judy@rmc2.local',role:'Employee',position:'Franchising Coordinator · Divisions 4–5',active:true,canApprove:false},
-    {id:'emerson',name:'Emerson Dolf Fernandez',email:'emerson@rmc2.local',role:'Supervisor',position:'VP of Franchising and Underwriting',active:true,canApprove:true},
+    {id:'emerson',name:'Emerson Dolf Fernandez',email:'emerson@rmc2.local',role:'Head',position:'VP of Franchising and Underwriting',active:true,canApprove:true},
     {id:'zeo',name:'Zeo Enorasa',email:'zeo@rmc2.local',role:'Supervisor',position:'AfterSales Operations and Client Relations Supervisor',active:true,canApprove:true},
     {id:'admin',name:'System Administrator',email:'admin@rmc2.local',role:'Admin',position:'System Administrator',active:true,canApprove:false},
+    {id:'division-head',name:'Division Head',email:'divisionhead@rmc2.local',role:'DivisionHead',position:'Division Head · Division 4',division:'Division 4',phone:'09170000004',active:true,canApprove:false},
+    {id:'soa',name:'SOA',email:'soa@rmc2.local',role:'SOA',position:'SOA · Division 4',division:'Division 4',phone:'09170000005',active:true,canApprove:false},
   ];
   // Online (Vercel) the shared local password must never work: seed random, unknown passwords, then set known ones with
   // scripts/rotate-demo-passwords.mjs, which writes them to a git-ignored file.
@@ -155,7 +161,7 @@ function seedData() {
     const fields={company,sector:index===0?'DepEd':'Private',industry:index===0?'Education':'Services',address:'Antipolo City, Rizal',division:'Division '+(index+1),branch:'Antipolo',requestDate:new Date().toISOString().slice(0,10),agentName:'Andrea Mendoza',agentEmail:'agent'+(index+1)+'@example.com',agentPhone:'09171234567',contactName:'Ariana Santos',contactEmail:'contact'+(index+1)+'@example.com',contactPhone:'09981234567',contactPosition:'HR Manager',addressee:'Ariana Santos',addresseePosition:'HR Manager',requestedPlan:index===0?'DepEd plan':'Group healthcare',existingProvider:'None',payment:'Annual',employees:index===0?'10':'65',dependents:'0',employeeAges:index===2?'':'22–58',dependentAges:'',hospitals:'',dental:''};
     const record:InquiryRecord={id:'INQ-2026-'+String(129-index).padStart(5,'0'),revision:1,status:'New inquiry',createdAt:at,updatedAt:at,fields,source:{filename:'Sample franchise form.xlsx',storage:'',sheet:'Sheet1',cells:[],fields:{...fields},receivedAt:at},email:defaultEmail(fields),emailOverrides:[],templateId:'',submissions:[],handledBy:[],history:[{id:randomUUID(),at,actorId:'intake',actor:'Local intake',action:'Agent inquiry received. All active franchising staff notified.'}],chat:[],notes:'',returnNote:'',returnFlags:[],detailRequests:[]};
     records.push(record);
-    notices.push(newNotice(record,'New inquiry',`${company} is ready for its first form review.`,people.filter(p=>p.active).map(p=>p.id)));
+    notices.push(newNotice(record,'New inquiry',`${company} is ready for its first form review.`,people.filter(p=>p.active&&!isOwnerScoped(p)).map(p=>p.id)));
   });
   return {users,records,notices};
 }

@@ -5,7 +5,8 @@ import { AppError, db, jsonParam, transaction } from './database';
 import { deleteQuietly, files } from './file-store';
 import { isSafeEmail } from './mail-config';
 import { intake } from './service';
-import { canPrepareProposal } from './types';
+import { canReviewInbound } from './permissions';
+import { ownerForEmail } from './owners';
 import type { InquiryRecord, Staff } from './types';
 
 // Inbound email (phase 7, lean). The test inbox is read READ-ONLY over IMAP with the same Gmail app password as
@@ -36,7 +37,9 @@ function imapSettings() {
   return { host: clean(process.env.RMC2_IMAP_HOST) || 'imap.gmail.com', port: Number(clean(process.env.RMC2_IMAP_PORT)) || 993, user, pass };
 }
 export const inboundConnected = () => !!imapSettings();
-const requireStaff = (user: Staff) => { if (!canPrepareProposal(user) && user.role !== 'Admin') throw new AppError('Your role cannot review incoming email.', 403); };
+const requireStaff = (user: Staff) => { if (!canReviewInbound(user)) throw new AppError('Your role cannot review incoming email.', 403); };
+/** The authserv-id of the inbox provider's own Authentication-Results header (Gmail: mx.google.com). */
+const TRUSTED_AUTHSERV = (process.env.RMC2_IMAP_AUTHSERV_ID || 'mx.google.com').trim().toLowerCase();
 const authResult = (header: string, name: string) => (header.match(new RegExp('\\b' + name + '=(\\w+)', 'i'))?.[1] || 'none').toLowerCase();
 const safeName = (name: string) => name.replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '').slice(0, 80) || 'attachment';
 
@@ -79,7 +82,11 @@ export async function checkInbox(): Promise<{ added: number; imported: number; c
         attachments.push({ name: part.filename || 'form.' + ext, type: ext, size: part.size, key });
       }
       const from = parsed.from?.value?.[0], replyTo = parsed.replyTo?.value?.[0]?.address || '';
-      const authHeader = String(parsed.headers.get('authentication-results') ?? '');
+      // Trust only the results our own mailbox provider wrote. It adds its Authentication-Results header on top; a sender
+      // can add forged ones below it, so take the topmost header from the trusted authserv-id and ignore the rest.
+      const authHeader = (parsed.headerLines || []).filter(line => line.key === 'authentication-results')
+        .map(line => line.line.replace(/^[^:]*:\s*/, '').replace(/\s+/g, ' ').trim())
+        .find(value => value.toLowerCase().startsWith(TRUSTED_AUTHSERV + ';')) || '';
       const record: InboundMessage = {
         id, messageId, receivedAt: (parsed.date ?? new Date()).toISOString(), from: (from?.address || '').toLowerCase(), fromName: from?.name || '',
         replyTo: replyTo.toLowerCase(), subject: (parsed.subject || '(no subject)').slice(0, 300), snippet: (parsed.text || '').replace(/\s+/g, ' ').trim().slice(0, 400),
@@ -159,15 +166,23 @@ export function automatedEmail(from: string, headers: Map<string, unknown>) {
   const precedence = String(headers.get('precedence') ?? '').toLowerCase();
   return AUTOMATED_SENDER.test(from) || headers.has('list-unsubscribe') || headers.has('list-id') || ['bulk', 'list', 'junk'].includes(precedence);
 }
-export async function importInbound(user: Staff, id: string, index: number, automatic = false): Promise<InquiryRecord> {
+export async function importInbound(user: Staff, id: string, index: number, automatic = false, ownerOverride?: string | null): Promise<InquiryRecord> {
   if (!automatic) requireStaff(user);
   const record = await claim(id, 'new', 'importing');
   try {
     const attachment = record.attachments[index];
     if (!attachment) throw new AppError('Choose one of the form attachments.', 400);
     const bytes = await files().get(attachment.key);
-    const sender = [record.replyTo, record.from].find(address => isSafeEmail(address)) || '';
-    const inquiry = await intake(user, new File([new Uint8Array(bytes)], attachment.name, { type: FORM_TYPES[attachment.type] }), sender);
+    // A sender that is an active Division Head / SOA account links the inquiry to them, but only on positive proof the
+    // mail really came from that address (DMARC pass, or SPF and DKIM pass, from our provider's own header) and only when
+    // replies would go back to that same address. Anything else imports unlinked for staff to link by hand.
+    const verified = record.auth.dmarc === 'pass' || (record.auth.spf === 'pass' && record.auth.dkim === 'pass');
+    const sameReply = !record.replyTo || record.replyTo.trim().toLowerCase() === record.from.trim().toLowerCase();
+    const autoOwner = ownerOverride === undefined && verified && sameReply ? await ownerForEmail(record.from) : undefined;
+    const ownerId = ownerOverride !== undefined ? ownerOverride : autoOwner?.id ?? null;
+    // When linked, replies go to the owner's account address, never to a header the sender chose.
+    const sender = autoOwner ? autoOwner.email : [record.replyTo, record.from].find(address => isSafeEmail(address)) || '';
+    const inquiry = await intake(user, new File([new Uint8Array(bytes)], attachment.name, { type: FORM_TYPES[attachment.type] }), sender, { ownerId });
     await finish(id, { ...record, state: 'imported', inquiryId: inquiry.id, handledBy: user.id, handledAt: new Date().toISOString(), importError: undefined });
     return inquiry;
   } catch (error) {

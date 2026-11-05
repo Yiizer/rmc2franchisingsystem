@@ -14,6 +14,8 @@ import { isAppError } from './errors';
 import { MIME, deleteQuietly, files } from './file-store';
 import { templateBytes } from './template-source';
 import { canEditInquiry, canPrepareProposal, documentIssues, defaultEmail, LABELS } from './types';
+import { canApproveProposal, canConfirmDelivery, canImportInquiry, isOwnerScoped } from './permissions';
+import { applyOwner } from './client-rules';
 import type { CatalogTemplate, InquiryRecord, MailDraft, Notice, Staff } from './types';
 import { proposalChecks, proposalFields } from './proposal-fields';
 import { nextWorkAction } from './work-progress';
@@ -25,7 +27,7 @@ import { getProposalHelp, PROPOSAL_HELP_PROMPTS, suggestTemplates } from './sugg
 
 export function checkRevision(record:InquiryRecord,revision:unknown) { if(record.revision!==revision)throw new AppError('This inquiry changed in another session. Reload before continuing.',409); }
 function canPrepare(user:Staff) { if(!canPrepareProposal(user))throw new AppError('Use an Employee or Supervisor account to prepare and submit proposals.',403); }
-function canReview(user:Staff) { if(user.role!=='Supervisor'||!user.canApprove)throw new AppError('This account does not have proposal approval permission.',403); }
+function canReview(user:Staff) { if(!canApproveProposal(user))throw new AppError('This account does not have proposal approval permission.',403); }
 export async function chosen(record:InquiryRecord):Promise<CatalogTemplate|undefined> {
   const template=(await catalog()).find(t=>t.id===record.templateId&&(t.active||!!record.supervisorEdit));
   const snapshot=record.supervisorEdit?record.submissions.find(item=>item.version===record.supervisorEdit!.version)?.generated:undefined;
@@ -237,7 +239,7 @@ export async function retry(id:string,user:Staff,revision:number) {
   await assertClientReady(record);await deliver(id,record.submissions.at(-1)!.version,user);return await inquiry(id);
 }
 const confirmInput=z.object({revision:z.number().int(),reason:z.string().trim().min(10).max(1000)});
-const needAdmin=(user:Staff)=>{if(user.role!=='Admin')throw new AppError('Only an administrator can confirm a delivery.',403);};
+const needAdmin=(user:Staff)=>{if(!canConfirmDelivery(user))throw new AppError('Only an administrator or the Head can confirm a delivery.',403);};
 const UNCERTAIN_STATUSES=['Approved — sending','Approved — email failed'];
 async function uncertainRow(id:string,record:InquiryRecord){
   const latest=record.submissions.at(-1);
@@ -321,15 +323,30 @@ export async function requestDetails(id:string,user:Staff,input:unknown) {
     throw new AppError(result.dryRun?'The dry run could not be recorded.':'The request was sent but could not be recorded. Check the mailbox before sending again.',409);
   }
 }
-export async function intake(user:Staff,file:File,sender:string) {
-  if(user.role==='Supervisor')throw new AppError('Use an employee or admin account to import an inquiry.',403);
+/** Inquiries a Division Head / SOA may submit in 24 hours. */
+const OWNER_DAILY_INTAKE=20;
+export async function intake(user:Staff,file:File,sender:string,options:{ownerId?:string|null}={}) {
+  // A Division Head / SOA submits their own client: it goes through the same intake and duplicate checks and is owned by them.
+  const scoped=isOwnerScoped(user);
+  if(!scoped&&!canImportInquiry(user))throw new AppError('Use an employee or admin account to import an inquiry.',403);
+  if(scoped)sender=user.email;
+  // Division Heads / SOAs reach the form parsers directly: cap their submissions per day.
+  if(scoped){
+    const since=new Date(Date.now()-86400000).toISOString();
+    const recent=await db.get<{n:number}>(`SELECT COUNT(*) AS n FROM inquiries WHERE ${jsonText(db,'data','ownerId')}=? AND ${jsonText(db,'data','createdAt')}>?`,user.id,since);
+    if(Number(recent?.n||0)>=OWNER_DAILY_INTAKE)throw new AppError(`You can submit up to ${OWNER_DAILY_INTAKE} inquiries a day. Contact franchising if you need to send more.`,429);
+  }
+  const ownerId=scoped?user.id:options.ownerId||undefined;
+  const owner=ownerId?(await allUsers()).find(person=>person.id===ownerId&&person.active&&isOwnerScoped(person)):undefined;
+  if(ownerId&&!owner)throw new AppError('Choose an active Division Head or SOA as the owner.',422);
   if(!z.string().email().safeParse(sender).success)throw new AppError('Enter the agent sender/reply email.');
   const filename=file.name.toLowerCase(),bytes=Buffer.from(await file.arrayBuffer());
   if(!filename.endsWith('.xlsx')&&!filename.endsWith('.pdf'))throw new AppError('Upload the agent’s submitted form as an Excel (.xlsx) or PDF (.pdf) attachment.');
   const source=filename.endsWith('.pdf')?await preservePdfForm(bytes,file.name,sender):await parseForm(bytes,file.name,sender);
   source.sourceHash=createHash('sha256').update(bytes).digest('hex');
   // The original is already stored under a fresh key; if the row cannot be committed, remove it again.
-  try{return await transaction(async()=>{const at=new Date().toISOString();const record:InquiryRecord={id:'INQ-'+new Date().getFullYear()+'-'+'00000',revision:1,status:'New inquiry',createdAt:at,updatedAt:at,fields:{...source.fields},source,email:defaultEmail(source.fields),emailOverrides:[],templateId:'',submissions:[],handledBy:[],history:[{id:randomUUID(),at,actorId:user.id,actor:user.name,action:'Imported agent email form. All active staff notified.'}],chat:[],notes:'',returnNote:'',returnFlags:[],detailRequests:[]};
+  try{return await transaction(async()=>{const at=new Date().toISOString();const record:InquiryRecord={id:'INQ-'+new Date().getFullYear()+'-'+'00000',revision:1,status:'New inquiry',createdAt:at,updatedAt:at,fields:{...source.fields},source,email:defaultEmail(source.fields),emailOverrides:[],templateId:'',submissions:[],handledBy:[],history:[{id:randomUUID(),at,actorId:user.id,actor:user.name,action:scoped?'Submitted by '+user.name+' (own client). All active staff notified.':'Imported agent email form. All active staff notified.'+(owner?' Linked to '+owner.name+'.':'')}],chat:[],notes:'',returnNote:'',returnFlags:[],detailRequests:[]};
+    if(owner)applyOwner(record,owner);
     await lockRegistry(record); // client identity keys first (Postgres), then the counter row, so two imports of one client are ordered
     record.id='INQ-'+new Date().getFullYear()+'-'+String(await nextInquiryNumber()).padStart(5,'0');
     await updateClientReview(record,user);

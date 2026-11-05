@@ -3,6 +3,7 @@ import {useEffect,useState} from 'react';
 import {TriangleAlert} from 'lucide-react';
 import {api,Modal} from './operations-common';
 import type {InquiryRecord,Staff} from '@/lib/operations/types';
+import {canApproveProposal} from '@/lib/operations/permissions';
 import './operations-directory.css';
 type Entry={id:string;account:string;agent:string;branch?:string;status:string;sheet:string;source_row:number};
 type Review={stale?:boolean;outcome:string;actor:string;at:string;reason:string};
@@ -20,7 +21,7 @@ export function HistoricalMatches({record,user,locked,onChange,onRefresh,onOpenI
  if(!matches.length)return error?<p role="alert">Historical lookup unavailable: {error}</p>:null;
  const match=matches.find(m=>m.id===selected)||matches[0];
  const sameAgent=!!match.agent&&!!record.fields.agentName&&normalizeClient(match.agent)===normalizeClient(record.fields.agentName);
- const canReview=!(locked||!!record.closure||busy||match.review?.outcome==='request-agent-change'&&!match.review.stale&&!(user.role==='Supervisor'&&user.canApprove));
+ const canReview=!(locked||!!record.closure||busy||match.review?.outcome==='request-agent-change'&&!match.review.stale&&!(canApproveProposal(user)));
  return <ConflictCard label="Historical client review" title={'Historical account found · '+(pending?'review required':'review recorded')} subtitle={matches.length+' records · '+pending+' need review. No automatic decline or ownership change.'} matches={matches.map(m=>({id:m.id,label:m.sheet+' · Row '+m.source_row,resolved:!!m.review&&!m.review.stale&&!['verify','request-agent-change'].includes(m.review.outcome)}))} selected={match.id} onSelect={setSelected} actions={<div className="ops-conflict-options"><button className="ops-conflict-suggested" disabled={!canReview} onClick={()=>{setTarget(match);setReason('');setAction(match.review?.outcome==='request-agent-change'?(match.review.stale?'request-agent-change':'approve-agent-change'):sameAgent?'same':'verify');}}><small>Suggested step</small><b>Review match</b></button><button className="ops-btn" onClick={()=>setDetail(match.id)}>Open history</button></div>}>
  <div className="ops-client-comparison"><table aria-label="Historical comparison"><thead><tr><th>Detail</th><th>This request</th><th>Historical record</th></tr></thead><tbody>{[['Account',record.fields.company,match.account],['Agent',record.fields.agentName,match.agent],['Branch',record.fields.branch||record.fields.division,match.branch],['Status','Review required',match.status||'Not recorded']].map(([label,here,there])=><tr key={label} className={label==='Agent'?'agent-row':''}><th>{label}{['Account','Agent'].includes(label||'')&&<small>{here&&there&&normalizeClient(here||'')===normalizeClient(there||'')?'✓ Same':'⚠ Different / not supplied'}</small>}</th><td>{here||'Not recorded'}</td><td>{there||'Not recorded'}</td></tr>)}</tbody></table></div>
  <p className="ops-conflict-hint">{match.review?.stale?'Details changed · review again':match.review?labels[match.review.outcome]:'Account name matches · ownership unverified'}</p>{match.review&&<p>{match.review.reason}</p>}{record.historicalAgentChangeBlocked&&<p>Processing paused until a supervisor decides the agent change.</p>}{error&&!target&&<p role="alert">{error}</p>}

@@ -1,6 +1,6 @@
 import { db, inquiry, jsonParam } from './database';
-import { clientIdentityKeys, protectionFor } from './client-rules';
-import { isSampleForm } from './types';
+import { clientIdentityKeys, lastActivityAt, protectionFor } from './client-rules';
+import { isSampleForm, reportStatus } from './types';
 import type { InquiryRecord, InquirySummary } from './types';
 
 export function inquirySummary(record: InquiryRecord): InquirySummary {
@@ -9,6 +9,8 @@ export function inquirySummary(record: InquiryRecord): InquirySummary {
     createdAt: record.createdAt, updatedAt: record.updatedAt,
     fields: Object.fromEntries(['company', 'division', 'agentName', 'contactName', 'addressee'].map(key => [key, record.fields[key] || ''])),
     templateId: record.templateId, handledBy: record.handledBy,
+    ownerId: record.ownerId, lastActivityAt: lastActivityAt(record),
+    pendingReportCount: (record.progressReports || []).filter(report => reportStatus(report) === 'pending').length,
     workProgress: record.workProgress, customized: !!record.customization,
     submittedAt: record.submissions.at(-1)?.at,
     deliveredAt: record.submissions.at(-1)?.delivery?.at,
@@ -33,6 +35,9 @@ function clientProjection(record: InquiryRecord): InquiryRecord {
     createdAt: record.createdAt, updatedAt: record.updatedAt,
     fields: fields(record.fields), source: {...record.source, cells: [], fields: fields(record.source.fields)},
     closure: record.closure, protection: protectionFor(record) || undefined, clientReview: record.clientReview,
+    // Owner identity feeds same-agent checks; a pending report holds protection past its date (client-rules hasPendingReport).
+    ownerId: record.ownerId, ownerAgent: record.ownerAgent,
+    progressReports: (record.progressReports || []).filter(report => reportStatus(report) === 'pending'),
     email: {to: '', subject: '', body: ''}, emailOverrides: [], templateId: '',
     handledBy: [], submissions: registeredSubmissions(record), history: [], chat: [], detailRequests: [],
     notes: '', returnNote: '', returnFlags: [],

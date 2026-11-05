@@ -10,8 +10,10 @@ import { packageRenderers } from './package-rendering';
 import { conversionName } from './document-renderer';
 import { mailStatus } from './mail-config';
 import { recoverStuckMail } from './service';
+import { canApproveProposal, canDecideProgressReport } from './permissions';
 import { nextWorkAction, unfinishedWork } from './work-progress';
-import type { InquiryRecord, InquirySummary, Notice, PageInfo, Staff, WorkspaceUpdate } from './types';
+import type { InquiryRecord, InquirySummary, Notice, PageInfo, PendingProgressReport, Staff, WorkspaceUpdate } from './types';
+import { reportStatus } from './types';
 
 // Identifies this deployment in cursors and metadata versions: shared by every instance of one Vercel deployment, fresh per local process.
 const epoch = process.env.VERCEL_DEPLOYMENT_ID ?? randomUUID();
@@ -28,7 +30,7 @@ const querySchema = z.object({
 const preparing = ['Preparing proposal', 'Needs correction', 'Waiting for agent details'];
 const reviewing = ['Awaiting approval', 'Supervisor editing'];
 const versions = async () => Object.fromEntries(((await db.all('SELECT scope,version FROM workspace_versions')) as {scope:string;version:number}[]).map(row => [row.scope,row.version]));
-let cache: {version:number; until:number; today:string; summaries:InquirySummary[]; states:ReturnType<typeof clientStates>} | undefined;
+let cache: {version:number; until:number; today:string; summaries:InquirySummary[]; states:ReturnType<typeof clientStates>; pendingReports:Omit<PendingProgressReport,'ownerName'>[]} | undefined;
 
 async function collection(version: number, now: number) {
   if (cache?.version === version && now < cache.until && cache.today === day(now)) return cache;
@@ -47,7 +49,12 @@ async function collection(version: number, now: number) {
       if (deadline > now) until = Math.min(until, deadline);
     }
   }
-  const fresh = {version, until, today:day(now), summaries, states};
+  // Reports waiting for the Head / a Supervisor (the projection keeps only pending ones). Oldest first.
+  const pendingReports = records.flatMap((record, index) => (record.progressReports || []).filter(report => reportStatus(report) === 'pending').map(report => ({
+    inquiryId: record.id, company: record.fields.company || 'Client details pending', ownerId: record.ownerId, division: JSON.parse(rows[index].summary).fields?.division || '',
+    reportId: report.id, submittedAt: report.recordedAt, summary: report.summary, reference: report.reference, sentAt: report.sentAt, hasAttachment: !!report.attachment, protectionExpiresAt: record.protection?.expiresAt,
+  }))).sort((a, b) => a.submittedAt.localeCompare(b.submittedAt) || a.reportId.localeCompare(b.reportId));
+  const fresh = {version, until, today:day(now), summaries, states, pendingReports};
   if (!projecting) cache = fresh;
   return fresh;
 }
@@ -99,7 +106,7 @@ async function workspaceSnapshot(user: Staff, query: z.infer<typeof querySchema>
   let records = query.view==='Archives' ? data.summaries.filter(record=>data.states[record.id].state==='archived')
     : query.view==='History' ? active.filter(record=>record.status==='Sent')
     : query.view==='Returned Proposals' ? active.filter(record=>record.status==='Needs correction')
-    : query.view==='Approval Queue' ? (user.canApprove?pending.slice().sort((a,b)=>(a.submittedAt||a.createdAt).localeCompare(b.submittedAt||b.createdAt)||a.id.localeCompare(b.id)):[])
+    : query.view==='Approval Queue' ? (canApproveProposal(user)?pending.slice().sort((a,b)=>(a.submittedAt||a.createdAt).localeCompare(b.submittedAt||b.createdAt)||a.id.localeCompare(b.id)):[])
     : query.view==='My Inquiries' ? active.filter(record=>record.handledBy.includes(user.id)||activity.some(a=>a.inquiryId===record.id&&a.userId===user.id)) : active;
   const search = query.search.trim().toLowerCase();
   records = records.filter(record=>{
@@ -123,12 +130,12 @@ async function workspaceSnapshot(user: Staff, query: z.infer<typeof querySchema>
     onHold:active.filter(record=>data.states[record.id].state==='duplicate').length,
     sent:active.filter(record=>record.status==='Sent').length,
     archived:data.summaries.length-active.length,
-    waiting:user.canApprove?pending.length:0,
+    waiting:canApproveProposal(user)?pending.length:0,
     returned:active.filter(record=>record.status==='Needs correction').length,
   } : undefined;
   const listing = paginate(listViews.includes(query.view)?records:[],query.page);
   const urgency:Record<string,number>={'Needs correction':0,'Approved — email failed':1,'New inquiry':2};
-  const needsAttention = active.filter(record=>record.status!=='Sent'&&(record.status!=='Awaiting approval'||user.canApprove));
+  const needsAttention = active.filter(record=>record.status!=='Sent'&&(record.status!=='Awaiting approval'||canApproveProposal(user)));
   const attention = query.view==='Dashboard'?needsAttention.slice().sort((a,b)=>(urgency[a.status]??3)-(urgency[b.status]??3)||b.createdAt.localeCompare(a.createdAt)||a.id.localeCompare(b.id)).slice(0,7):[];
   const resume = query.view==='Dashboard'?active.filter(record=>['New inquiry',...preparing].includes(record.status)&&(record.workProgress?.[user.id]||record.handledBy.includes(user.id))&&data.states[record.id].state==='clear').sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)||a.id.localeCompare(b.id)).slice(0,4).map(record=>({...record})):[];
   const templates = await catalog();
@@ -160,6 +167,7 @@ async function workspaceSnapshot(user: Staff, query: z.infer<typeof querySchema>
     unreadCount:noticeCounts.unread, pendingCount:pending.length,
     divisions:[...new Set(data.summaries.map(record=>record.fields.division||'Unconfirmed'))].sort(),
     stats:{'New inquiry':active.filter(record=>record.status==='New inquiry').length,'To prepare':active.filter(record=>preparing.includes(record.status)&&data.states[record.id].state==='clear').length,'Awaiting approval':active.filter(record=>record.status==='Awaiting approval').length,'Sent':active.filter(record=>record.status==='Sent'&&day(record.deliveredAt||record.updatedAt)===data.today).length},
+    ...(canDecideProgressReport(user)?{pendingProgressReports:data.pendingReports.map(item=>({...item,ownerName:item.ownerId?names.get(item.ownerId)||'Division Head / SOA':'Unlinked'}))}:{}),
     attention, attentionCount:needsAttention.length, resume, ...(tabCounts?{tabCounts}:{}),
   };
 }

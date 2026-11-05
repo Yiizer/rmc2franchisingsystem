@@ -5,6 +5,7 @@ import { AppError, audit, db, inquiry, persist, transaction, notify, allUsers } 
 import { rowOrder } from './sql-dialect';
 import { clientIdentity, clientIdentityKeys, normalizeClient } from './client-rules';
 import type { Staff, InquiryRecord } from './types';
+import { canApproveProposal } from './permissions';
 import {projectHistorical,manilaToday,statusStyles,type RegisterEntry,type HistoricalData,type DirectoryListing} from './directory-model';
 export function historicalIdentity(record:InquiryRecord){return JSON.stringify([clientIdentity(record),record.fields.agentName||'',record.fields.agentEmail||'',record.fields.agentPhone||'']);}
 export async function historicalMatchCounts():Promise<Map<string,number>>{return new Map((await db.all("SELECT k.inquiry_id,count(DISTINCT h.id) n FROM inquiry_keys k JOIN historical_accounts h ON k.kind='company' AND k.value=h.account_key GROUP BY k.inquiry_id") as {inquiry_id:string;n:number}[]).map(row=>[row.inquiry_id,Number(row.n)]));}
@@ -66,7 +67,7 @@ export async function reviewHistorical(id:string,user:Staff,input:unknown){
  await db.lock('lease:'+id);const owner=await colleagueHolding(id,user);if(owner)throw new AppError('A colleague is handling this inquiry.',423);
  if(body.action==='same'&&normalizeClient(match.agent)!==normalizeClient(record.fields.agentName))throw new AppError('For the same client with a different agent, request supervisor approval instead.',409);
  if(body.action==='approve-agent-change'||body.action==='reject-agent-change'){
-  if(user.role!=='Supervisor'||!user.canApprove)throw new AppError('Only an approving supervisor can decide agent changes.',403);
+  if(!canApproveProposal(user))throw new AppError('Only an approving supervisor can decide agent changes.',403);
   if(body.action==='approve-agent-change'&&match.review?.stale)throw new AppError('The client or incoming agent changed. Request a fresh review before approving.',409);
   if(match.review?.outcome!=='request-agent-change')throw new AppError('No pending agent-change request remains.',409);
  }
@@ -74,6 +75,6 @@ export async function reviewHistorical(id:string,user:Staff,input:unknown){
  await db.run('INSERT INTO historical_reviews (id,inquiry_id,historical_id,identity,outcome,actor,at,reason) VALUES (?,?,?,?,?,?,?,?)',randomUUID(),id,body.historicalId,historicalIdentity(record),body.action,user.id,new Date().toISOString(),body.reason);
  if(body.action==='request-agent-change')await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',id);await db.run("DELETE FROM inquiry_handover WHERE inquiry_id=?",id);
  audit(record,user,'Historical client review ('+body.action+') '+match.sheet+' row '+match.source_row+': '+body.reason);await persist(record,body.revision);
- if(body.action==='request-agent-change')await notify(record,'Historical agent change awaiting approval',record.fields.company+' · review the historical record',(await allUsers()).filter(p=>p.active&&p.role==='Supervisor'&&p.canApprove).map(p=>p.id));
+ if(body.action==='request-agent-change')await notify(record,'Historical agent change awaiting approval',record.fields.company+' · review the historical record',(await allUsers()).filter(p=>p.active&&canApproveProposal(p)).map(p=>p.id));
  return record;});
 }

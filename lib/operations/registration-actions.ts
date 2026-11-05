@@ -12,7 +12,8 @@ import { allUsers, AppError, audit, db, inquiry, lockInquiryRows, notify, persis
 
 import { deleteQuietly, files } from './file-store';
 
-import { clientIdentity, clientState, isRegistered, protectionFor, reviewClient, sameAgent } from './client-rules';
+import { clientIdentity, clientState, isRegistered, protectionFor, reviewClient, sameRegisteredAgent } from './client-rules';
+import { canApproveProposal } from './permissions';
 
 import type { InquiryRecord, Staff } from './types';
 
@@ -44,9 +45,9 @@ export async function declineInquiry(id:string,user:Staff,input:unknown){
 
     if(['Sent','Approved — sending','Approved — email failed'].includes(record.status))throw new AppError('An approved or sent proposal cannot be declined as a new request.',409);
 
-    if(['Awaiting approval','Supervisor editing'].includes(record.status)&&!(user.role==='Supervisor'&&user.canApprove))throw new AppError('An approving supervisor must decide a submitted request.',403);
+    if(['Awaiting approval','Supervisor editing'].includes(record.status)&&!canApproveProposal(user))throw new AppError('An approving supervisor must decide a submitted request.',403);
 
-    if(!(user.role==='Supervisor'&&user.canApprove)&&(isRegistered(record)||protectionFor(record)||await blocksOthers(record)))throw new AppError('An approving supervisor must decline a request that holds, or is blocking, a client registration.',403);
+    if(!canApproveProposal(user)&&(isRegistered(record)||protectionFor(record)||await blocksOthers(record)))throw new AppError('An approving supervisor must decline a request that holds, or is blocking, a client registration.',403);
 
     await available(id,user);
 
@@ -97,13 +98,13 @@ export async function transferWithBor(id:string,user:Staff,form:FormData){
 
     if(review.matches.length!==1||review.matches[0].inquiryId!==previous.id)throw new AppError('Review all matching clients first. A BOR transfer must identify one existing registration.',409);
 
-    if(sameAgent(record.source.fields,previous.source.fields)||review.matches[0].expiredSameAgent)throw new AppError('A BOR transfer requires a different incoming agent.',409);
+    if(sameRegisteredAgent(record,previous)||review.matches[0].expiredSameAgent)throw new AppError('A BOR transfer requires a different incoming agent.',409);
 
     await available(id,user);await available(previous.id,user);
 
     const at=new Date().toISOString();
 
-    if(!(user.role==='Supervisor'&&user.canApprove)){
+    if(!canApproveProposal(user)){
 
       if(record.agentTransferRequest&&!record.agentTransferRequest.decision)throw new AppError('An agent change is already awaiting supervisor approval.',409);
 
@@ -111,7 +112,7 @@ export async function transferWithBor(id:string,user:Staff,form:FormData){
 
       audit(record,user,'Requested supervisor approval for agent change with BOR '+body.reference);await persist(record,body.revision);
 
-      await notify(record,'Agent change awaiting approval',record.fields.company+' · '+body.reference,(await allUsers()).filter(person=>person.active&&person.role==='Supervisor'&&person.canApprove).map(person=>person.id));return record;
+      await notify(record,'Agent change awaiting approval',record.fields.company+' · '+body.reference,(await allUsers()).filter(person=>person.active&&canApproveProposal(person)).map(person=>person.id));return record;
 
     }
 
@@ -143,7 +144,7 @@ export async function transferWithBor(id:string,user:Staff,form:FormData){
 
 export async function decideAgentTransfer(id:string,user:Staff,input:unknown){
 
-  if(user.role!=='Supervisor'||!user.canApprove)throw new AppError('Supervisor approval is required for an agent change.',403);
+  if(!canApproveProposal(user))throw new AppError('Supervisor approval is required for an agent change.',403);
 
   const body=z.object({revision:z.number().int(),requestId:z.string(),action:z.enum(['approve','reject']),note:z.string().trim().min(10).max(3000)}).strict().parse(input);
 
@@ -177,5 +178,5 @@ export async function requestExpiredTransfer(id:string,user:Staff,input:unknown)
  if(record.agentTransferRequest&&!record.agentTransferRequest.decision)throw new AppError('An agent change is already pending.',409);
  const previous=await inquiry(matches[0].inquiryId);await available(previous.id,user);
  record.agentTransferRequest={id:randomUUID(),kind:'expiry',at:new Date().toISOString(),by:user.id,previousId:previous.id,previousRevision:previous.revision,identity:transferIdentity(record),previousIdentity:transferIdentity(previous),reference:'Expired registration',note:body.note};
- audit(record,user,'Requested supervisor approval for new agent after expiry: '+body.note);await persist(record,body.revision);await notify(record,'Agent change awaiting approval',record.fields.company+' · previous registration expired',(await allUsers()).filter(p=>p.active&&p.role==='Supervisor'&&p.canApprove).map(p=>p.id));return record;});
+ audit(record,user,'Requested supervisor approval for new agent after expiry: '+body.note);await persist(record,body.revision);await notify(record,'Agent change awaiting approval',record.fields.company+' · previous registration expired',(await allUsers()).filter(p=>p.active&&canApproveProposal(p)).map(p=>p.id));return record;});
 }

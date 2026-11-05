@@ -5,7 +5,7 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 
 ## Demo feedback round (2026-11-05): `DEMO_FEEDBACK_PLAN.md`
 
-**Phase 1 is done and live on the test version** (not committed):
+**Phase 1 is done and live on the test version** (commit `42cae43`, not pushed):
 - **Email pull-in:** every 30 seconds.
 - **Dates:** "Nov 5, 2026, 2:14 PM" everywhere.
 - **Locking v2:** handover requests and take-over. Migration `20261105000000` is applied to the TEST project only.
@@ -22,9 +22,43 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 - [ ] The pdf.js `standardFontDataUrl` safety net was skipped: the demo PDFs embed all their fonts.
 - [ ] Inbound check: the follow-up refresh comes about 6 seconds after a slot is won, and a slow IMAP import may show only on the next 10-second poll.
 
-**Next:**
-- Phase 2: roles, scoped views, progress-report approval and phone notifications.
-- Phase 3: divisions and the directory. It waits on the client's answers about branches.
+**Phase 2 (in progress, not committed):**
+- **Server side done:**
+  - Roles, `lib/operations/permissions.ts`, linking inquiries to owners, the Division Head / SOA whitelist (`scope-guard.ts`), `my-clients` endpoints and progress-report approval.
+  - Security review fixes:
+    - auto-link only on DMARC or SPF+DKIM pass from `mx.google.com`;
+    - only an approver can change an owner once the client is linked or protected;
+    - a pending report holds protection for 7 days at most, and refiling stops after 2 rejections;
+    - Admin can reset Employees only;
+    - at least one active Head must remain;
+    - Division Heads / SOAs can submit 20 inquiries a day;
+    - no existence oracle.
+  - Tests: `scripts/test-roles-scoping.mjs` passes 29/29.
+- **Screens:** being built against `PHASE2_UI_SPEC.md`.
+- [ ] Run `scripts/seed-division-accounts.mjs` on the test project at deploy (Emerson becomes Head, and the Division Head and SOA accounts are created).
+- [ ] Phone notifications (2.6): the PO must approve adding the VAPID keys first.
+- [ ] Open from the security review:
+  - per-user upload caps on progress reports;
+  - an index on `ownerId` (fine at current volume);
+  - re-authentication for Head role changes.
+- [ ] **Pre-existing, needs a PO decision:**
+  - The case: agent B is turned away while A protects a client. A's protection expires and a supervisor approves agent C. A later recheck now lets B's inquiry become active too.
+  - The rule ("oldest request wins") and the failing check in `scripts/test-client-protection.mjs` both date from commit bed125e, and they contradict each other.
+
+**Phase 3 server side done (not committed):**
+- **Division table:**
+  - `lib/operations/divisions.ts` classifies branch text with today's table.
+  - Editable by the Head through `GET/POST divisions`. It is stored in the new `settings` table (migration `20261105000100`, applied to TEST).
+- **Directory:**
+  - Division and Category filters with counts. The default sort is latest activity.
+  - The "Division · Branch" column shows the original text when it differs or is unclear.
+- **Local register tally:** 3,002 of 3,577 records get a division. 575 are Unassigned: 300 blank, plus the places, the team label and the mixed records that are on the client question list.
+- **Importer fix:** it now keeps the client in A1 on two SOA/MOA sheets, giving 3,579 records. The scratch copy is in `test-results/importer-check/data`. The local `.data` register has not been re-imported; that needs the PO's OK.
+- [ ] Load online:
+  - `node --env-file=.env.supabase.test scripts/load-historical-to-postgres.mjs --project-ref pgoiqwixaeqbxlwbmren --source test-results/importer-check/data/rmc2.sqlite --apply`
+  - The PO accepted the real-data risk.
+- [ ] Head's "Divisions & branches" editor screen: the API exists, the screen does not.
+- [ ] Waiting on the client: unmapped branches, Division 6, the team label, and whether a newer workbook exists.
 
 ## Where things stand
 

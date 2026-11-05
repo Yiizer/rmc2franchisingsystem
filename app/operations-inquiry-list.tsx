@@ -3,6 +3,7 @@ import {useEffect,useMemo,useRef,useState} from 'react';
 import {Search,SlidersHorizontal,Columns3,X,ChevronLeft,ChevronRight,ArrowUp,ArrowDown,Upload,Info,CheckCircle2,LockKeyhole,Users,Archive,ArrowRight,PanelRight} from 'lucide-react';
 import type {InquirySummary,Staff,WorkspaceData,WorkspaceView} from '@/lib/operations/types';
 import {ageLabel,manilaTime} from '@/lib/operations/types';
+import {canDecideProgressReport,canImportInquiry} from '@/lib/operations/permissions';
 import {Status,initials,staffName} from './operations-common';
 import {HandlingBadge,heldFor} from './operations-activity';
 import {ProtectionIndicator} from './operations-client-protection';
@@ -34,7 +35,7 @@ export default function InquiryList({view,filter,data,user,search,searching,load
  const setDetail=(id:string)=>setPreview(id?{scope,id}:null);
  const saveColumns=(next:string[])=>{setColumnMap(m=>({...m,[group]:next}));try{window.localStorage.setItem('rmc2.columns.'+group,JSON.stringify(next));}catch{/* not persisted */}};
  const tabs:Tab[]=group==='closed'?[{label:'Sent',view:'History',filter:'All statuses',count:counts?.sent??0},{label:'Archived',view:'Archives',filter:'All statuses',count:counts?.archived??0}]
-  :group==='queue'?[{label:'Waiting',view:'Approval Queue',filter:'All statuses',count:counts?.waiting??0},{label:'Returned for correction',view:'Returned Proposals',filter:'All statuses',count:counts?.returned??0}]
+  :group==='queue'?[{label:'Waiting',view:'Approval Queue',filter:'All statuses',count:counts?.waiting??0},{label:'Returned for correction',view:'Returned Proposals',filter:'All statuses',count:counts?.returned??0},...(canDecideProgressReport(user)?[{label:'Progress reports',view:'Progress Reports',filter:'All statuses',count:data.pendingProgressReports?.length??0}]:[])]
   :[{label:'Mine',view:'My Inquiries',filter:'All statuses',count:counts?.mine??0},{label:'All',view:'Inquiries',filter:'All statuses',count:counts?.all??0},{label:'To prepare',view:'Inquiries',filter:'To prepare',count:counts?.toPrepare??0},{label:'Awaiting approval',view:'Inquiries',filter:'Awaiting approval',count:counts?.awaiting??0},{label:'On hold',view:'Inquiries',filter:'Duplicate client',count:counts?.onHold??0}];
  const tabFilter=view==='Inquiries'&&tabStatus.has(filter);
  const activeTab=(t:Tab)=>t.view===view&&(t.filter===filter||(!tabFilter&&t.filter==='All statuses'));
@@ -48,7 +49,7 @@ export default function InquiryList({view,filter,data,user,search,searching,load
  const subtitle=group==='closed'?(view==='Archives'?'Expired, declined and transferred registrations, with their original files and history.':'Approved replies and their retained proposal versions.'):group==='queue'?'Submitted proposals waiting for a decision, oldest first.':view==='My Inquiries'?'Inquiries you have started, edited or are handling.':'Every inquiry and its current handler.';
  const empty:Record<string,string>={'My Inquiries':'Inquiries you start or edit will show here.',Inquiries:'No inquiries match this view.','Approval Queue':'Nothing waiting for approval.','Returned Proposals':'No proposals are waiting for corrections.',History:'Sent proposals will show here.',Archives:'Expired, declined and transferred requests will show here.'};
  return <div className="dir-page dir-full-page ops-inquiry-list">
-  <header className="dir-page-heading"><div><h1>{title}</h1><p>{subtitle}</p></div>{group==='inquiries'&&user.role!=='Supervisor'&&<button className="ops-btn primary" onClick={onImport}><Upload size={16}/>Import agent form</button>}</header>
+  <header className="dir-page-heading"><div><h1>{title}</h1><p>{subtitle}</p></div>{group==='inquiries'&&canImportInquiry(user)&&<button className="ops-btn primary" onClick={onImport}><Upload size={16}/>Import agent form</button>}</header>
   <section className="dir-register" aria-label={title} aria-busy={busy}>
    <div className="dir-toolbar">
     <label className="dir-search"><Search size={17}/><input aria-label="Search inquiries" placeholder="Search account, agent, handler or inquiry…" value={search} onChange={e=>onSearch(e.target.value)}/></label>
@@ -121,6 +122,7 @@ function InquiryPreview({record,data,user,now,onClose,onOpen,onPrevious,onNext}:
    {tone&&<div className={'ops-handling-card '+tone}><div>{tone==='mine'?<CheckCircle2 size={18}/>:tone==='other'?<LockKeyhole size={18}/>:<Users size={18}/>}<span><b>{tone==='mine'?'You’re handling this':tone==='other'?(handler!.reserved?'Reserved for '+staffName(data.users,handler!.userId):staffName(data.users,handler!.userId)+' is handling this · '+heldFor(handler!.startedAt)):'Available to pick up'}</b><small>{tone==='other'?'View only until they release it.':tone==='mine'?'Continue where you left off.':'Open it and choose Start handling.'}</small></span></div></div>}
    <div className="ops-preview-row"><span>Next step</span><b>{nextStepLabel(record,state,user.canApprove)}</b></div>
    <div className="ops-preview-row"><span>Protection</span><ProtectionIndicator state={state} now={now}/></div>
+   <div className="ops-preview-row"><span>Owner</span><b>{record.ownerId?staffName(data.users,record.ownerId):'Not linked'}</b></div>
    <dl className="dir-facts">{facts.map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v||'Not recorded'}</dd></div>)}</dl>
   </div>
   <div className="ops-preview-actions"><button className={'ops-btn '+(tone==='other'||state?.state==='archived'?'secondary':'primary')} onClick={onOpen}>{tone==='other'?'View inquiry':label}<ArrowRight size={16}/></button></div>

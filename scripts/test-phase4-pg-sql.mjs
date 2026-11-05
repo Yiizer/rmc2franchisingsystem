@@ -138,7 +138,7 @@ await check('seed (empty users): seed lock inside a transaction, column lists, t
   assertWellFormed();
   const seedLock = log.find(entry => /pg_advisory_xact_lock/.test(entry.query) && entry.params[0] === 'seed');
   assert.ok(seedLock && seedLock.where === 'tx');
-  assert.equal(sqlOf(/^INSERT INTO users\(id,data,password\)/).length, 6);
+  assert.equal(sqlOf(/^INSERT INTO users\(id,data,password\)/).length, 8);
   assert.equal(sqlOf(/^INSERT INTO inquiries\(id,revision,data\)/).length, 4);
   assert.equal(sqlOf(/^INSERT INTO notifications\(id,data\)/).length, 4);
   assert.ok(sqlOf(/^INSERT INTO inquiries/).every(entry => entry.where === 'tx'));

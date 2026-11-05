@@ -4,8 +4,11 @@ import { MIME, deleteQuietly, files } from './file-store';
 import { templateBytes } from './template-source';
 import { conversionName, pdfFromDocx } from './document-renderer';
 import type { Staff } from './types';
+import { canSeeAiUsage, canSeeSystemHealth } from './permissions';
 export async function monitoring(user:Staff,probe=false){
-  if(user.role!=='Admin')throw new AppError('Admin access is required for service health and AI usage.',403);
+  if(!canSeeAiUsage(user))throw new AppError('You do not have access to monitoring.',403);
+  // The Head and Supervisors see AI usage only; database, storage, converter and email health are for the IT Admin.
+  if(!canSeeSystemHealth(user)){const usage=await db.get('SELECT COUNT(*) requests,COALESCE(SUM(input_tokens),0) "inputTokens",COALESCE(SUM(output_tokens),0) "outputTokens" FROM ai_usage WHERE at>=?',new Date(Date.now()-30*86400000).toISOString());return {checkedAt:new Date().toISOString(),ai:{connected:false,period:'Last 30 days',usage,detail:'No paid AI requests are made by the current assistant.'}};}
   const started=Date.now(),services:{name:string;state:'healthy'|'available'|'offline'|'simulated';detail:string}[]=[];
   try{await db.get('SELECT 1');services.push({name:'Database',state:'healthy',detail:db.dialect==='postgres'?'Shared database responds · PostgreSQL':'Shared database responds · SQLite'});}catch{services.push({name:'Database',state:'offline',detail:'Database check failed'});}
   const probeKey='health/'+randomUUID()+'.txt';let storageDetail='Storage is unavailable';

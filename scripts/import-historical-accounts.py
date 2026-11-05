@@ -29,9 +29,16 @@ def norm(value):
 rows=[];report={'source':source.name,'sha256':batch,'sheets':[],'issues':[],'mappingVersion':2};seen=collections.Counter()
 for sheet in w:
  headers=[text(c.value) for c in sheet[1]];count=0;skipped=[]
+ data_rows=list(sheet.rows)[1:]
  if headers[0] not in ['Account name','Accounts:','ACCOUNTS :','F','ACCOUNT','ACCOUNT NAME:','Account Names']:
-  report['issues'].append({'sheet':sheet.title,'row':1,'issue':'Unusual account header; preserved in source, review before importing as a record','value':headers[0]})
- for cells in list(sheet.rows)[1:]:
+  # Two SOA/MOA sheets hold a client name in A1 above real headers (B1 onwards). Keep that client as a record (its
+  # column A only: B1.. are header labels, not its data) and label column A as ACCOUNT.
+  if headers[0] and any(h.strip().lower() in ('branch','agent','date closed') for h in headers[1:]):
+   report['issues'].append({'sheet':sheet.title,'row':1,'issue':'A1 held a client name above the headers; imported it as a record (column A only) and labelled column A as ACCOUNT','value':''})
+   data_rows=[list(sheet.rows)[0][:1]]+data_rows;headers[0]='ACCOUNT'
+  else:
+   report['issues'].append({'sheet':sheet.title,'row':1,'issue':'Unusual account header; preserved in source, review before importing as a record','value':headers[0]})
+ for cells in data_rows:
   if not any(c.value is not None for c in cells):continue
   name=text(cells[0].value);key=norm(name)
   if not key:skipped.append(cells[0].row);continue
