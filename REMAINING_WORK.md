@@ -44,10 +44,12 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
   - Verified locally in Edge: turn on, test push accepted by the push service, a handover request pushes automatically.
   - Not yet verified on a real iPhone.
   - The test version needs a Vercel share link for testers' phones.
-- [ ] Open from the security review:
-  - per-user upload caps on progress reports;
-  - an index on `ownerId` (fine at current volume);
-  - re-authentication for Head role changes.
+- [x] Done from the security review (2026-11-06, `7f183e7`):
+  - 20 progress reports a day per owner;
+  - an `ownerId` index (migration `20261106000100`, applied to TEST);
+  - the Head re-enters their password for role and deactivation changes;
+  - temporary-password sessions cannot read Requests;
+  - an owner picker on manual import.
 - [ ] **Pre-existing, needs a PO decision:**
   - The case: agent B is turned away while A protects a client. A's protection expires and a supervisor approves agent C. A later recheck now lets B's inquiry become active too.
   - The rule ("oldest request wins") and the failing check in `scripts/test-client-protection.mjs` both date from commit bed125e, and they contradict each other.
