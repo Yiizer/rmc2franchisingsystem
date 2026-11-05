@@ -107,7 +107,7 @@ const dhBUser=everyone.find(u=>u.id===dhB.id);
 
 // ---------- helpers: forms, intake, direct record edits ----------
 let counter=0;
-const formFor=async(company,agent='Agent Smith')=>{counter++;return new File([new Uint8Array(await forms.sampleForm({company,sector:'Private',industry:'Services',address:'Antipolo City',branch:'Antipolo',requestDate:'2026-11-05',agentName:agent,agentPhone:'0917123'+String(4000+counter),contactName:'Contact '+company,contactEmail:'c@example.com',contactPhone:'0998123'+String(4000+counter),contactPosition:'HR',existingProvider:'None',addressee:'Contact '+company,addresseePosition:'HR',requestedPlan:'Group',payment:'Annual',employees:'20',dependents:'0',employeeAges:'22-50',dependentAges:'',hospitals:'',dental:''}))],'form-'+counter+'.xlsx',{type:'application/octet-stream'});};
+const formFor=async(company,agent='Agent Smith',branch='Antipolo')=>{counter++;return new File([new Uint8Array(await forms.sampleForm({company,sector:'Private',industry:'Services',address:'Antipolo City',branch,requestDate:'2026-11-05',agentName:agent,agentPhone:'0917123'+String(4000+counter),contactName:'Contact '+company,contactEmail:'c@example.com',contactPhone:'0998123'+String(4000+counter),contactPosition:'HR',existingProvider:'None',addressee:'Contact '+company,addresseePosition:'HR',requestedPlan:'Group',payment:'Annual',employees:'20',dependents:'0',employeeAges:'22-50',dependentAges:'',hospitals:'',dental:''}))],'form-'+counter+'.xlsx',{type:'application/octet-stream'});};
 const get=async id=>JSON.parse((await db.get('SELECT data FROM inquiries WHERE id=?',id)).data);
 const patch=async(id,fn)=>{const r=await get(id);fn(r);r.revision++;await db.run('UPDATE inquiries SET revision=?,data=? WHERE id=?',r.revision,JSON.stringify(r),id);return r;};
 const notices=async()=>(await db.all('SELECT data FROM notifications')).map(r=>JSON.parse(r.data));
@@ -129,7 +129,10 @@ assert.equal(await status(service.intake(zeo,await formFor('Zeo Import'),'a@exam
 const manual=await service.intake(cryssa,await formFor('Manual Co'),'agent@example.com',{ownerId:soa.id});
 assert.equal(manual.ownerId,soa.id);
 assert.equal(await status(service.intake(cryssa,await formFor('Bad Owner Co'),'agent@example.com',{ownerId:cryssa.id})),422,'an Employee cannot be an owner');
-const plain=await service.intake(cryssa,await formFor('Plain Co'),'agent@example.com');assert.equal(plain.ownerId,undefined);assert.equal(plain.fields.division,'Unconfirmed');
+const plain=await service.intake(cryssa,await formFor('Plain Co'),'agent@example.com');assert.equal(plain.ownerId,undefined);assert.equal(plain.fields.division,'Division 4','the form branch (Antipolo) fills the division');
+const spelled=await service.intake(cryssa,await formFor('Spelling Co','Agent Smith','Baliuag'),'agent@example.com');assert.equal(spelled.fields.division,'Division 2');assert.equal(spelled.fields.branch,'Baliwag Bulacan','a known spelling becomes the proper branch name');assert.equal(spelled.source.fields.branch,'Baliuag','the original form text is kept');
+const unlisted=await service.intake(cryssa,await formFor('Unlisted Co','Agent Smith','Tacloban'),'agent@example.com');assert.equal(unlisted.fields.division,'Unconfirmed','an unlisted branch stays for staff');assert.equal(unlisted.fields.branch,'Tacloban');
+console.log('PASS Intake fills the division from the form branch (Antipolo → Division 4, Baliuag → Baliwag Bulacan); unlisted branches stay Unconfirmed');
 pass('Manual import accepts an optional ownerId (active Division Head / SOA only); Head and Supervisor stay blocked from importing');
 // e-mail intake: sender address matches (case-insensitive, trimmed) an active owner account
 {

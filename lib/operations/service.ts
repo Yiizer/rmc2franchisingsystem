@@ -1,4 +1,6 @@
 import { requireInquiryHandler } from './activity';
+import { classifyBranch, UNASSIGNED, type DivisionTable } from './divisions';
+import { getDivisionTable } from './division-store';
 import { randomUUID, createHash } from 'node:crypto';
 import { assertClientReady, startClientProtection, updateClientReview } from './client-service';
 import { protectionFor } from './client-rules';
@@ -344,13 +346,26 @@ export async function intake(user:Staff,file:File,sender:string,options:{ownerId
   if(!filename.endsWith('.xlsx')&&!filename.endsWith('.pdf'))throw new AppError('Upload the agent’s submitted form as an Excel (.xlsx) or PDF (.pdf) attachment.');
   const source=filename.endsWith('.pdf')?await preservePdfForm(bytes,file.name,sender):await parseForm(bytes,file.name,sender);
   source.sourceHash=createHash('sha256').update(bytes).digest('hex');
+  const divisionTable=await getDivisionTable();
   // The original is already stored under a fresh key; if the row cannot be committed, remove it again.
   try{return await transaction(async()=>{const at=new Date().toISOString();const record:InquiryRecord={id:'INQ-'+new Date().getFullYear()+'-'+'00000',revision:1,status:'New inquiry',createdAt:at,updatedAt:at,fields:{...source.fields},source,email:defaultEmail(source.fields),emailOverrides:[],templateId:'',submissions:[],handledBy:[],history:[{id:randomUUID(),at,actorId:user.id,actor:user.name,action:scoped?'Submitted by '+user.name+' (own client). All active staff notified.':'Imported agent email form. All active staff notified.'+(owner?' Linked to '+owner.name+'.':'')}],chat:[],notes:'',returnNote:'',returnFlags:[],detailRequests:[]};
     if(owner)applyOwner(record,owner);
+    // No Division Head / SOA linked: fill the division (and the proper branch name) from the branch on the form, using the
+    // division table (PO, 2026-11-06). Unclear or unlisted branches stay "Unconfirmed" for staff; the original form text
+    // is kept in source.fields.
+    else fillDivisionFromBranch(record,divisionTable);
     await lockRegistry(record); // client identity keys first (Postgres), then the counter row, so two imports of one client are ordered
     record.id='INQ-'+new Date().getFullYear()+'-'+String(await nextInquiryNumber()).padStart(5,'0');
     await updateClientReview(record,user);
     await persist(record);await notify(record,record.closure?'Request declined — previous registration expired':record.clientReview?.state==='duplicate'?'Duplicate import received — on hold':record.clientReview?.state==='identify'?'Client details needed':'New inquiry',`${record.fields.company||'Agent request'} is ready for form review.`,(await allUsers()).filter(u=>u.active).map(u=>u.id));return record;});}catch(error){await deleteQuietly(source.storage);throw error;}
+}
+/** Sets fields.division (and the canonical branch name) from the form's branch when the table settles it. */
+export function fillDivisionFromBranch(record:InquiryRecord,table:DivisionTable){
+  if(record.fields.division?.trim()&&record.fields.division!=='Unconfirmed')return;
+  const place=classifyBranch(record.fields.branch||'',table);
+  if(place.division===UNASSIGNED)return;
+  const exact=!!place.branch&&!place.labelMismatch&&!place.unknownPlaces?.length;
+  record.fields={...record.fields,division:place.division,...(exact?{branch:place.branch!}:{})};
 }
 // One atomic statement on both databases: the row lock makes concurrent imports take distinct numbers and a rollback gives the number back.
 async function nextInquiryNumber() { const row=await db.get<{n:number}>("UPDATE counters SET n=n+1 WHERE name='inquiry' RETURNING n");if(!row)throw new Error('The inquiry counter is missing.');return Number(row.n); }

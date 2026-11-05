@@ -14,6 +14,11 @@ Format: **Decision** — why — where it applies.
   - **Progress reports:** one approval from the Head or Supervisor resets the 30 days, counted from the approval.
   - **Real data:** the PO accepted loading the real client directory onto the test version before the final security check.
   - **Supersedes:** "Protection belongs to the agent on the original form" and "Dates stay MM/DD/YYYY". Dates now show as "Nov 5, 2026, 2:14 PM".
+- **Division Head and SOA (2026-11-06):**
+  - A Division Head is the head of the sales branches in their division. An SOA is a Sales Operations Assistant, with the same access as a Division Head for now.
+  - New forms get their division from the form's branch, using the Divisions & Branches table: "Lipa 2" → Division 4, and "Baliuag" → Baliwag Bulacan in Division 2.
+  - A linked Division Head or SOA's own division wins.
+  - Unclear or unlisted branches stay "Unconfirmed" for staff to set. The original form text is kept.
 - **Inquiry locking v2 (2026-11-05)**:
   - **Lock lifetime:** the lock lasts 3 minutes without a heartbeat. Hidden tabs keep it, and it is released after 15 minutes idle.
   - **Request handover:** limited to one request per person every 5 minutes.
