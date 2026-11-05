@@ -8,8 +8,10 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const deployment = process.argv[2] || 'https://rmc2-test-yiizer.vercel.app';
-const passwords = Object.fromEntries((await readFile('test-results/online-credentials/CREDENTIALS.txt', 'utf8')).split(/\r?\n/)
-  .map(line => line.match(/^(\S+@rmc2\.local)\s.*password:\s*(\S+)/)).filter(Boolean).map(m => [m[1].split('@')[0], m[2]]));
+// Keyed by account id (the username column, or the email name when none); the Division Head signs in as divisionhead@rmc2.local.
+const logins = Object.fromEntries((await readFile('test-results/online-credentials/CREDENTIALS.txt', 'utf8')).split(/\r?\n/)
+  .map(line => line.match(/^(\S+@rmc2\.local)\s+username:\s*(\S+).*password:\s*(\S+)/)).filter(Boolean)
+  .map(m => [m[2] === 'undefined' ? m[1].split('@')[0] : m[2], { email: m[1], password: m[3] }]));
 const vercelCli = path.join(path.dirname(spawnSync(process.platform === 'win32' ? 'where' : 'which', ['vercel'], { encoding: 'utf8' }).stdout.split(/\r?\n/)[0]), 'node_modules/vercel/dist/vc.js');
 const cookies = {};
 function vc(user, route, json) {
@@ -22,7 +24,7 @@ function vc(user, route, json) {
   let v = body; try { v = JSON.parse(body); } catch {}
   return { status: Number([...head.matchAll(/^HTTP\/[\d.]+ (\d+)/gm)].at(-1)?.[1]), v };
 }
-for (const u of ['zeo', 'division-head', 'soa']) assert.equal(vc(u, 'login', { email: u + '@rmc2.local', password: passwords[u] }).status, 200, 'login ' + u);
+for (const u of ['zeo', 'division-head', 'soa']) assert.equal(vc(u, 'login', { email: logins[u].email, password: logins[u].password }).status, 200, 'login ' + u);
 const boot = vc('zeo', 'bootstrap').v;
 const sent = boot.inquiries.filter(r => r.status === 'Sent' && !r.ownerId && boot.clientStates[r.id]?.state !== 'archived' && r.protection).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 assert.ok(sent.length >= 2, 'need two Sent, protected, unlinked demo clients; found ' + sent.length);

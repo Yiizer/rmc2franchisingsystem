@@ -45,7 +45,7 @@ try {
     if (!emerson) fail('the user "emerson" does not exist in this database.');
     const person = JSON.parse(emerson.data);
     if (person.role !== 'Head') {
-      await tx`UPDATE rmc2.users SET data = ${JSON.stringify({ ...person, role: 'Head', canApprove: true })}::jsonb WHERE id = 'emerson'`;
+      await tx`UPDATE rmc2.users SET data = ${tx.json({ ...person, role: 'Head', canApprove: true })} WHERE id = 'emerson'`;
       await tx`DELETE FROM rmc2.sessions WHERE user_id = 'emerson'`; // the old role must not live on in a session
       done.head = 'set to Head';
     }
@@ -53,7 +53,7 @@ try {
       const [existing] = await tx`SELECT id FROM rmc2.users WHERE id = ${account.id} OR data->>'email' = ${account.email}`;
       if (existing) { done.existing.push(account.id); continue; }
       const password = randomBytes(18).toString('base64url');
-      await tx`INSERT INTO rmc2.users (id, data, password) VALUES (${account.id}, ${JSON.stringify(account)}::jsonb, ${hashPassword(password)})`;
+      await tx`INSERT INTO rmc2.users (id, data, password) VALUES (${account.id}, ${tx.json(account)}, ${hashPassword(password)})`;
       lines.push(`${account.email}   username: ${account.username}   role: ${account.role}   password: ${password}`);
       done.created.push(account.id);
     }

@@ -11,8 +11,8 @@
 | Head | emerson | Everything, Users & Roles, Proposal Templates, Monitoring (AI usage), approvals |
 | Supervisor | zeo | Everything except accounts and templates; approvals |
 | Employee | cryssa, jefferson, judy | Inquiries, preparing proposals, Requests |
-| Division Head | division-head (Division 4) | My Clients, Submit inquiry only |
-| SOA | soa (Division 4) | My Clients, Submit inquiry only |
+| Division Head | divisionhead@rmc2.local (Division 4) | My Clients, Submit inquiry only. Already linked: Rizal Coastal Foods (Sent, 30 days left), untouched for the live report demo |
+| SOA | soa (Division 4) | My Clients, Submit inquiry only. Linked: Pacific Crest Builders (it already has one approved report, from the 2026-11-06 smoke test) |
 | IT Admin | admin | Monitoring (full), Integrations, password resets for Employees |
 
 Use separate browsers or private windows for each person you show side by side (for example Edge for cryssa, Chrome for zeo).
@@ -53,6 +53,7 @@ Use separate browsers or private windows for each person you show side by side (
 ## Before 10:00
 
 - [ ] Open the link and sign in once as each account you will use.
-- [ ] Have one Sent client ready for division-head (step 5 setup).
+- [x] One Sent client ready for the Division Head (step 5 setup). `scripts/demo-link-owner-clients.mjs` was run on 2026-11-06.
+- [x] Online smoke test on 2026-11-06 passed 27/27: logins for all six roles, the Division Head's restricted view and refusals, the sent PDF, report → approval → 30 days, the directory and the Head's AI-only monitoring.
 - [ ] Have the sample form `test-results/Franchise-Form-Mabini-Integrated-School.xlsx` (or another) ready to email and upload.
 - [ ] Check the email cap is not used up: look on the Requests page.
