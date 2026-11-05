@@ -34,6 +34,8 @@ function openDatabase() {
     CREATE TABLE IF NOT EXISTS inquiries (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS inquiry_activity (session TEXT NOT NULL, tab TEXT NOT NULL, inquiry_id TEXT NOT NULL, user_id TEXT NOT NULL, started_at TEXT NOT NULL, seen_at TEXT NOT NULL, PRIMARY KEY(session,tab));
+    CREATE TABLE IF NOT EXISTS inquiry_handover (id TEXT PRIMARY KEY, inquiry_id TEXT NOT NULL, kind TEXT NOT NULL, user_id TEXT NOT NULL, by_user TEXT NOT NULL, at TEXT NOT NULL, until_at TEXT NOT NULL, state TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS handover_inquiry ON inquiry_handover (inquiry_id, kind, at);
     CREATE TABLE IF NOT EXISTS file_access (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, inquiry_id TEXT NOT NULL, kind TEXT NOT NULL, at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, inquiry_id TEXT NOT NULL, version INTEGER NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL, UNIQUE(inquiry_id,version,kind));
     CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, n INTEGER NOT NULL);

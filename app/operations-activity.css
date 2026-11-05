@@ -14,3 +14,11 @@
 .ops-handling-card.other{background:var(--ops-other-tint);border-color:var(--ops-other-line);color:var(--ops-other-ink)}
 .ops-handling-card>.ops-btn{width:100%;justify-content:center}
 .ops-handling-badge{background:var(--ops-other-tint);color:var(--ops-other-ink)}.ops-handling-badge.own{background:var(--ops-mine-tint);color:var(--ops-mine-ink)}
+/* Handover: banner for the holder, take-over dialog for supervisors. */
+.ops-handover-banner{flex-wrap:wrap}
+.ops-handover-banner>.ops-btn,.ops-handling-banner>.ops-btn{flex:none}
+.ops-takeover{display:flex;flex-direction:column;gap:10px}
+.ops-takeover-option{display:flex;align-items:center;gap:8px;font-size:14px}
+.ops-takeover select{min-height:40px;padding:6px 10px;border:1px solid var(--ops-line,#cfd6de);border-radius:6px;background:var(--ops-surface,#fff);font:inherit}
+.ops-takeover-error{color:#a12727;font-size:13px;margin:0}
+.dash-queue small>svg{vertical-align:-1px}

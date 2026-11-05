@@ -39,9 +39,9 @@ check('Only meaningful input changes invalidate results; catalog order is stable
  assert.notEqual(suggestionInputs(fields,catalog),suggestionInputs(fields,catalog.map(t=>({...t,sourceHash:'updated'}))));
 });
 check('Numeric Manila dates remain month/day/year across midnight, year and leap-day boundaries',()=>{
- assert.equal(manilaTime('2026-02-03T16:00:00Z'),'02/04/2026, 12:00 AM');
- assert.equal(manilaTime('2026-12-31T16:01:00Z'),'01/01/2027, 12:01 AM');
- assert.equal(manilaTime('2028-02-29T15:59:00Z'),'02/29/2028, 11:59 PM');
+ assert.equal(manilaTime('2026-02-03T16:00:00Z'),'Feb 4, 2026, 12:00 AM');
+ assert.equal(manilaTime('2026-12-31T16:01:00Z'),'Jan 1, 2027, 12:01 AM');
+ assert.equal(manilaTime('2028-02-29T15:59:00Z'),'Feb 29, 2028, 11:59 PM');
 });
 await mkdir('test-results/workspace-advisors',{recursive:true});
 await writeFile('test-results/workspace-advisors/rule-checks.json',JSON.stringify(checks,null,2));

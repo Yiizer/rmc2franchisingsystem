@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { colleagueHolding } from './activity';
 import { z } from 'zod';
 import { AppError, audit, db, inquiry, persist, transaction, notify, allUsers } from './database';
 import { rowOrder } from './sql-dialect';
@@ -62,7 +63,7 @@ export async function reviewHistorical(id:string,user:Staff,input:unknown){
  return await transaction(async()=>{const record=await inquiry(id);if(record.revision!==body.revision)throw new AppError('Reload the inquiry before reviewing this match.',409);
  if(record.closure)throw new AppError('Archived requests are view only.',409);
  const match=(await historicalMatches(record)).find(row=>row.id===body.historicalId);if(!match)throw new AppError('The matching details changed. Reload.',409);
- await db.lock('lease:'+id);const owner=await db.get('SELECT user_id FROM inquiry_activity WHERE inquiry_id=? AND seen_at>? AND user_id<>?',id,new Date(Date.now()-90000).toISOString(),user.id);if(owner)throw new AppError('A colleague is handling this inquiry.',423);
+ await db.lock('lease:'+id);const owner=await colleagueHolding(id,user);if(owner)throw new AppError('A colleague is handling this inquiry.',423);
  if(body.action==='same'&&normalizeClient(match.agent)!==normalizeClient(record.fields.agentName))throw new AppError('For the same client with a different agent, request supervisor approval instead.',409);
  if(body.action==='approve-agent-change'||body.action==='reject-agent-change'){
   if(user.role!=='Supervisor'||!user.canApprove)throw new AppError('Only an approving supervisor can decide agent changes.',403);
@@ -71,7 +72,7 @@ export async function reviewHistorical(id:string,user:Staff,input:unknown){
  }
  if(match.review?.outcome==='request-agent-change'&&!(match.review.stale&&body.action==='request-agent-change')&&!['approve-agent-change','reject-agent-change'].includes(body.action))throw new AppError('A supervisor must decide the pending agent change.',409);
  await db.run('INSERT INTO historical_reviews (id,inquiry_id,historical_id,identity,outcome,actor,at,reason) VALUES (?,?,?,?,?,?,?,?)',randomUUID(),id,body.historicalId,historicalIdentity(record),body.action,user.id,new Date().toISOString(),body.reason);
- if(body.action==='request-agent-change')await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',id);
+ if(body.action==='request-agent-change')await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',id);await db.run("DELETE FROM inquiry_handover WHERE inquiry_id=?",id);
  audit(record,user,'Historical client review ('+body.action+') '+match.sheet+' row '+match.source_row+': '+body.reason);await persist(record,body.revision);
  if(body.action==='request-agent-change')await notify(record,'Historical agent change awaiting approval',record.fields.company+' · review the historical record',(await allUsers()).filter(p=>p.active&&p.role==='Supervisor'&&p.canApprove).map(p=>p.id));
  return record;});

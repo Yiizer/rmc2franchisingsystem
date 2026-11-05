@@ -5,6 +5,9 @@ import type { CustomEdit, CustomizedProposal, FormFields } from '@/lib/operation
 import type { EditableBlock } from '@/lib/operations/custom-documents';
 import { endpoint } from './operations-common';
 
+// docx-preview shows a Word tab as an em space (U+2003). Map it back to a tab, unless the paragraph really has em spaces.
+const EM_SPACE=String.fromCharCode(0x2003);
+const editorTabs=(text:string,original='')=>original.includes(EM_SPACE)?text:text.split(EM_SPACE).join('\t');
 export default function CustomDocument({inquiryId,templateId,fields,customization,editable,onEdit,zoom}:{inquiryId:string;templateId:string;fields:FormFields;customization:CustomizedProposal;editable:boolean;zoom:string;onEdit:(id:string,edit:CustomEdit|null)=>void}){
   const root=useRef<HTMLDivElement>(null),styles=useRef<HTMLDivElement>(null),active=useRef<HTMLElement|null>(null),blocks=useRef<EditableBlock[]>([]);
   const latest=useRef({onEdit,customization,editable});latest.current={onEdit,customization,editable};
@@ -54,8 +57,8 @@ export default function CustomDocument({inquiryId,templateId,fields,customizatio
   useEffect(()=>{root.current?.querySelectorAll<HTMLElement>('[data-custom-block]').forEach(el=>el.contentEditable=String(editable));},[editable]);
   useEffect(()=>{const host=root.current;if(!host||loading)return;const resize=()=>{host.querySelectorAll<HTMLElement>('section.customdoc').forEach(paper=>{const nativeWidth=parseFloat(getComputedStyle(paper).width)||794;paper.style.zoom=String(zoom==='fit'?Math.max(.15,Math.min(1.25,(host.clientWidth-40)/nativeWidth)):Number(zoom));});};const observer=new ResizeObserver(resize);observer.observe(host);resize();return()=>observer.disconnect();},[loading,zoom]);
   const current=customization.edits[selected];
-  function capture(element:HTMLElement){const id=element.dataset.customBlock!;const text=element.innerText.replace(/\r/g,'').replace(/\n$/,'');const before=blocks.current.find(block=>block.id===id);const edit={...(latest.current.customization.edits[id]||{}),text};element.classList.toggle('custom-edited',text!==before?.original||Object.keys(edit).length>1);latest.current.onEdit(id,text===before?.original&&Object.keys(edit).length===1?null:edit);}
-  function format(values:Partial<CustomEdit>){const element=active.current;if(!element||!editable)return;const id=element.dataset.customBlock!,edit={...(customization.edits[id]||{}),text:element.innerText.replace(/\n$/,''),...values};
+  function capture(element:HTMLElement){const id=element.dataset.customBlock!;const before=blocks.current.find(block=>block.id===id);const text=editorTabs(element.innerText.replace(/\r/g,'').replace(/\n$/,''),before?.original);const edit={...(latest.current.customization.edits[id]||{}),text};element.classList.toggle('custom-edited',text!==before?.original||Object.keys(edit).length>1);latest.current.onEdit(id,text===before?.original&&Object.keys(edit).length===1?null:edit);}
+  function format(values:Partial<CustomEdit>){const element=active.current;if(!element||!editable)return;const id=element.dataset.customBlock!,edit={...(customization.edits[id]||{}),text:editorTabs(element.innerText.replace(/\r/g,'').replace(/\n$/,''),blocks.current.find(block=>block.id===id)?.original),...values};
     if(values.bold!==undefined)element.style.fontWeight=values.bold?'bold':'normal';if(values.italic!==undefined)element.style.fontStyle=values.italic?'italic':'normal';if(values.underline!==undefined)element.style.textDecoration=values.underline?'underline':'none';if(values.fontSize)element.style.fontSize=values.fontSize+'pt';if(values.color)element.style.color='#'+values.color;if(values.align)element.style.textAlign=values.align==='both'?'justify':values.align;
     element.querySelectorAll<HTMLElement>('span').forEach(span=>{if(values.bold!==undefined)span.style.fontWeight='inherit';if(values.italic!==undefined)span.style.fontStyle='inherit';if(values.underline!==undefined)span.style.textDecoration='inherit';if(values.fontSize)span.style.fontSize='inherit';if(values.color)span.style.color='inherit';});
     element.classList.add('custom-edited');onEdit(id,edit);element.focus({preventScroll:true});

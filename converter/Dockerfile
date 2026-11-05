@@ -10,7 +10,7 @@ RUN apt-get update \
       ca-certificates curl fontconfig \
       libcairo2 libcups2 libdbus-1-3 libnss3 libxinerama1 libxrandr2 libxslt1.1 libsm6 libice6 libx11-xcb1 libgl1 \
       libglib2.0-0 libxext6 libxrender1 libxtst6 libfreetype6 libfontconfig1 \
-      fonts-crosextra-caladea fonts-crosextra-carlito fonts-liberation2 fonts-dejavu-core \
+      fonts-crosextra-caladea fonts-crosextra-carlito fonts-liberation2 fonts-dejavu-core fonts-wine \
  && curl -fsSL -o /tmp/lo.tar.gz "https://download.documentfoundation.org/libreoffice/stable/${LO_VERSION}/deb/x86_64/LibreOffice_${LO_VERSION}_Linux_x86-64_deb.tar.gz" \
  && echo "${LO_SHA256}  /tmp/lo.tar.gz" | sha256sum -c - \
  && mkdir /tmp/lo && tar -xzf /tmp/lo.tar.gz -C /tmp/lo --strip-components=1 \
@@ -19,6 +19,10 @@ RUN apt-get update \
  && cd / && rm -rf /tmp/lo /tmp/lo.tar.gz /var/lib/apt/lists/* \
  && fc-cache -f \
  && soffice --version
+
+# Font substitutions for the template fonts Linux lacks (see fonts-rmc2.conf).
+COPY fonts-rmc2.conf /etc/fonts/conf.d/99-rmc2.conf
+RUN fc-cache -f && fc-match "Arial MT" && fc-match Tahoma && fc-match Aptos
 
 ENV HOME=/tmp NODE_ENV=production
 WORKDIR /app

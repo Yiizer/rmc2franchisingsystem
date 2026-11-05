@@ -52,7 +52,7 @@ try{
   pass('Presence is authenticated, scoped to each tab/session, and late heartbeats cannot resurrect a released tab');
   await activity(cryssa,initial.id,tab,'start');
   const database=new DatabaseSync(path.resolve(out,'qa-data/rmc2.sqlite'));
-  database.prepare('UPDATE inquiry_activity SET seen_at=? WHERE tab=?').run(new Date(Date.now()-95000).toISOString(),tab);
+  database.prepare('UPDATE inquiry_activity SET seen_at=? WHERE tab=?').run(new Date(Date.now()-185000).toISOString(),tab);
   assert.equal((await state(cryssa)).activity.length,0);database.close();pass('Disconnected activity expires after 90 seconds');
   await page.getByRole('link',{name:'Open '+initial.fields.company,exact:true}).click();await page.getByRole('button',{name:/Choose template/}).click();await page.getByLabel('Proposal template',{exact:true}).selectOption('d024');
   await until(async()=>(await state(cryssa)).activity.some(a=>a.userId==='cryssa'));

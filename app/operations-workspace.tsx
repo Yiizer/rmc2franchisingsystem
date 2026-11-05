@@ -11,7 +11,7 @@ import { suggestTemplates, suggestionInputs, reviewTemplateChoice } from '@/lib/
 import { proposalChecks, proposalFields } from '@/lib/operations/proposal-fields';
 import { workStep } from '@/lib/operations/work-progress';
 import ClientProtectionPanel, { ClientOverlapNote, ProtectionIndicator } from './operations-client-protection';
-import { useInquiryActivity, HandlingBanner, HandlingHeader, HandlingControl } from './operations-activity';
+import { useInquiryActivity, HandlingBanner, HandoverBanner, HandlingHeader, HandlingControl } from './operations-activity';
 import './operations-document-scroll.css';
 import CustomReview from './operations-custom-review';
 import SubmissionStatus, {type SubmissionState} from './operations-submission-status';
@@ -141,7 +141,7 @@ if((['to','subject','body'] as const).some(key=>email[key]!==next[key]))setEmail
   else if(['Approved — email failed','Approved — sending'].includes(record.status))nextAction={label:'Retry approved reply',disabled:!!busy,onClick:()=>run('Retrying',current=>action('retry',current))};
   else nextReason='View only';
   // Keep handling on the left of the footer and the current workflow step on the right.
-  const receivedDate=new Date(record.createdAt).toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric',timeZone:'Asia/Manila'});
+  const receivedDate=manilaTime(record.createdAt);
   const variantName=selected?(selected.variant||selected.name.split('·').at(-1)?.trim()||selected.name):'';
   const stepDetails=[latest?'Details confirmed':!reviewIssues.length&&clientState.state==='clear'?'Details complete':clientState.state==='duplicate'?'Client match on hold':reviewIssues.length?reviewIssues.length+(reviewIssues.length===1?' detail':' details')+' to check':'Confirm the key details',
     latest?((latest.generated.templateName||'Template').split('·').at(-1)?.trim()||'Template')+' submitted':selected?(customization?'Customized ':'')+variantName+' selected':'Not chosen yet',
@@ -152,6 +152,7 @@ if((['to','subject','body'] as const).some(key=>email[key]!==next[key]))setEmail
     <nav className="ops-ws-breadcrumb" aria-label="Breadcrumb"><button aria-label="Back to inquiries" onClick={onBack}>Inquiries</button><span aria-hidden="true">/</span><span>{record.id}</span></nav>
     <header className="ops-ws-heading"><div><h1>{fields.company||'New inquiry'}</h1><div className="ops-workspace-id"><Status value={record.status}/>{(customization||displayGenerated?.customization)&&<span className="ops-badge customized">Customized</span>}<span>{record.id} · Received {receivedDate}</span></div></div><HandlingHeader activity={activity} enabled={canHandle} busy={!!busy} onRelease={onBack} showRelease={false} editingVersion={record.supervisorEdit?.version}/></header>
     <HandlingBanner activity={activity} user={user} users={users} enabled={canHandle} busy={!!busy} showAction={false}/>
+    <HandoverBanner activity={activity} users={users} enabled={canHandle} busy={!!busy} onRelease={onBack}/>
     <WorkspaceSteps step={step} disabled={[false,!!record.supervisorEdit||clientState.state==='identify',clientState.state==='identify'||!selected&&!generated]} complete={[!!latest||!reviewIssues.length&&clientState.state==='clear',!!latest||!!selected,!!latest||!!generated&&!stale]} details={stepDetails} onStep={setStep}/>
     <div className="ops-workspace-shell"><div className="ops-workspace-main">
     {step!==0&&<div className={'ops-stage-guide'+(showStatus?' is-tight':'')}><h2>{[clientState.state==='duplicate'?'Resolve the client match':clientState.state==='archived'?'Review the archived request':'Review the submitted details','Choose a proposal template',submitted?'Review the submitted proposal':record.supervisorEdit?'Review your proposal changes':'Prepare the proposal'][step]}</h2></div>}

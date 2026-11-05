@@ -13,7 +13,7 @@ import type { InquiryRecord, Staff } from './types';
 // Excel/PDF attachments in private storage. Agents email their forms in, so a message with a form attachment is
 // imported AUTOMATICALLY through the normal intake (client checks, duplicate holds and notifications apply).
 // Messages without a form, or whose form cannot be read, stay on the Requests page for staff.
-// The inbox is checked every 2 minutes while anyone has the app open, plus the daily cron (production).
+// The inbox is checked every 30 seconds while anyone has the app open, plus the daily cron (production).
 // Mail I/O always happens outside transactions (TEAM_DECISIONS file and data rules).
 
 export type InboundAttachment = { name: string; type: string; size: number; key: string };
@@ -24,7 +24,7 @@ export type InboundMessage = {
 };
 /** The actor recorded in history for automatic imports. Not a sign-in account. */
 const EMAIL_INTAKE: Staff = { id: 'email-intake', name: 'Email intake (automatic)', role: 'Employee', email: '', active: true, position: 'System', canApprove: false } as Staff;
-const AUTO_CHECK_MS = 2 * 60 * 1000;
+const AUTO_CHECK_MS = 30 * 1000;
 const MAILBOX = 'INBOX', FIRST_RUN_DAYS = 14, MAX_PER_CHECK = 25, MAX_ATTACHMENT = 7 * 1024 * 1024;
 const FORM_TYPES: Record<string, string> = { xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', pdf: 'application/pdf' };
 
@@ -109,14 +109,26 @@ export async function checkInbox(): Promise<{ added: number; imported: number; c
   return { added, imported, checkedAt, connected: true };
 }
 
-/** Called from the workspace poll: at most one inbox check every 2 minutes across all users and instances. */
-export async function autoCheckInbox(): Promise<void> {
-  if (!imapSettings()) return;
-  const now = Date.now(), due = new Date(now - AUTO_CHECK_MS).toISOString(), at = new Date(now).toISOString();
-  // Claim the slot atomically: only the request that moves checked_at forward runs the check.
-  await db.run("INSERT INTO inbound_cursor (mailbox,uidvalidity,last_uid,checked_at) VALUES (?,'',0,?) ON CONFLICT (mailbox) DO NOTHING", MAILBOX, new Date(0).toISOString());
-  const claimed = await db.run('UPDATE inbound_cursor SET checked_at=? WHERE mailbox=? AND checked_at<?', at, MAILBOX, due);
-  if (!claimed.changes) return;
+/** Called from the workspace poll: claims the shared slot, so at most one inbox check runs every 30 seconds across
+ * all users and instances. Returns true when this request won the slot; the caller then runs `runClaimedInboxCheck`
+ * after the response and tells the client to refresh shortly, so the import appears without waiting for the next poll. */
+export async function claimInboxCheck(): Promise<boolean> {
+  if (!imapSettings()) return false;
+  try {
+    const now = Date.now(), due = new Date(now - AUTO_CHECK_MS).toISOString(), at = new Date(now).toISOString();
+    // Most polls find the slot still fresh: a read, no write, on the response path.
+    const cursor = await db.get<{ checked_at: string }>('SELECT checked_at FROM inbound_cursor WHERE mailbox=?', MAILBOX);
+    if (cursor && cursor.checked_at >= due) return false;
+    // Claim the slot atomically: only the request that moves checked_at forward runs the check.
+    if (!cursor) await db.run("INSERT INTO inbound_cursor (mailbox,uidvalidity,last_uid,checked_at) VALUES (?,'',0,?) ON CONFLICT (mailbox) DO NOTHING", MAILBOX, new Date(0).toISOString());
+    const claimed = await db.run('UPDATE inbound_cursor SET checked_at=? WHERE mailbox=? AND checked_at<?', at, MAILBOX, due);
+    return !!claimed.changes;
+  } catch (error) {
+    console.error('[inbound] slot claim failed:', (error as { code?: string })?.code || 'error');
+    return false;
+  }
+}
+export async function runClaimedInboxCheck(): Promise<void> {
   try { await checkInbox(); } catch { /* logged in checkInbox; the next slot retries */ }
 }
 

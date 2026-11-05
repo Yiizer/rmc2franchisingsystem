@@ -1,9 +1,10 @@
 'use client';
-import {ChevronRight} from 'lucide-react';
+import {ChevronRight,Lock} from 'lucide-react';
 import type {InquirySummary,Staff,WorkspaceData} from '@/lib/operations/types';
 import {ageLabel,manilaTime} from '@/lib/operations/types';
 import {protectionDaysLeft} from '@/lib/operations/client-rules';
 import {Empty,Status} from './operations-common';
+import {heldFor} from './operations-activity';
 
 // Plain-text protection note under the agent name (the full chip lives on the Inquiries list).
 function protectionNote(state:WorkspaceData['clientStates'][string]|undefined,now:number){
@@ -26,9 +27,9 @@ export default function DashboardQueue({records,user,users,activity,clientStates
  const company=record.fields.company||'Account name missing';
  return <tr key={record.id} className="dash-row" tabIndex={0} role="link" aria-label={action+' '+company} title={action} onClick={()=>onOpen(record)} onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==='Enter'||e.key===' ')){e.preventDefault();onOpen(record);}}}>
   <td><span className="dash-account" title={company}>{company}</span>{own&&<span className="dash-yours">Yours</span>}<small>{record.id}</small>{!!record.historicalMatchCount&&<small className="dash-attention">Historical account found · review needed</small>}{record.customized&&<small>Customized proposal</small>}</td>
-  <td data-label="Status"><Status value={record.status}/>{other&&<small>Handled by {users.find(u=>u.id===handler.userId)?.name||'a colleague'} · View only</small>}</td>
+  <td data-label="Status"><Status value={record.status}/>{other&&<small><Lock size={11} aria-hidden="true"/> {handler.reserved?'Reserved for ':'Handled by '}{users.find(u=>u.id===handler.userId)?.name||'a colleague'} · {handler.reserved?'reserved':heldFor(handler.startedAt)} · View only</small>}</td>
   <td data-label="Agent">{record.fields.agentName||'Not recorded'}<small className={state?.state==='duplicate'?'dash-attention':''}>{protectionNote(state,now)}</small></td>
-  <td data-label="Received"><span title={manilaTime(record.createdAt)}>{ageLabel(record.createdAt,now)}</span><small>Updated {ageLabel(record.updatedAt,now)}</small></td>
+  <td data-label="Received"><span>{manilaTime(record.createdAt)}</span><small>{ageLabel(record.createdAt,now)} · Updated <span title={manilaTime(record.updatedAt)}>{ageLabel(record.updatedAt,now)}</span></small></td>
   <td className="dash-chevron"><span className="sr-only">{action}</span><ChevronRight size={18} aria-hidden="true"/></td></tr>;
  })}</tbody></table></div>;
 }

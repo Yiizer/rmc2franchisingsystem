@@ -14,9 +14,15 @@ function parent(node:XmlNode,name:string):XmlElement|null {
   for(let p=node;p;p=p.parentNode)if(p.nodeType===1&&p.namespaceURI===W&&p.localName===name)return p as XmlElement;
   return null;
 }
+/** The text pieces of a paragraph, in order: only w:t, w:tab and line breaks inside a run of this paragraph.
+ * Tab-stop definitions (`w:pPr/w:tabs/w:tab`) are paragraph settings, not text. Counting them shifted edits into
+ * the tab settings and cut off body text (the rate-table rows). */
 function tokens(paragraph:XmlElement) {
-  return Array.from(paragraph.getElementsByTagNameNS(W,'*')).filter(node=>parent(node.parentNode,'p')===paragraph&&(node.localName==='t'||node.localName==='tab'||node.localName==='br'&&!node.getAttributeNS(W,'type')));
+  return Array.from(paragraph.getElementsByTagNameNS(W,'*')).filter(node=>parent(node.parentNode,'p')===paragraph&&!!parent(node.parentNode,'r')&&!parent(node.parentNode,'pPr')&&(node.localName==='t'||node.localName==='tab'||node.localName==='br'&&!node.getAttributeNS(W,'type')));
 }
+/** The browser editor (docx-preview) shows a Word tab as an em space (U+2003), so edited text comes back with em
+ * spaces where the document has tabs. Turn them back into tabs so an untouched tab stays a tab. */
+export const editorText=(text:string,original='')=>original.includes('\u2003')?text:text.replace(/\u2003/g,'\t');
 const tokenText=(node:XmlElement)=>node.localName==='br'?'\n':node.localName==='tab'?'\t':node.textContent||'';
 const textOf=(paragraph:XmlElement)=>tokens(paragraph).map(tokenText).join('');
 const parts=(zip:PizZip)=>Object.keys(zip.files).filter(file=>/^word\/(document|header\d+|footer\d+|footnotes|endnotes)\.xml$/.test(file)).sort();
@@ -59,7 +65,7 @@ export function customDocument(bytes:Buffer,edits:Record<string,CustomEdit>,anno
     const xml=zip.file(part)!.asText(),doc=parser().parseFromString(xml,'application/xml');if(!doc.documentElement)throw new AppError('The source document is empty.');const paragraphs=elements(doc.documentElement,'p');
     paragraphs.forEach((paragraph,index)=>{
       const id=key(part,index),original=textOf(paragraph),edit=edits[id],label=(parent(paragraph.parentNode,'tc')?'Table cell':'Proposal text')+' · '+(original.trim().replace(/\s+/g,' ').slice(0,65)||'Blank paragraph'),anchor='rmc2_'+id.replace(/-/g,'_');seen.add(id);
-      if(edit){replaceText(paragraph,edit.text);if(Object.keys(edit).some(k=>k!=='text'))styleParagraph(paragraph,edit);const formatting=Object.keys(edit).filter(k=>k!=='text');if(original!==edit.text||formatting.length)changes.push({id,label,before:original,after:edit.text,formatting});}
+      if(edit){const text=editorText(edit.text,original);replaceText(paragraph,text);if(Object.keys(edit).some(k=>k!=='text'))styleParagraph(paragraph,edit);const formatting=Object.keys(edit).filter(k=>k!=='text');if(original!==text||formatting.length)changes.push({id,label,before:original,after:text,formatting});}
       blocks.push({id,anchor,label,original,text:textOf(paragraph)});
       if(annotate){const start=doc.createElementNS(W,'w:bookmarkStart'),end=doc.createElementNS(W,'w:bookmarkEnd');start.setAttributeNS(W,'w:id',String(bookmark));start.setAttributeNS(W,'w:name',anchor);end.setAttributeNS(W,'w:id',String(bookmark++));const properties=Array.from(paragraph.childNodes).find(n=>n.nodeType===1&&n.localName==='pPr');paragraph.insertBefore(start,properties?.nextSibling||paragraph.firstChild);paragraph.appendChild(end);}
     });

@@ -6,7 +6,7 @@ import type { WorkspaceUpdate, WorkspaceView } from '@/lib/operations/types';
 
 export function useOperationsWorkspace(query: {view:string;search:string;filter:string;division:string;sort?:string;page:number;noticePage:number;selected:string}) {
   const [data,setValue]=useState<WorkspaceView|null>(null),[loading,setLoading]=useState(true),[readyKey,setReadyKey]=useState('');
-  const current=useRef<WorkspaceView|null>(null),sequence=useRef(0),pending=useRef(false);
+  const current=useRef<WorkspaceView|null>(null),sequence=useRef(0),pending=useRef(false),followUp=useRef<ReturnType<typeof setTimeout>|null>(null);
   const queryKey=JSON.stringify(query),latestQuery=useRef(queryKey);
   const responseQuery=useRef('');
   const confirmedDetail=useRef<{id:string;revision:number}|null>(null);
@@ -25,7 +25,10 @@ export function useOperationsWorkspace(query: {view:string;search:string;filter:
       if(confirmedDetail.current&&previous.current?.id===options.selected&&confirmedDetail.current.id===options.selected&&confirmedDetail.current.revision===previous.current?.revision)params.set('knownRevision',String(confirmedDetail.current.revision));
     }
     try{
-      const result=await api<WorkspaceUpdate|{unchanged:true;cursor:string}>('workspace?'+params);
+      const result=await api<(WorkspaceUpdate|{unchanged:true;cursor:string})&{inboxChecking?:boolean}>('workspace?'+params);
+      // This poll started an inbox check on the server: look again shortly so a newly imported email shows up
+      // without waiting for the next 10-second poll.
+      if(result.inboxChecking&&!followUp.current)followUp.current=setTimeout(()=>{followUp.current=null;if(document.visibilityState==='visible'&&!pending.current)void refresh();},6000);
       if(requestSequence!==sequence.current||key!==latestQuery.current)return;
       if(!('unchanged' in result)){
         const cached=current.current;
@@ -51,7 +54,7 @@ export function useOperationsWorkspace(query: {view:string;search:string;filter:
     const timer=setInterval(poll,10000);
     document.addEventListener('visibilitychange',poll);
     window.addEventListener('focus',poll);
-    return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',poll);window.removeEventListener('focus',poll);invalidate();};
+    return()=>{clearInterval(timer);if(followUp.current){clearTimeout(followUp.current);followUp.current=null;}document.removeEventListener('visibilitychange',poll);window.removeEventListener('focus',poll);invalidate();};
   },[refresh,invalidate]);
   return {data,setData,loading,refresh,viewLoading:readyKey!==queryKey};
 }

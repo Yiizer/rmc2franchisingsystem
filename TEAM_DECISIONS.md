@@ -8,6 +8,24 @@ Format: **Decision** — why — where it applies.
 
 ## Product decisions (approved by the Product Owner)
 
+- **Demo feedback round (2026-11-05)**: the full list is in `DEMO_FEEDBACK_PLAN.md`.
+  - **Roles:** Head (Emerson Dolf Fernandez), Supervisor (Zeo), Employee, Division Head, SOA and a hidden IT Admin. Only the Head manages accounts and templates.
+  - **Inquiries and protection:** Division Heads / SOAs send every inquiry and own the 30-day protection. They see only their own clients.
+  - **Progress reports:** one approval from the Head or Supervisor resets the 30 days, counted from the approval.
+  - **Real data:** the PO accepted loading the real client directory onto the test version before the final security check.
+  - **Supersedes:** "Protection belongs to the agent on the original form" and "Dates stay MM/DD/YYYY". Dates now show as "Nov 5, 2026, 2:14 PM".
+- **Inquiry locking v2 (2026-11-05)**:
+  - **Lock lifetime:** the lock lasts 3 minutes without a heartbeat. Hidden tabs keep it, and it is released after 15 minutes idle.
+  - **Request handover:** limited to one request per person every 5 minutes.
+  - **Take over:** Supervisor, later the Head. It goes to the person taking over, or as a 15-minute reservation for an Employee (table `inquiry_handover`).
+  - **Unchanged:** decline, BOR and client review keep their looser 90-second check (PO decision).
+- **Email pull-in every 30 seconds (2026-11-05)** while the app is open. The poll that wins the check slot tells the client to refresh about 6 seconds later.
+- **Proposal PDFs "jumbled" (found 2026-11-05)**:
+  - The demo files had all their fonts embedded, so the text itself was fine.
+  - What looked jumbled was page flow: headings stranded at the bottom of a page, tables splitting across pages, and cramped rows. The November template versions fix this.
+  - Total CorpoShield (D094) and Total CorpoShield PEC Covered (D096) put Emerson's signature in the page header, so it prints on most pages over the text. The new versions of both files still do this.
+  - Customize no longer counts tab-stop settings as text.
+
 - **Client ownership: first request claims the client** (2026-10-30) — once an agent has a request for a
   client, processed or not, no other agent may handle that client. Another agent can take it only after
   the first agent failed to follow up and their protection expired. Newer requests from other agents are

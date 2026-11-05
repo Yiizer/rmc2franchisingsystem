@@ -32,6 +32,6 @@ export async function cancelSupervisorEdit(id:string,user:Staff,input:unknown){
     const latest=record.submissions.at(-1)!;
     if(record.customization)record.customizationArchive=[...(record.customizationArchive||[]),structuredClone(record.customization)];
     record.fields=structuredClone(latest.fields);record.email=structuredClone(latest.email);record.emailOverrides=[...latest.emailOverrides];record.generated=structuredClone(latest.generated);record.templateId=latest.generated.templateId;record.customization=latest.generated.customization?structuredClone(latest.generated.customization):undefined;record.notes=latest.notes;
-    delete record.supervisorEdit;record.status='Awaiting approval';audit(record,user,'Canceled supervisor edits; retained submitted version '+latest.version);await persist(record,body.revision);await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',id);return record;
+    delete record.supervisorEdit;record.status='Awaiting approval';audit(record,user,'Canceled supervisor edits; retained submitted version '+latest.version);await persist(record,body.revision);await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',id);await db.run("DELETE FROM inquiry_handover WHERE inquiry_id=?",id);return record;
   });
 }

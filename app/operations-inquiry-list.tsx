@@ -4,7 +4,7 @@ import {Search,SlidersHorizontal,Columns3,X,ChevronLeft,ChevronRight,ArrowUp,Arr
 import type {InquirySummary,Staff,WorkspaceData,WorkspaceView} from '@/lib/operations/types';
 import {ageLabel,manilaTime} from '@/lib/operations/types';
 import {Status,initials,staffName} from './operations-common';
-import {HandlingBadge} from './operations-activity';
+import {HandlingBadge,heldFor} from './operations-activity';
 import {ProtectionIndicator} from './operations-client-protection';
 import './operations-directory.css';
 import './operations-inquiry-list.css';
@@ -84,11 +84,11 @@ function Cell({column,record,data,user,now}:{column:string;record:InquirySummary
  if(column==='agent')return <>{record.fields.agentName||'Not recorded'}<small>{record.fields.branch||''}</small></>;
  if(column==='protection')return <ProtectionIndicator state={state} now={now}/>;
  if(column==='received')return <>{manilaTime(record.createdAt)}<small>{ageLabel(record.createdAt,now)}</small></>;
- if(column==='updated')return <span title={manilaTime(record.updatedAt)}>{ageLabel(record.updatedAt,now)}</span>;
+ if(column==='updated')return <>{manilaTime(record.updatedAt)}<small>{ageLabel(record.updatedAt,now)}</small></>;
  if(column==='division')return <>{record.fields.division||'Unconfirmed'}</>;
  if(column==='sent')return <>{record.sentBy?staffName(data.users,record.sentBy):'—'}<small>{record.deliveredAt?manilaTime(record.deliveredAt):''}</small></>;
  if(column==='prepared')return record.preparedBy?<>{staffName(data.users,record.preparedBy)}</>:<span className="ops-muted">Not recorded</span>;
- if(column==='waiting'){const overdue=!!record.submittedAt&&now-Date.parse(record.submittedAt)>=86400000;return <span className={overdue?'ops-wait-overdue':''}>{record.submittedAt?ageLabel(record.submittedAt,now):'Not recorded'}</span>;}
+ if(column==='waiting'){const overdue=!!record.submittedAt&&now-Date.parse(record.submittedAt)>=86400000;return <span className={overdue?'ops-wait-overdue':''}>{record.submittedAt?<span title={manilaTime(record.submittedAt)}>{ageLabel(record.submittedAt,now)}</span>:'Not recorded'}</span>;}
  return null;
 }
 function HandlerFree({record,state}:{record:InquirySummary;state?:WorkspaceData['clientStates'][string]}){
@@ -118,7 +118,7 @@ function InquiryPreview({record,data,user,now,onClose,onOpen,onPrevious,onNext}:
   <div className="dir-panel-controls"><span>INQUIRY PREVIEW</span><div><button className="ops-btn" aria-label="Previous inquiry" disabled={!onPrevious} onClick={onPrevious}><ArrowUp size={17}/></button><button className="ops-btn" aria-label="Next inquiry" disabled={!onNext} onClick={onNext}><ArrowDown size={17}/></button><button className="ops-btn" aria-label="Close inquiry preview" onClick={onClose}><X size={18}/></button></div></div>
   <div className="dir-panel-heading"><h2>{f.company||'Account name missing'}</h2><div className="ops-preview-status"><Status value={record.status}/><span>{record.id}</span></div></div>
   <div className="dir-panel-body">
-   {tone&&<div className={'ops-handling-card '+tone}><div>{tone==='mine'?<CheckCircle2 size={18}/>:tone==='other'?<LockKeyhole size={18}/>:<Users size={18}/>}<span><b>{tone==='mine'?'You’re handling this':tone==='other'?staffName(data.users,handler!.userId)+' is handling this':'Available to pick up'}</b><small>{tone==='other'?'View only until they release it.':tone==='mine'?'Continue where you left off.':'Open it and choose Start handling.'}</small></span></div></div>}
+   {tone&&<div className={'ops-handling-card '+tone}><div>{tone==='mine'?<CheckCircle2 size={18}/>:tone==='other'?<LockKeyhole size={18}/>:<Users size={18}/>}<span><b>{tone==='mine'?'You’re handling this':tone==='other'?(handler!.reserved?'Reserved for '+staffName(data.users,handler!.userId):staffName(data.users,handler!.userId)+' is handling this · '+heldFor(handler!.startedAt)):'Available to pick up'}</b><small>{tone==='other'?'View only until they release it.':tone==='mine'?'Continue where you left off.':'Open it and choose Start handling.'}</small></span></div></div>}
    <div className="ops-preview-row"><span>Next step</span><b>{nextStepLabel(record,state,user.canApprove)}</b></div>
    <div className="ops-preview-row"><span>Protection</span><ProtectionIndicator state={state} now={now}/></div>
    <dl className="dir-facts">{facts.map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v||'Not recorded'}</dd></div>)}</dl>

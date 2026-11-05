@@ -1,7 +1,30 @@
-# Remaining work (as of 2026-11-02)
+# Remaining work (as of 2026-11-05)
 
 This is the one checklist of what is left before RMC2 runs on real data. Details and the reasons behind
 each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entries) and `MIGRATION_PLAN.md`.
+
+## Demo feedback round (2026-11-05): `DEMO_FEEDBACK_PLAN.md`
+
+**Phase 1 is done and live on the test version** (not committed):
+- **Email pull-in:** every 30 seconds.
+- **Dates:** "Nov 5, 2026, 2:14 PM" everywhere.
+- **Locking v2:** handover requests and take-over. Migration `20261105000000` is applied to the TEST project only.
+- **Customize:** fixed the tab-stop bug.
+- **Converter:** font aliases.
+- **Templates:** 13 new versions published online.
+  - D094 and D096 were published as fixed copies, with the header signature moved into the letter body (`scripts/fix-header-signature.mjs`).
+  - The client's own files still have the signature in the header: tell the client.
+
+**Not done or not verified in phase 1:**
+- [ ] Local (PC) templates: `resources/private` still holds the old versions. Only the online version was updated.
+- [ ] Page-by-page comparison of localhost vs online PDFs for the new templates. Only the online previews were checked visually.
+- [ ] `scripts/test-exclusive-handling.mjs` fails at the viewer's template step ("Browse templates"). Not yet checked against `main` to see whether this was already failing.
+- [ ] The pdf.js `standardFontDataUrl` safety net was skipped: the demo PDFs embed all their fonts.
+- [ ] Inbound check: the follow-up refresh comes about 6 seconds after a slot is won, and a slow IMAP import may show only on the next 10-second poll.
+
+**Next:**
+- Phase 2: roles, scoped views, progress-report approval and phone notifications.
+- Phase 3: divisions and the directory. It waits on the client's answers about branches.
 
 ## Where things stand
 

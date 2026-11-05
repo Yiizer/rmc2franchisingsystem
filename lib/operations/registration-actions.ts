@@ -1,4 +1,5 @@
 import { reviewClientRegistration } from './client-service';
+import { colleagueHolding } from './activity';
 import { lockedInquiry, matchingInquiries } from './inquiry-index';
 
 import { randomUUID } from 'node:crypto';
@@ -21,7 +22,7 @@ function transferIdentity(record:InquiryRecord){return JSON.stringify([clientIde
 async function available(id:string,user:Staff){
 
   await db.lock('lease:'+id); // a colleague starting to handle this inquiry must wait for this decision to commit
-  const owner=await db.get('SELECT user_id FROM inquiry_activity WHERE inquiry_id=? AND seen_at>? AND user_id<>?',id,new Date(Date.now()-90000).toISOString(),user.id);
+  const owner=await colleagueHolding(id,user);
 
   if(owner)throw new AppError('A colleague is handling this inquiry. Ask them to finish before changing the client registration.',423);
 
@@ -53,7 +54,7 @@ export async function declineInquiry(id:string,user:Staff,input:unknown){
 
     record.status='Declined';audit(record,user,'Declined request and moved to Archives: '+body.reason);await persist(record,body.revision);
 
-    await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',id);
+    await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',id);await db.run("DELETE FROM inquiry_handover WHERE inquiry_id=?",id);
 
     await notify(record,'Request declined',body.reason,(await allUsers()).filter(person=>person.active).map(person=>person.id));return record;
 
@@ -130,7 +131,7 @@ export async function transferWithBor(id:string,user:Staff,form:FormData){
 
     audit(record,user,'Accepted verified BOR '+body.reference+'; client transferred from '+previous.id+'. '+body.note);await persist(record,body.revision);
 
-    await db.run('DELETE FROM inquiry_activity WHERE inquiry_id IN (?,?)',id,previous.id);
+    await db.run('DELETE FROM inquiry_activity WHERE inquiry_id IN (?,?)',id,previous.id);await db.run("DELETE FROM inquiry_handover WHERE inquiry_id IN (?,?)",id,previous.id);
 
     await notify(record,'Client transferred by BOR',record.fields.agentName+' now holds the client registration. Verified by '+user.name+'.',(await allUsers()).filter(person=>person.active).map(person=>person.id));return record;
 

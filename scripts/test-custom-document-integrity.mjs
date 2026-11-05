@@ -21,3 +21,26 @@ for(const master of catalog){
 assert.equal(customEditsSchema.safeParse({a:{text:'x',color:'red;display:none'}}).success,false);
 assert.equal(customEditsSchema.safeParse({a:{text:'x',fontSize:999}}).success,false);
 console.log('PASS Invalid formatting rejected');
+
+// Tab stops (w:pPr/w:tabs/w:tab) are settings, not text. An edit made in the browser editor, which shows tabs as em
+// spaces (U+2003), must land in the body text and leave the tab-stop settings alone (demo bug, 2026-11-05).
+{
+  const W='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  let checked=0;
+  for(const master of catalog){
+    const bytes=await readFile(master.file),xml=new PizZip(bytes).file('word/document.xml').asText();
+    const paragraphs=xml.match(/<w:p[ >][\s\S]*?<\/w:p>/g)||[];
+    const original=customDocument(bytes,{}),byId=new Map(original.blocks.map(b=>[b.id,b]));
+    const target=original.blocks.find(b=>/^document-p\d+$/.test(b.id)&&b.original.trim().length>8&&/<w:tabs>/.test(paragraphs[Number(b.id.split('-p')[1])]||''));
+    if(!target)continue;
+    assert.ok(!/^\t/.test(target.original)||/<w:r[ >][^]*?<w:tab\/>/.test(paragraphs[Number(target.id.split('-p')[1])]),master.id+' tab stops are not counted as text');
+    const typed=target.original.replace(/\t/g,' ')+' (edited)';
+    const updated=customDocument(bytes,{[target.id]:{text:typed}}),reread=new Map(customDocument(updated.bytes,{}).blocks.map(b=>[b.id,b.original]));
+    assert.equal(reread.get(target.id),target.original+' (edited)',master.id+' '+target.id+' edit lands in the body text');
+    const tabStops=s=>(s.match(/<w:tabs>[\s\S]*?<\/w:tabs>/g)||[]).join('');
+    assert.equal(tabStops(new PizZip(updated.bytes).file('word/document.xml').asText()),tabStops(xml),master.id+' tab-stop settings unchanged');
+    assert.ok(byId.get(target.id));checked++;
+  }
+  assert.ok(checked>0,'at least one template has a paragraph with tab stops');
+  console.log('PASS Tab-stop paragraphs: browser edits land in the text and keep the tab settings ('+checked+' templates)');
+}
