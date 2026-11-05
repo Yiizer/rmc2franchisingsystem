@@ -44,6 +44,9 @@ const authResult = (header: string, name: string) => (header.match(new RegExp('\
 const safeName = (name: string) => name.replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '').slice(0, 80) || 'attachment';
 
 /** Reads new messages from the inbox (read-only) and stores them. Returns how many were added. */
+/** Phone notifications for emails that wait on Requests (registered by the route). */
+let inboxHook: ((waiting: number) => Promise<void> | void) | undefined;
+export const setInboxHook = (hook: (waiting: number) => Promise<void> | void) => { inboxHook = hook; };
 export async function checkInbox(): Promise<{ added: number; imported: number; checkedAt: string; connected: boolean }> {
   const settings = imapSettings(), checkedAt = new Date().toISOString();
   if (!settings) return { added: 0, imported: 0, checkedAt, connected: false };
@@ -113,6 +116,7 @@ export async function checkInbox(): Promise<{ added: number; imported: number; c
     lastUid = Math.max(lastUid, item.uid);
   }
   await db.run('INSERT INTO inbound_cursor (mailbox,uidvalidity,last_uid,checked_at) VALUES (?,?,?,?) ON CONFLICT (mailbox) DO UPDATE SET uidvalidity=excluded.uidvalidity,last_uid=excluded.last_uid,checked_at=excluded.checked_at', MAILBOX, uidValidity, lastUid, checkedAt);
+  if (added > imported) { try { await inboxHook?.(added - imported); } catch { /* phone notifications never fail a check */ } }
   return { added, imported, checkedAt, connected: true };
 }
 

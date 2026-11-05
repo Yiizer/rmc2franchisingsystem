@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
 import './globals.css';
 import './operations.css';
@@ -18,8 +18,11 @@ const plex = localFont({
 export const metadata: Metadata = {
   title: 'RMC2 | Franchising Operations',
   description: 'Shared insurance inquiry, proposal preparation and supervisor approval workspace.',
-  icons: { icon: '/rmc2-logo.png' },
+  icons: { icon: '/rmc2-logo.png', apple: '/apple-touch-icon.png' },
+  // iPhone: installable from Safari (Add to Home Screen), which is required for phone notifications.
+  appleWebApp: { capable: true, title: 'RMC2', statusBarStyle: 'default' },
 };
+export const viewport: Viewport = { themeColor: '#172e50' };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return <html lang="en" className={plex.variable}><body>{children}</body></html>;

@@ -37,6 +37,8 @@ function openDatabase() {
     CREATE TABLE IF NOT EXISTS inquiry_activity (session TEXT NOT NULL, tab TEXT NOT NULL, inquiry_id TEXT NOT NULL, user_id TEXT NOT NULL, started_at TEXT NOT NULL, seen_at TEXT NOT NULL, PRIMARY KEY(session,tab));
     CREATE TABLE IF NOT EXISTS inquiry_handover (id TEXT PRIMARY KEY, inquiry_id TEXT NOT NULL, kind TEXT NOT NULL, user_id TEXT NOT NULL, by_user TEXT NOT NULL, at TEXT NOT NULL, until_at TEXT NOT NULL, state TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, data TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS push_subscriptions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, endpoint TEXT NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL, last_used_at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS push_user ON push_subscriptions (user_id);
     CREATE INDEX IF NOT EXISTS handover_inquiry ON inquiry_handover (inquiry_id, kind, at);
     CREATE TABLE IF NOT EXISTS file_access (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, inquiry_id TEXT NOT NULL, kind TEXT NOT NULL, at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, inquiry_id TEXT NOT NULL, version INTEGER NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL, UNIQUE(inquiry_id,version,kind));
@@ -131,7 +133,13 @@ export function audit(record:InquiryRecord, staff:Staff, action:string, changes?
 function newNotice(record:InquiryRecord,title:string,message:string,recipientIds:string[]):Notice { return {id:randomUUID(),inquiryId:record.id,title,message,at:new Date().toISOString(),recipientIds:[...new Set(recipientIds)],readBy:[]}; }
 // Division Heads and SOAs are removed from every recipient list unless the caller passes toOwner=true, and then only the record's own owner stays:
 // a broadcast (or a duplicate-client notice naming other inquiries) never reaches them.
-export async function notify(record:InquiryRecord,title:string,message:string,recipientIds:string[],toOwner=false) { const scoped=new Set((await allUsers()).filter(isOwnerScoped).map(person=>person.id));const notice=newNotice(record,title,message,recipientIds.filter(id=>!scoped.has(id)||toOwner&&id===record.ownerId));if(!notice.recipientIds.length)return;await db.run('INSERT INTO notifications(id,data) VALUES (?,?)',notice.id,jsonParam(notice)); }
+export async function notify(record:InquiryRecord,title:string,message:string,recipientIds:string[],toOwner=false) { const scoped=new Set((await allUsers()).filter(isOwnerScoped).map(person=>person.id));const notice=newNotice(record,title,message,recipientIds.filter(id=>!scoped.has(id)||toOwner&&id===record.ownerId));if(!notice.recipientIds.length)return;await db.run('INSERT INTO notifications(id,data) VALUES (?,?)',notice.id,jsonParam(notice));noticeHook?.(notice,record.fields.company||'',scoped); }
+/** Phone notifications subscribe here (registered by the route, so scripts and tests never load web-push). */
+type NoticeHook=(notice:Notice,clientName:string,ownerIds:Set<string>)=>void;
+let noticeHook:NoticeHook|undefined;
+export const setNoticeHook=(hook:NoticeHook)=>{noticeHook=hook;};
+/** For notices written directly (not through notify), e.g. protection reminders. */
+export async function emitNotice(notice:Notice,clientName:string){if(!noticeHook)return;noticeHook(notice,clientName,new Set((await allUsers()).filter(isOwnerScoped).map(person=>person.id)));}
 export async function catalog():Promise<CatalogTemplate[]> { const file=resourceFile('catalog.json');const base:CatalogTemplate[]=existsSync(file)?JSON.parse(readFileSync(file,'utf8')):[];
   const overrides=(await db.all<{data:string}>('SELECT data FROM template_overrides')).map(row=>JSON.parse(row.data) as CatalogTemplate);
   const merged=new Map(base.map(template=>[template.id,{...template,active:['D091','D092','D093'].includes(template.sourceId)?false:template.active}]));

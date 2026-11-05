@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { AppError, db, jsonParam } from './database';
+import { AppError, db, jsonParam, emitNotice } from './database';
 import { clientState, hasPendingReport, lastActivityAt, protectionDaysLeft, protectionFor, protectionExpired } from './client-rules';
 import { synchronizeInquiryIndex, matchingInquiries } from './inquiry-index';
 import { isOwnerScoped } from './permissions';
@@ -76,7 +76,8 @@ export async function ownerReminders(user:Staff,records:InquiryRecord[],now=Date
     if(!threshold)continue;
     const id='reminder-'+createHash('sha256').update([record.id,protection.expiresAt,threshold].join('|')).digest('hex').slice(0,40);
     const notice:Notice={id,inquiryId:record.id,title:'Protection ending soon',message:`${record.fields.company||'Your client'} · protection ends in ${days} day${days===1?'':'s'}. File a progress report to renew it.`,at:new Date(now).toISOString(),recipientIds:[user.id],readBy:[]};
-    await db.run('INSERT INTO notifications(id,data) VALUES (?,?) ON CONFLICT (id) DO NOTHING',id,jsonParam(notice));
+    const inserted=await db.run('INSERT INTO notifications(id,data) VALUES (?,?) ON CONFLICT (id) DO NOTHING',id,jsonParam(notice));
+    if(inserted.changes)await emitNotice(notice,record.fields.company||'');
   }
 }
 export async function listOwnerClients(user:Staff){

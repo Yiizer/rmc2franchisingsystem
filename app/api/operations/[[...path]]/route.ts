@@ -37,6 +37,13 @@ import { inquiryDetails, workspaceView } from '@/lib/operations/workspace-query'
 import path from 'node:path';
 import type { Notice, Staff } from '@/lib/operations/types';
 import { readDivisionTable, saveDivisionTable } from '@/lib/operations/division-store';
+import { pushSettings, queuePushForNotice, sendTestPush, removePushSubscription, savePushSubscription, sendPush, setPushMuted } from '@/lib/operations/push';
+import { setNoticeHook } from '@/lib/operations/database';
+import { setInboxHook } from '@/lib/operations/inbound';
+import { canReviewInbound } from '@/lib/operations/permissions';
+// Phone notifications: every saved in-app notice, and emails waiting on Requests, also go to subscribed phones.
+setNoticeHook(queuePushForNotice);
+setInboxHook(async waiting=>{const people=(await allUsers()).filter(person=>person.active&&canReviewInbound(person)).map(person=>person.id);await sendPush(people,{title:'New email on Requests',body:waiting+' email'+(waiting===1?'':'s')+' waiting',url:'/#requests',type:'inquiry'});});
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 type Context={params:Promise<{path?:string[]}>};
@@ -74,6 +81,7 @@ export async function GET(request:NextRequest,context:Context){try{
 
   if(route[0]==='bootstrap'){await recoverStuckMail();const snap=await db.snapshot(async()=>{const notices=(await db.all('SELECT data FROM notifications') as {data:string}[]).map(r=>JSON.parse(r.data) as Notice).filter(n=>n.recipientIds.includes(user.id)).sort((a,b)=>b.at.localeCompare(a.at));return {notices,records:await inquiries(),users:await allUsers(),activity:await activeInquiryActivity(),templates:await catalog()};});const records=snap.records;return response({user,users:snap.users,inquiries:records,clientStates:clientStates(records),packageRenderers:await packageRenderers(records),activity:snap.activity,templates:snap.templates.map(({file,text,...t})=>({...t,text,file:''})),notifications:snap.notices,integrations:{database:databaseLabel(),gmail:'Local test mailbox · no real Gmail sends',ai:'Simulated · supplied proposal sources only',documents:conversionName()},mail:mailStatus()});}
   if(route[0]==='divisions')return response(await readDivisionTable(user));
+  if(route[0]==='push'&&!route[1])return response(await pushSettings(user));
   if(route[0]==='directory')return response(route[1]==='client'&&route[2]?await directoryClient(route[2]):route[1]?{record:await directoryRecord(route[1])}:await clientDirectory(request.nextUrl.searchParams));
   if(route[0]==='inquiries'&&route[1]&&route[2]==='historical-matches')return response({matches:await historicalMatches(await inquiry(route[1]))});
   if(route[0]==='monitoring')return response(await monitoring(user));
@@ -124,6 +132,10 @@ export async function POST(request:NextRequest,context:Context){try{
   if(route[0]==='template-publish')return response({template:await publishTemplate(user,await request.json())});
   if(route[0]==='template-active')return response({template:await setTemplateActive(user,await request.json())});
   if(route[0]==='divisions')return response(await saveDivisionTable(user,await request.json()));
+  if(route[0]==='push'&&route[1]==='subscribe')return response(await savePushSubscription(user,await request.json()));
+  if(route[0]==='push'&&route[1]==='unsubscribe')return response(await removePushSubscription(user,await request.json()));
+  if(route[0]==='push'&&route[1]==='test')return response(await sendTestPush(user));
+  if(route[0]==='push'&&route[1]==='mute')return response(await setPushMuted(user,await request.json()));
   if(route[0]==='inquiries'&&route[1]&&route[2]==='bor-transfer')return response({inquiry:await transferWithBor(route[1],user,await request.formData())});
 
   if(route[0]==='proposal-preview'){
