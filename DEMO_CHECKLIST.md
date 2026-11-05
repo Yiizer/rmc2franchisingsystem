@@ -44,7 +44,9 @@ Use separate browsers or private windows for each person you show side by side (
 
 ## Known limits (say so if asked)
 
-- **Phone notifications:** not built yet. Next step, iPhone first.
+- **Phone notifications:** built (Account settings → Phone notifications; iPhone steps in `PHONE_NOTIFICATIONS.md`).
+  - To show it, use a laptop Chrome/Edge window: Turn on → **Send a test**.
+  - Not yet tried on a real iPhone. On the test version a Home Screen app may need the Vercel sign-in again.
 - **Email signature:** waiting for the client's example.
 - **Division table:** 575 old records sit under Unassigned until the client answers the branch questions (blank rows, Tacloban, Gensan, Iloilo, Batangas, the team label, and records naming two divisions).
 - **Email:** in test mode. Every email goes to the test inbox. Sending is capped per hour and per day; the demo-day caps are set on the test project (`RMC2_MAIL_CAP_PER_HOUR` / `_PER_DAY`). Keep the number of sends small.

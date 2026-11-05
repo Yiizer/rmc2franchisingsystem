@@ -39,7 +39,11 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
   - Tests: `scripts/test-roles-scoping.mjs` passes 29/29.
 - **Screens:** built against `PHASE2_UI_SPEC.md`; `scripts/test-phase2-ui-browser.mjs` passes. The online smoke test on 2026-11-06 passed 27/27.
 - [x] Ran `scripts/seed-division-accounts.mjs` on the test project (2026-11-06): Emerson is Head, and the Division Head (`divisionhead@rmc2.local`) and SOA accounts exist. Fixed its jsonb bug (`a18633a`).
-- [ ] Phone notifications (2.6): the PO must approve adding the VAPID keys first.
+- [x] Phone notifications (2.6), live on test 2026-11-06 (commit `a4fbe18`):
+  - VAPID keys are in the Vercel preview env, and the push table is applied to TEST. See `PHONE_NOTIFICATIONS.md`.
+  - Verified locally in Edge: turn on, test push accepted by the push service, a handover request pushes automatically.
+  - Not yet verified on a real iPhone.
+  - The test version needs a Vercel share link for testers' phones.
 - [ ] Open from the security review:
   - per-user upload caps on progress reports;
   - an index on `ownerId` (fine at current volume);
