@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { AppError, db, transaction } from './database';
 import { securityEvent } from './accounts';
 import { DEFAULT_DIVISION_TABLE, divisionTableProblems, type DivisionTable } from './divisions';
-import { canManageAccounts, canSeeAllInquiries } from './permissions';
+import { DIVISIONS, canManageAccounts, canSeeAllInquiries } from './permissions';
 import type { Staff } from './types';
 
 // The editable division table lives in settings('division_table'). Until the Head saves one, the PO's list
@@ -32,6 +32,8 @@ export async function saveDivisionTable(user: Staff, input: unknown): Promise<Di
   if (!canManageAccounts(user)) throw new AppError('Only the Head can change divisions and branches.', 403);
   const body = tableSchema.parse(input);
   const table: DivisionTable = { divisions: body.divisions, updatedAt: new Date().toISOString(), updatedBy: user.id };
+  // Accounts and inquiries refer to divisions by name, so the seven names stay fixed; only branches and spellings change.
+  if (JSON.stringify(table.divisions.map(d => d.name)) !== JSON.stringify([...DIVISIONS])) throw new AppError('Keep the divisions as Division 1 to Division 7; change only their branches and spellings.', 422);
   const problems = divisionTableProblems(table);
   if (problems.length) throw new AppError(problems.slice(0, 5).join(' '), 422);
   await transaction(async () => {

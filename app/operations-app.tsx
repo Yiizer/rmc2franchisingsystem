@@ -9,6 +9,7 @@ import { api, endpoint, Modal } from './operations-common';
 import { HandlingBadge } from './operations-activity';
 import { AccountSettings, TemplateAdministration, AdminMonitoring } from './operations-administration';
 import UsersAndRoles from './operations-accounts';
+import DivisionsEditor from './operations-divisions';
 import ReportQueue from './operations-report-queue';
 import OwnerApp, { type OwnerBoot } from './operations-owner-app';
 import ClientDirectory from './operations-directory';
@@ -78,6 +79,7 @@ function StaffApp({onSignedIn}:{onSignedIn:()=>Promise<'staff'|'owner'>}){
   {page==='Monitoring'&&canSeeAiUsage(user)&&<AdminMonitoring aiOnly={user.role!=='Admin'}/>}
   {page==='Settings'&&<AccountSettings user={user} onSignedOut={()=>setData(null)}/>}
   {page==='Users & Roles'&&(canManageAccounts(user)||canResetPassword(user))&&<UsersAndRoles user={user} users={users} onRefresh={refresh}/>}
+  {page==='Divisions & Branches'&&canManageAccounts(user)&&<DivisionsEditor/>}
   {page==='Proposal Templates'&&canManageTemplates(user)&&<TemplateAdministration templates={templates} onRefresh={refresh}/>}
   {page==='Integrations'&&canSeeIntegrations(user)&&<><div className="ops-heading"><div><h1>Integrations</h1><p>{mail?.mode==='smtp'?(mail.env==='production'?'Live email is active. Approved replies go to real agents.':'Test email is active. Nothing reaches real agents.'):'Local testing is active. Live services can be connected after workflow validation.'}</p></div></div><section className="ops-card"><div className="ops-service-list">{Object.entries(data.integrations).map(([label,value])=><div key={label}><Settings2 size={18}/><b>{label}</b><span>{value}</span></div>)}</div><div className="ops-pad">{mail?.mode==='smtp'?<><p><b>Email:</b> {mail.label||'Gmail'} · {mail.env==='production'?'live':mail.env==='staging'?'test (staging)':'test'} mode{mail.dryRun?' · dry run, nothing is sent':''}.</p>{mail.env!=='production'&&<p>Test mode: every email goes to {mail.redirectedTo||'the test inbox'}, never to the agent. The .eml copy is still available in the history.</p>}{mail.env==='production'&&<p>Approved replies are emailed to the agent’s address. If delivery cannot be confirmed, check the sending account’s Sent folder before retrying.</p>}{mail.warning&&<p className="ops-message amber">{mail.warning}</p>}</>:<p>Approving a proposal saves the finished reply and PDF in the local test mailbox. The .eml file is available in its history.</p>}<p>Staff credentials and approval permissions are checked by the server. Database records and attachments survive a server restart.</p></div></section></>}
   <footer className="ops-footer"><span>RMC2 Consultancy Corporation</span><span>Saved on the local server · Times shown in Manila</span></footer>

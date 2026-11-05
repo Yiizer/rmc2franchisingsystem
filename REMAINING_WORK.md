@@ -16,13 +16,16 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
   - The client's own files still have the signature in the header: tell the client.
 
 **Not done or not verified in phase 1:**
-- [ ] Local (PC) templates: `resources/private` still holds the old versions. Only the online version was updated.
+- [ ] **When moving to production (phase 8):** publish the 13 new templates again on the production project.
+  - Use `scripts/stage-new-templates.mjs` (then `PUBLISH=<stage ids>`), with the fixed D094/D096 copies from `scripts/fix-header-signature.mjs`.
+  - Alternatively, replace the bundled `resources/private` files and the catalog hashes.
+  - The PC copy (port 5173) does not need updating: the deployed version is the one in use (PO, 2026-11-06).
 - [ ] Page-by-page comparison of localhost vs online PDFs for the new templates. Only the online previews were checked visually.
 - [ ] `scripts/test-exclusive-handling.mjs` fails at the viewer's template step ("Browse templates"). Not yet checked against `main` to see whether this was already failing.
 - [ ] The pdf.js `standardFontDataUrl` safety net was skipped: the demo PDFs embed all their fonts.
 - [ ] Inbound check: the follow-up refresh comes about 6 seconds after a slot is won, and a slow IMAP import may show only on the next 10-second poll.
 
-**Phase 2 (in progress, not committed):**
+**Phase 2 (done, commit `f963db5`, live on test 2026-11-06):**
 - **Server side done:**
   - Roles, `lib/operations/permissions.ts`, linking inquiries to owners, the Division Head / SOA whitelist (`scope-guard.ts`), `my-clients` endpoints and progress-report approval.
   - Security review fixes:
@@ -34,8 +37,8 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
     - Division Heads / SOAs can submit 20 inquiries a day;
     - no existence oracle.
   - Tests: `scripts/test-roles-scoping.mjs` passes 29/29.
-- **Screens:** being built against `PHASE2_UI_SPEC.md`.
-- [ ] Run `scripts/seed-division-accounts.mjs` on the test project at deploy (Emerson becomes Head, and the Division Head and SOA accounts are created).
+- **Screens:** built against `PHASE2_UI_SPEC.md`; `scripts/test-phase2-ui-browser.mjs` passes. The online smoke test on 2026-11-06 passed 27/27.
+- [x] Ran `scripts/seed-division-accounts.mjs` on the test project (2026-11-06): Emerson is Head, and the Division Head (`divisionhead@rmc2.local`) and SOA accounts exist. Fixed its jsonb bug (`a18633a`).
 - [ ] Phone notifications (2.6): the PO must approve adding the VAPID keys first.
 - [ ] Open from the security review:
   - per-user upload caps on progress reports;
@@ -45,7 +48,7 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
   - The case: agent B is turned away while A protects a client. A's protection expires and a supervisor approves agent C. A later recheck now lets B's inquiry become active too.
   - The rule ("oldest request wins") and the failing check in `scripts/test-client-protection.mjs` both date from commit bed125e, and they contradict each other.
 
-**Phase 3 server side done (not committed):**
+**Phase 3 (done, commit `f963db5`, live on test 2026-11-06):**
 - **Division table:**
   - `lib/operations/divisions.ts` classifies branch text with today's table.
   - Editable by the Head through `GET/POST divisions`. It is stored in the new `settings` table (migration `20261105000100`, applied to TEST).
@@ -54,10 +57,8 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
   - The "Division · Branch" column shows the original text when it differs or is unclear.
 - **Local register tally:** 3,002 of 3,577 records get a division. 575 are Unassigned: 300 blank, plus the places, the team label and the mixed records that are on the client question list.
 - **Importer fix:** it now keeps the client in A1 on two SOA/MOA sheets, giving 3,579 records. The scratch copy is in `test-results/importer-check/data`. The local `.data` register has not been re-imported; that needs the PO's OK.
-- [ ] Load online:
-  - `node --env-file=.env.supabase.test scripts/load-historical-to-postgres.mjs --project-ref pgoiqwixaeqbxlwbmren --source test-results/importer-check/data/rmc2.sqlite --apply`
-  - The PO accepted the real-data risk.
-- [ ] Head's "Divisions & branches" editor screen: the API exists, the screen does not.
+- [x] Loaded online on 2026-11-06: 3,579 rows (`load-historical-to-postgres.mjs --source test-results/importer-check/data/rmc2.sqlite --apply`). The PO accepted the real-data risk.
+- [x] Head's **Divisions & Branches** screen (2026-11-06): edit branches and spellings, move a branch, add or remove one. Division names stay Division 1 to 7. Checked in the browser: Head only, a saved spelling re-sorts the directory, phone width works.
 - [ ] Waiting on the client: unmapped branches, Division 6, the team label, and whether a newer workbook exists.
 
 ## Where things stand
@@ -107,7 +108,7 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 
 **Data and environment.**
 - [ ] **The real data (`.data`, port 5173) has never run the phase 2–4 code.** Back up `.data` first, then start the local app once and check it.
-- [ ] The historical client directory is empty online (never imported to Postgres), so directory features are untested there.
+- [x] The historical client directory is loaded online (2026-11-06) and the directory filters were checked there.
 - [ ] Two or more people using the online version at the same time. The stress tests were stopped part-way.
 - [ ] A cold start after the free Supabase project pauses (it pauses after 7 idle days).
 
