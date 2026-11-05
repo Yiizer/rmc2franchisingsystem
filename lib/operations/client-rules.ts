@@ -45,6 +45,8 @@ export function sameAgent(a:FormFields,b:FormFields){
   const phone=(value:string='')=>value.replace(/\D/g,'').replace(/^(?:0063|63|0)/,'');
   return !!phone(a.agentPhone)&&phone(a.agentPhone)===phone(b.agentPhone)&&!!person(a.agentName)&&person(a.agentName)===person(b.agentName);
 }
+/** A registration a supervisor approved for a new agent after the previous protection expired, still open. */
+const approvedSuccessor=(other:InquiryRecord)=>!!other.clientReview?.reassignedAt&&other.clientReview.identity===clientIdentity(other)&&!other.closure;
 function precedes(a:InquiryRecord,b:InquiryRecord){return a.createdAt<b.createdAt||(a.createdAt===b.createdAt&&a.id<b.id);}
 export function duplicateClients(record:InquiryRecord,records:InquiryRecord[],now=Date.now()):DuplicateClientMatch[]{
   if(isSampleForm(record.source))return [];
@@ -60,7 +62,10 @@ export function duplicateClients(record:InquiryRecord,records:InquiryRecord[],no
     if(other.clientReview?.state==='identify'&&record.source.sourceHash!==other.source.sourceHash&&!protectionFor(other))return false;
     // New registrations reserve a client atomically. For legacy rows without a
     // check, the oldest inquiry wins instead of two rows blocking each other.
-    if(!precedes(other,record))return false;
+    // PO decision 2026-11-06 (rule a): once a supervisor approved a new owner after expiry, that registration blocks every
+    // other request for the client, including older ones that were held during the previous protection. Otherwise the
+    // oldest request wins.
+    if(!precedes(other,record)&&!approvedSuccessor(other))return false;
     if(exceptions.some(item=>item.inquiryId===other.id&&item.identity===clientIdentity(other)))return false;
     // A supervisor's different-client decision applies to both sides, while
     // remaining invalid if either client's identifying details later change.

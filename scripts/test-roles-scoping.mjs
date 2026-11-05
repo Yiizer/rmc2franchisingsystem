@@ -378,6 +378,25 @@ const target=clientA.id;
   pass('The Head holds and takes over locks like a Supervisor; Admin and Division Heads cannot');
 }
 
+// Rule (a), PO 2026-11-06: once a supervisor approves a new agent after expiry, an older request that was held during the
+// previous protection stays on hold, even when it is rechecked.
+{
+  const a=await service.intake(cryssa,await formFor('Successor Rule Co','Agent Alpha'),'alpha@example.com');
+  await sentProposal(a.id);await patch(a.id,r=>{r.protection={...protect(r,10),expiresAt:new Date(Date.now()+10*DAY).toISOString()};});
+  const b=await service.intake(cryssa,await formFor('Successor Rule Co','Agent Bravo'),'bravo@example.com');
+  assert.equal(b.clientReview.state,'duplicate','B is held while A is protected');
+  await patch(a.id,r=>{r.protection={...r.protection,startedAt:new Date(Date.now()-40*DAY).toISOString(),activityAt:new Date(Date.now()-40*DAY).toISOString(),expiresAt:new Date(Date.now()-DAY).toISOString()};});
+  let c=await service.intake(cryssa,await formFor('Successor Rule Co','Agent Charlie'),'charlie@example.com');
+  assert.equal(c.clientReview.state,'duplicate','C waits for a supervisor after A expired');
+  c=await clientService.reviewClientRegistration(c.id,zeo,{revision:c.revision,action:'reassign-expired',note:'Verified expiry and the new agent.'});
+  assert.equal(c.clientReview.state,'clear','Zeo approved C as the new agent');assert.ok(c.clientReview.reassignedAt);
+  const fresh=await get(b.id);
+  const rechecked=await clientService.reviewClientRegistration(b.id,cryssa,{revision:fresh.revision,action:'recheck',note:''});
+  assert.equal(rechecked.clientReview.state,'duplicate','B stays on hold after the recheck');
+  assert.ok(rechecked.clientReview.matches.some(m=>m.inquiryId===c.id),'B is now held by the approved new owner C');
+  pass('Rule (a): after a supervisor approves a new agent, an older held request stays on hold when rechecked');
+}
+
 // Security review fixes (2026-11-05)
 {
   // Admin may reset only Employees; approvers and Division Heads / SOAs need the Head.

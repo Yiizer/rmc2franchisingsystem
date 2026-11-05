@@ -67,7 +67,7 @@ export function FileReportModal({ client, onClose, onFiled }: { client: OwnerCli
       onFiled(result.client);
     } catch (e) {
       const status = (e as { status?: number }).status;
-      setError(status === 409 && /contact franchising/i.test((e as Error).message) ? (e as Error).message : status === 409 ? (client.progressReports.some(r => r.status === 'pending') ? 'A report is already under review for this client.' : 'This client no longer has active protection.') : 'We couldn’t send your report. Nothing was saved. Please try again.');
+      setError(status === 429 || (status === 409 && /contact franchising/i.test((e as Error).message)) ? (e as Error).message : status === 409 ? (client.progressReports.some(r => r.status === 'pending') ? 'A report is already under review for this client.' : 'This client no longer has active protection.') : 'We couldn’t send your report. Nothing was saved. Please try again.');
     } finally { setBusy(false); }
   }
   return <Modal title="File progress report" onClose={() => { if (!busy) onClose(); }}>

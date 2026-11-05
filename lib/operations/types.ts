@@ -12,7 +12,7 @@ export type MailDraft = { to: string; subject: string; body: string };
 export type SourceCell = { cell: string; value: string };
 export type SourceForm = { filename: string; storage: string; sourceHash?:string; format?: 'xlsx' | 'pdf'; kind?:'sample'|'attachment'; sheet: string; cells: SourceCell[]; fields: FormFields; receivedAt: string };
 export type DuplicateClientMatch = { inquiryId:string; company:string; agentName:string; sameAgent:boolean; reasons:string[]; expiredSameAgent?:boolean; expired?:boolean };
-export type ClientReview = { state:'clear'|'duplicate'|'identify'; identity:string; matches:DuplicateClientMatch[]; exceptions?:{inquiryId:string;identity:string}[]; reviewedBy?:string; reviewedAt?:string; note?:string };
+export type ClientReview = { state:'clear'|'duplicate'|'identify'; identity:string; matches:DuplicateClientMatch[]; exceptions?:{inquiryId:string;identity:string}[]; reviewedBy?:string; reviewedAt?:string; note?:string; reassignedAt?:string };
 export type ClientProtection = { startedAt:string; activityAt:string; expiresAt:string; agentName:string; agentEmail:string; agentPhone:string; activityKind:'proposal'|'details'|'progress-report'; ownerId?:string };
 export type ProgressReportStatus = 'pending'|'approved'|'rejected';
 /** Reports recorded before approval existed have no status and count as approved. */
