@@ -71,6 +71,9 @@ export async function pruneActivity():Promise<void>{
 // Housekeeping only: a failed prune never fails the poll (readers already ignore stale leases); the next poll tries again.
 const POLL_PRUNE_MS=10000;
 let lastPollPrune=0;
+let lastHeartbeatPrune=0;
+/** Inside the caller's transaction: prune at most every POLL_PRUNE_MS per process (heartbeats). */
+async function pruneActivityThrottledInTransaction(){if(Date.now()-lastHeartbeatPrune<POLL_PRUNE_MS)return;lastHeartbeatPrune=Date.now();await pruneActivity();}
 export async function pruneActivityThrottled():Promise<void>{
   if(Date.now()-lastPollPrune<POLL_PRUNE_MS)return;
   lastPollPrune=Date.now();
@@ -111,7 +114,8 @@ export async function updateInquiryActivity(id:string,user:Staff,session:string,
     if(body.action==='take-over')await lockInquiryRows([id]);
     await db.lock('lease:'+id); // exclusive handling: start/leave/heartbeat for one inquiry run one at a time
     const record=await inquiry(id),now=new Date().toISOString();
-    if(body.action!=='poll')await pruneActivity();
+    // Heartbeats arrive every 10 s from every open tab: tidy up on start/leave/handover actions, and only throttled on heartbeats.
+    if(body.action==='heartbeat')await pruneActivityThrottledInTransaction();else if(body.action!=='poll')await pruneActivity();
     // Releasing (or starting fresh) answers any open handover requests addressed to this user, so old ones never reappear.
     if(body.action==='leave'||body.action==='start')await db.run("UPDATE inquiry_handover SET state='closed' WHERE kind='request' AND state='open' AND inquiry_id=? AND by_user=?",id,user.id);
     if(body.action==='leave')await db.run('DELETE FROM inquiry_activity WHERE session=? AND tab=? AND inquiry_id=? AND user_id=?',session,body.tab,id,user.id);

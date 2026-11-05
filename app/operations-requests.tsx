@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Download, FileSpreadsheet, FileText, MailCheck, RefreshCw, ShieldAlert, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { ageLabel, manilaTime } from '@/lib/operations/types';
@@ -11,7 +11,9 @@ import { api, endpoint } from './operations-common';
 export default function RequestsPage({ now, onOpen }: { now: number; onOpen: (record: InquiryRecord) => void }) {
   const [data, setData] = useState<{ messages: InboundMessage[]; checkedAt: string; connected: boolean } | null>(null);
   const [busy, setBusy] = useState(''), [show, setShow] = useState<'new' | 'all'>('new'), [error, setError] = useState('');
-  const load = useCallback(async () => { try { setData(await api('inbound')); setError(''); } catch (e) { setError((e as Error).message); } }, []);
+  // Polls can overlap on a slow connection: only the newest answer is shown, so an older list never replaces a newer one.
+  const latest = useRef(0);
+  const load = useCallback(async () => { const mine = ++latest.current; try { const result = await api<{ messages: InboundMessage[]; checkedAt: string; connected: boolean }>('inbound'); if (mine === latest.current) { setData(result); setError(''); } } catch (e) { if (mine === latest.current) setError((e as Error).message); } }, []);
   useEffect(() => {
     void load();
     // Keep the list current while the page is visible: the server checks the inbox every 30 seconds.

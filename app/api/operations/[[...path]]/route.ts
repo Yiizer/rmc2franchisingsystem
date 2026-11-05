@@ -74,6 +74,8 @@ export async function GET(request:NextRequest,context:Context){try{
   const user=await staff(request);
   // Division Heads / SOAs: whitelist first, before any lookup.
   if(isOwnerScoped(user)){assertOwnerScopedRoute(user,'GET',route);const scoped=await ownerGet(request,route,user);if(scoped)return scoped;}
+  // A temporary-password session only needs its own Settings page; the workspace still loads (the app reads the user from it).
+  if(user.mustChangePassword&&route[0]==='inbound')throw new AppError('Set your own password in Settings to activate your account.',403);
   if(route[0]==='inbound'&&!route[1])return response(await listInbound(user));
   if(route[0]==='inbound'&&route[1]&&route[2]==='attachment'){const file=await inboundAttachment(user,route[1],Number(route[3]));return fileResponse(file.bytes,file.type,file.name);}
   if(route[0]==='workspace'){const checking=await claimInboxCheck();if(checking)after(runClaimedInboxCheck);const view=await workspaceView(user,request.nextUrl.searchParams);return response(checking?{...view,inboxChecking:true}:view);}

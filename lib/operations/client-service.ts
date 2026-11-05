@@ -1,3 +1,4 @@
+import { jsonText } from './sql-dialect';
 import {historicalAgentChangeBlocked} from './historical';
 import { colleagueHolding } from './activity';
 import { lockedInquiry, matchingInquiries } from './inquiry-index';
@@ -86,6 +87,8 @@ function tooManyRejections(record:InquiryRecord){
   const rejected=(record.progressReports||[]).filter(report=>reportStatus(report)==='rejected'&&(report.recordedAt||report.sentAt)>=since).length;
   if(rejected>=MAX_REJECTED_REPORTS)throw new AppError(`${rejected} reports for this client were rejected since protection was last renewed. Contact franchising before filing again.`,409);
 }
+/** Progress reports one Division Head / SOA may file in 24 hours. */
+const REPORTS_PER_DAY=20;
 export async function addProgressReport(id:string,user:Staff,input:unknown,file?:File){
   if(!canFileProgressReport(user))throw new AppError('Only the Division Head or SOA who owns this client can file a progress report.',403);
   const body=reportSchema.parse(input),requestId=body.requestId||randomUUID();
@@ -96,6 +99,11 @@ export async function addProgressReport(id:string,user:Staff,input:unknown,file?
   if(early.progressReports?.some(report=>report.id===requestId))return early;
   if(early.progressReports?.some(report=>reportStatus(report)==='pending'))throw new AppError('A progress report for this client is already waiting for approval.',409);
   tooManyRejections(early);
+  // At most REPORTS_PER_DAY reports (each up to 7 MB) per Division Head / SOA in 24 hours, across all their clients.
+  const since=new Date(Date.now()-86400000).toISOString();
+  const owned=await db.all<{data:string}>(`SELECT data FROM inquiries WHERE ${jsonText(db,'data','ownerId')}=?`,user.id);
+  const recent=owned.reduce((n,row)=>n+((JSON.parse(row.data) as InquiryRecord).progressReports||[]).filter(r=>r.submittedBy===user.id&&(r.recordedAt||'')>since).length,0);
+  if(recent>=REPORTS_PER_DAY)throw new AppError(`You can file up to ${REPORTS_PER_DAY} progress reports a day. Contact franchising if you need to file more.`,429);
   let attachment:AgentProgressReport['attachment'];let bytes:Buffer|undefined;
   if(file&&file.size){
     if(file.size>7*1024*1024)throw new AppError('The progress report must be smaller than 7 MB.');

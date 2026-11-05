@@ -35,9 +35,11 @@ function UserEditor({ person, me, onRefresh, onReset }: { person: Staff; me: Sta
   const { busy: unlocking, unlock } = useUnlock();
   const self = person.id === me.id, owner = isOwnerScoped({ role }), needDivision = owner && !division;
   const changed = role !== person.role || active !== person.active || (division || '') !== (person.division || '') || (phone || '') !== (person.phone || '') || position !== (person.position || '');
+  // A role change or deactivation asks for the Head's own password (checked on the server).
+  const sensitive = role !== person.role || active !== person.active, [confirmPassword, setConfirmPassword] = useState('');
   async function save() {
     setBusy(true);
-    try { await api('users', { id: person.id, active, role, canApprove: approver(role), division: owner ? division : null, position, phone: phone.trim() || null }); await onRefresh(); toast.success('Staff account saved'); }
+    try { await api('users', { id: person.id, active, role, canApprove: approver(role), division: owner ? division : null, position, phone: phone.trim() || null, ...(sensitive ? { currentPassword: confirmPassword } : {}) }); setConfirmPassword(''); await onRefresh(); toast.success('Staff account saved'); }
     catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
   }
   return <div className="ops-user-row"><span className="ops-avatar">{initials(person.name)}</span>
@@ -51,7 +53,7 @@ function UserEditor({ person, me, onRefresh, onReset }: { person: Staff; me: Sta
     <label className="ops-check"><input type="checkbox" checked={active} disabled={self} onChange={e => setActive(e.target.checked)} />Active</label>
     {self && <span className="ops-user-locked">You can’t change your own role.</span>}
     {needDivision && <span className="ops-user-hint" role="alert">Choose a division.</span>}
-    <div className="ops-user-extra"><button className="ops-btn" disabled={busy || !changed || needDivision} onClick={() => void save()}>Save</button>
+    <div className="ops-user-extra">{sensitive && <input type="password" aria-label={'Your password to confirm the change for ' + person.name} placeholder="Your password to confirm" autoComplete="current-password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />}<button className="ops-btn" disabled={busy || !changed || needDivision || (sensitive && !confirmPassword)} onClick={() => void save()}>Save</button>
       {!self && canResetPassword(me) && <button className="ops-btn" onClick={() => onReset(person)}><KeyRound size={14} aria-hidden="true" />Reset password</button>}
       {!self && canResetPassword(me) && <button className="ops-btn" disabled={unlocking === person.id} onClick={() => void unlock(person)}><LockOpen size={14} aria-hidden="true" />Unlock</button>}</div>
   </div>;

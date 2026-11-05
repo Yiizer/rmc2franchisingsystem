@@ -141,3 +141,5 @@
 .ops-app .ops-oc-search svg{flex:none;color:var(--ops-muted)}
 .ops-app .ops-oc-filters .dir-filter b{background:transparent;color:inherit;padding:0}
 .ops-app .ops-oc-filters .dir-filter.is-active b{background:transparent;color:#fff}
+
+.ops-import-owner{display:grid;gap:6px;font-size:13px;font-weight:600;margin:4px 0 12px}.ops-import-owner small{font-weight:400;color:#5a6e8b}

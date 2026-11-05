@@ -83,7 +83,14 @@ export async function createAccount(user:Staff,input:unknown){
 /** Head only: role, active, approval flag, division, position, phone. Self-protection and the "at least one approver" rule hold. */
 export async function updateAccount(user:Staff,input:unknown){
   if(!canManageAccounts(user))throw new AppError('Only the Head can manage accounts.',403);
-  const body=z.object({id:z.string().max(100),active:z.boolean(),role:z.enum(STAFF_ROLES),canApprove:z.boolean(),division:divisionField.nullable().optional(),position:z.string().trim().max(200).optional(),phone:phoneField.nullable().optional()}).strict().parse(input);
+  const body=z.object({id:z.string().max(100),active:z.boolean(),role:z.enum(STAFF_ROLES),canApprove:z.boolean(),division:divisionField.nullable().optional(),position:z.string().trim().max(200).optional(),phone:phoneField.nullable().optional(),currentPassword:z.string().max(200).optional()}).strict().parse(input);
+  // Changing someone's role or deactivating them needs the Head's own password again, so a session left open cannot be
+  // used to hand out Head or approver rights silently. Position, phone and division edits do not.
+  const before=(await allUsers()).find(u=>u.id===body.id);
+  if(before&&(before.role!==body.role||before.active!==body.active)){
+    if(!body.currentPassword)throw new AppError('Enter your password to change a role or deactivate an account.',400);
+    await verifyCurrent(user,body.currentPassword);
+  }
   await transaction(async()=>{
     await db.lock('users-admin');
     const users=await allUsers(),target=users.find(u=>u.id===body.id);if(!target)throw new AppError('Staff member not found',404);
