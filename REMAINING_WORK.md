@@ -8,7 +8,20 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
-## Feedback round 2026-11-08: `FEEDBACK_2026-11-08_PLAN.md` (built 2026-11-08, NOT committed, NOT deployed)
+## Feedback round 2026-11-08: `FEEDBACK_2026-11-08_PLAN.md` (commit `61ba764`, pushed; live on the test version)
+
+**Live on the test version since 2026-11-08** (PO asked):
+- Deployment: `rmc2-preview-3e8dhwcqf-yiizer.vercel.app`, aliased to https://rmc2-test-yiizer.vercel.app. `next build` passed first. No migration was needed.
+- **Online read-only smoke check: 12/12 passed** (`vercel curl`, sign-ins and GETs only):
+  - Head: Monitoring for all 4 ranges (30d: 14 received, 5 sent, 2 declined, 2 not started, sent rate 36%, 3 employees timed);
+  - Supervisor: 200;
+  - Employee: 403;
+  - an unknown range: 400;
+  - the old `period` form: unchanged;
+  - signed out: 401.
+- **Not done online:**
+  - no browser click-through;
+  - the staff reminder sweep has not been triggered on purpose, to avoid sending pushes. It runs on its own the first time staff open the app (the poll, once per 10 minutes).
 
 **Built:**
 1. **Staff expiry reminders.**
@@ -47,7 +60,7 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 - Screenshots are in `test-results/feedback-1108/`.
 
 **Open:**
-- [ ] Not run on Postgres or TEST. Not deployed: needs PO approval.
+- [ ] Staff reminders not yet seen firing on Postgres/TEST: check the Notifications of a handler once staff have used the app.
 - [ ] Vercel cron jobs run on **production only**. On the preview test version, reminders come only from the staff poll (someone on staff has the app open).
 - [ ] Days left is rounded up (`protectionDaysLeft`). Two clients ending on the same calendar date can read "6 days" and "7 days", depending on the hour.
 
