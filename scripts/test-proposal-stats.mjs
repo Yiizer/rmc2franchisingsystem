@@ -188,4 +188,98 @@ const min = 60000;
   t.pass('First start per user writes one "Started handling" line without bumping the revision; later starts add nothing; a save on the old revision still works');
 }
 
+// ========== Feedback round 2026-11-08: Monitoring ranges (range=7d|30d|90d|12m), previous period, sends per weekday, sent rate ==========
+const types = await t.load('types');
+const totals = w => ({ received: w.received, sent: w.sent, declined: w.declined, notStarted: w.notStarted });
+const kpis = s => Object.fromEntries(['received', 'sent', 'declined', 'notStarted'].map(k => [k, types.kpiDelta(s.current[k], s.previous[k], k === 'received' || k === 'sent')]));
+const weekdays = s => Object.fromEntries(s.weekdays.filter(d => d.sent).map(d => [d.day, d.sent]));
+
+// ---------- 7d: Mon Nov 2 .. Sun Nov 8 vs Mon Oct 26 .. Sun Nov 1 ----------
+//            received                 sent (delivery.at)            declined   not started
+// current    R2 R4 R5 R6         = 4  R5 R9(00:00 Nov 2) R4 R6 = 4  —      = 0  R2     = 1
+// previous   R1 R3 R7 R8 R9      = 5  R8(23:59:59 Nov 1)       = 1  R7   = 1  R1 R3  = 2
+// deltas     -20% bad (down)          +300% good (up)               -100% good   -50% good (a fall in not-started is good)
+{
+  const r = stats.computeRangeStats(records, people, '7d', NOW), s = r.summary;
+  assert.equal(r.period, 'day');
+  assert.equal(r.buckets.length, 7);
+  assert.equal(r.buckets[0].label, 'Nov 2');
+  assert.equal(r.buckets[6].label, 'Nov 8');
+  assert.equal(s.current.from, M('2026-11-02T00:00:00')); assert.equal(s.current.to, M('2026-11-09T00:00:00'));
+  assert.equal(s.previous.from, M('2026-10-26T00:00:00')); assert.equal(s.previous.to, M('2026-11-02T00:00:00'));
+  assert.deepEqual(totals(s.current), { received: 4, sent: 4, declined: 0, notStarted: 1 });
+  assert.deepEqual(totals(s.previous), { received: 5, sent: 1, declined: 1, notStarted: 2 });
+  assert.deepEqual(kpis(s), {
+    received: { text: '20%', tone: 'bad', direction: 'down' }, sent: { text: '300%', tone: 'good', direction: 'up' },
+    declined: { text: '100%', tone: 'good', direction: 'down' }, notStarted: { text: '50%', tone: 'good', direction: 'down' },
+  });
+  assert.deepEqual(column(r, 'received'), { 'Nov 2': 2, 'Nov 3': 1, 'Nov 5': 1 }, 'received per day for the trend');
+  assert.deepEqual(weekdays(s), { Mon: 2, Wed: 1, Thu: 1 }, 'sends by Manila weekday: R5 and R9 on Monday Nov 2, R4 Wednesday, R6 Thursday');
+  assert.deepEqual(funnel(r), { Received: 4, Started: 3, Submitted: 3, Approved: 3, Sent: 3 });
+  assert.equal(s.sentRate, 75, 'sent rate = funnel Sent 3 / Received 4');
+  t.pass('7d: Manila week windows, current vs previous totals, deltas (Declined/Not started falling = good), sends per weekday, sent rate 75% (hand-computed)');
+}
+
+// ---------- 30d: Oct 10 .. Nov 8 vs Sep 10 .. Oct 9 ----------
+// current: received all but R10 = 9, sent R4 R5 R6 R8 R9 = 5, declined R7 = 1, not started R1 R2 R3 = 3. previous: R10 received and sent (Oct 3/4).
+{
+  const r = stats.computeRangeStats(records, people, '30d', NOW), s = r.summary;
+  assert.equal(r.buckets.length, 30);
+  assert.equal(s.current.from, M('2026-10-10T00:00:00')); assert.equal(s.previous.from, M('2026-09-10T00:00:00'));
+  assert.deepEqual(totals(s.current), { received: 9, sent: 5, declined: 1, notStarted: 3 });
+  assert.deepEqual(totals(s.previous), { received: 1, sent: 1, declined: 0, notStarted: 0 });
+  assert.deepEqual(kpis(s).received, { text: '800%', tone: 'good', direction: 'up' });
+  assert.deepEqual(kpis(s).declined, { text: '—', tone: 'neutral', direction: 'flat' }, 'previous 0: neutral');
+  assert.deepEqual(kpis(s).notStarted, { text: '—', tone: 'neutral', direction: 'flat' });
+  assert.deepEqual(weekdays(s), { Mon: 2, Wed: 1, Thu: 1, Sun: 1 }, 'R8 delivered Sunday Nov 1 23:59:59');
+  assert.equal(s.sentRate, 56, '5 of 9 = 55.6% rounds to 56');
+  assert.deepEqual(types.kpiDelta(3, 3, false), { text: '0%', tone: 'neutral', direction: 'flat' });
+  assert.deepEqual(types.kpiDelta(3, 2, false), { text: '50%', tone: 'bad', direction: 'up' }, 'more declined = red');
+  t.pass('30d: totals, previous-period zero gives a neutral delta, a rise in Declined is red, sent rate rounds');
+}
+
+// ---------- 90d: exactly Aug 11 .. Nov 8, weekly buckets with the first week (Mon Aug 10) clipped ----------
+{
+  const edge = rec('R11', M('2026-08-10T12:00:00'), 'New inquiry'); // inside the first week bucket, but one day before the window
+  const r = stats.computeRangeStats([...records, edge], people, '90d', NOW), s = r.summary;
+  assert.equal(r.period, 'week');
+  assert.equal(r.buckets.length, 13);
+  assert.equal(r.buckets[0].start, M('2026-08-10T00:00:00'));
+  assert.equal(r.from, M('2026-08-11T00:00:00'), 'the window is clipped to 90 days');
+  assert.equal(s.current.received, 10, 'R11 (Aug 10) is outside the 90 days');
+  assert.equal(r.buckets[0].received + r.buckets[0].notStarted, 0, 'and not in the clipped first bucket');
+  assert.equal(s.previous.received, 1, 'R11 falls in the previous 90 days');
+  assert.equal(funnel(r).Received, 10);
+  t.pass('90d: exact 90-day window, weekly buckets, the first week clipped to the window, previous 90 days');
+}
+
+// ---------- 12m: Dec 2025 .. Nov 2026 vs Dec 2024 .. Nov 2025; no inquiries gives a null sent rate ----------
+{
+  const r = stats.computeRangeStats(records, people, '12m', NOW), s = r.summary;
+  assert.equal(r.period, 'month');
+  assert.equal(r.buckets.length, 12);
+  assert.equal(r.buckets[0].label, 'Dec 2025'); assert.equal(r.buckets[11].label, 'Nov 2026');
+  assert.equal(s.current.from, M('2025-12-01T00:00:00')); assert.equal(s.previous.from, M('2024-12-01T00:00:00'));
+  assert.equal(s.current.received, 10); assert.equal(s.previous.received, 0);
+  const none = stats.computeRangeStats([], people, '7d', NOW).summary;
+  assert.equal(none.sentRate, null);
+  assert.deepEqual(totals(none.current), { received: 0, sent: 0, declined: 0, notStarted: 0 });
+  t.pass('12m: calendar months, previous 12 months; an empty period has a null sent rate and zero totals');
+}
+
+// ---------- range on the route: roles and validation ----------
+{
+  const view = async (who, range) => t.status(stats.proposalStats(who, new URLSearchParams({ range })));
+  assert.equal(await view(t.user('emerson'), '30d'), 200);
+  assert.equal(await view(t.user('zeo'), '12m'), 200);
+  for (const id of ['cryssa', 'admin', 'division-head', 'soa'])assert.equal(await view(t.user(id), '7d'), 403, id);
+  assert.equal(await view(t.user('emerson'), '1y'), 400);
+  const live = await stats.proposalStats(t.user('emerson'), new URLSearchParams({ range: '90d' }));
+  assert.equal(live.summary.range, '90d');
+  assert.equal(live.summary.weekdays.length, 7);
+  const old = await stats.proposalStats(t.user('emerson'), new URLSearchParams({ period: 'day' }));
+  assert.equal(old.summary, undefined, 'the period form is unchanged');
+  t.pass('range: Head and Supervisor 200; Employee, Admin, Division Head, SOA 403; an unknown range 400; the period form still works');
+}
+
 console.log(t.checks.length + ' checks passed');

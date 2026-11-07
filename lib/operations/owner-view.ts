@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { AppError, db, jsonParam, emitNotice } from './database';
+import { AppError, allUsers, db, inquiries, jsonParam, emitNotice } from './database';
 import { clientState, hasPendingReport, lastActivityAt, protectionDaysLeft, protectionFor, protectionExpired } from './client-rules';
 import { synchronizeInquiryIndex, matchingInquiries } from './inquiry-index';
 import { isOwnerScoped } from './permissions';
@@ -68,18 +68,61 @@ async function dtos(records:InquiryRecord[]):Promise<OwnerClient[]>{
  * inserted with ON CONFLICT DO NOTHING, so loading the app any number of times (or from two devices) creates it once, and it comes back only after
  * an approved report moves the expiry. When first seen already inside 2 days, only the 2-day reminder is created.
  */
+/** The 7/2-day rule shared by the owner and the staff reminders: null when no reminder is due for this record now. */
+export function reminderDue(record:InquiryRecord,now=Date.now()):{threshold:2|7;days:number;expiresAt:string}|null{
+  const protection=protectionFor(record);
+  if(!protection||record.closure||hasPendingReport(record)||protectionExpired(record,protection,now))return null;
+  const days=protectionDaysLeft(protection,now),threshold=days<=2?2:days<=7?7:0;
+  return threshold?{threshold,days,expiresAt:protection.expiresAt}:null;
+}
+const reminderId=(prefix:string,record:InquiryRecord,due:{threshold:number;expiresAt:string})=>prefix+createHash('sha256').update([record.id,due.expiresAt,due.threshold].join('|')).digest('hex').slice(0,40);
 export async function ownerReminders(user:Staff,records:InquiryRecord[],now=Date.now()){
   for(const record of records){
-    const protection=protectionFor(record);
-    if(!protection||record.closure||hasPendingReport(record)||protectionExpired(record,protection,now))continue;
-    const days=protectionDaysLeft(protection,now),threshold=days<=2?2:days<=7?7:0;
-    if(!threshold)continue;
-    const id='reminder-'+createHash('sha256').update([record.id,protection.expiresAt,threshold].join('|')).digest('hex').slice(0,40);
+    const due=reminderDue(record,now);
+    if(!due)continue;
+    const {days}=due,id=reminderId('reminder-',record,due);
     const notice:Notice={id,inquiryId:record.id,title:'Protection ending soon',message:`${record.fields.company||'Your client'} · protection ends in ${days} day${days===1?'':'s'}. File a progress report to renew it.`,at:new Date(now).toISOString(),recipientIds:[user.id],readBy:[]};
     const inserted=await db.run('INSERT INTO notifications(id,data) VALUES (?,?) ON CONFLICT (id) DO NOTHING',id,jsonParam(notice));
     if(inserted.changes)await emitNotice(notice,record.fields.company||'');
   }
 }
+const manilaDay=(value:string)=>new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'Asia/Manila'}).format(new Date(value));
+/**
+ * Staff reminders (feedback round 2026-11-08, PO Q1): the employees who handled the client (handledBy plus the preparer of the sent version) and
+ * every active Head and Supervisor, at 7 and 2 days left. Same rule (reminderDue) and the same dedupe as the owner reminders: one notice per client
+ * per threshold per protection period, keyed by record + expiry + threshold and inserted with ON CONFLICT DO NOTHING, so re-runs, reloads and
+ * parallel instances create it once and only the inserting call pushes. Owner-scoped users are never recipients here (their own owner reminder covers
+ * their own client; another owner's client must never reach them). Returns the number of notices created.
+ */
+export async function staffProtectionReminders(now=Date.now()):Promise<number>{
+  const records=await inquiries(),people=await allUsers(),active=new Map(people.filter(p=>p.active&&!isOwnerScoped(p)).map(p=>[p.id,p]));
+  const leads=[...active.values()].filter(p=>p.role==='Head'||p.role==='Supervisor').map(p=>p.id);
+  let created=0;
+  for(const record of records){
+    const due=reminderDue(record,now);
+    if(!due)continue;
+    const sender=record.submissions.filter(item=>item.delivery&&!item.delivery.dryRun).at(-1)?.submittedBy;
+    const recipientIds=[...new Set([...record.handledBy,...(sender?[sender]:[]),...leads])].filter(id=>active.has(id));
+    if(!recipientIds.length)continue;
+    const id=reminderId('staff-reminder-',record,due),client=record.fields.company||'Client details pending';
+    const notice:Notice={id,inquiryId:record.id,title:'Protection ending soon',message:`${client}: protection ends in ${due.days} day${due.days===1?'':'s'} (${manilaDay(due.expiresAt)}). Ask the agent for a progress report or the client will be released.`,at:new Date(now).toISOString(),recipientIds,readBy:[]};
+    const inserted=await db.run('INSERT INTO notifications(id,data) VALUES (?,?) ON CONFLICT (id) DO NOTHING',id,jsonParam(notice));
+    if(inserted.changes){created++;await emitNotice(notice,record.fields.company||'');}
+  }
+  return created;
+}
+const SLOT_MS=10*60000,SLOT_PREFIX='protection-reminder-slot:';
+/** At most one sweep per 10-minute slot across all instances: the first INSERT of the slot's key wins. Old slot rows are removed by the winner. */
+export async function claimReminderSlot(now=Date.now()):Promise<boolean>{
+  const key=SLOT_PREFIX+String(Math.floor(now/SLOT_MS)).padStart(12,'0');
+  try{
+    if(await db.get('SELECT key FROM settings WHERE key=?',key))return false; // the usual case: a read, no write
+    const claimed=await db.run('INSERT INTO settings(key,data) VALUES (?,?) ON CONFLICT (key) DO NOTHING',key,jsonParam({at:new Date(now).toISOString()}));
+    if(claimed.changes)await db.run('DELETE FROM settings WHERE key LIKE ? AND key<?',SLOT_PREFIX+'%',key);
+    return !!claimed.changes;
+  }catch(error){console.error('[reminders] slot claim failed:',(error as {code?:string})?.code||'error');return false;}
+}
+export async function runClaimedReminders(){try{await staffProtectionReminders();}catch(error){console.error('[reminders] sweep failed:',(error as {code?:string})?.code||'error');}}
 export async function listOwnerClients(user:Staff){
   const records=await owned(user);await ownerReminders(user,records);
   return dtos(records);

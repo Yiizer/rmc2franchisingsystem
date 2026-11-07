@@ -3,7 +3,7 @@ import { directory, historicalDetail, historicalMatches, reviewHistorical, withH
 import { authenticate, createAccount, resetPassword, unlockAccount, updateAccount, updateOwnAccount } from '@/lib/operations/accounts';
 import { assertOwnerScopedRoute } from '@/lib/operations/scope-guard';
 import { canManageTemplates, isOwnerScoped } from '@/lib/operations/permissions';
-import { listOwnerClients, ownerBootstrap, ownerClient, ownerIntakeResult, ownerProposalFile, ownerReportFile } from '@/lib/operations/owner-view';
+import { claimReminderSlot, runClaimedReminders, staffProtectionReminders, listOwnerClients, ownerBootstrap, ownerClient, ownerIntakeResult, ownerProposalFile, ownerReportFile } from '@/lib/operations/owner-view';
 import { setInquiryOwner } from '@/lib/operations/owners';
 import { declineInquiry, transferWithBor, decideAgentTransfer, requestExpiredTransfer } from '@/lib/operations/registration-actions';
 import { beginSupervisorEdit, cancelSupervisorEdit } from '@/lib/operations/supervisor-edit';
@@ -73,7 +73,7 @@ export async function GET(request:NextRequest,context:Context){try{
   await ensureReady();
   const route=(await context.params).path||[];
   if(route[0]==='login-options')return response({users:[]});
-  if(route[0]==='inbound'&&route[1]==='cron'){if(!cronAllowed(request.headers.get('authorization')))throw new AppError('Not allowed.',401);return response(await checkInbox());}
+  if(route[0]==='inbound'&&route[1]==='cron'){if(!cronAllowed(request.headers.get('authorization')))throw new AppError('Not allowed.',401);const inbox=await checkInbox();const reminders=await staffProtectionReminders().catch(()=>-1);return response({...inbox,reminders});}
   const user=await staff(request);
   // Division Heads / SOAs: whitelist first, before any lookup.
   if(isOwnerScoped(user)){assertOwnerScopedRoute(user,'GET',route);const scoped=await ownerGet(request,route,user);if(scoped)return scoped;}
@@ -81,7 +81,7 @@ export async function GET(request:NextRequest,context:Context){try{
   if(user.mustChangePassword&&route[0]==='inbound')throw new AppError('Set your own password in Settings to activate your account.',403);
   if(route[0]==='inbound'&&!route[1])return response(await listInbound(user));
   if(route[0]==='inbound'&&route[1]&&route[2]==='attachment'){const file=await inboundAttachment(user,route[1],Number(route[3]));return fileResponse(file.bytes,file.type,file.name);}
-  if(route[0]==='workspace'){const checking=await claimInboxCheck();if(checking)after(runClaimedInboxCheck);const view=await workspaceView(user,request.nextUrl.searchParams);return response(checking?{...view,inboxChecking:true}:view);}
+  if(route[0]==='workspace'){const checking=await claimInboxCheck();if(checking)after(runClaimedInboxCheck);if(await claimReminderSlot())after(runClaimedReminders);const view=await workspaceView(user,request.nextUrl.searchParams);return response(checking?{...view,inboxChecking:true}:view);}
   if(user.mustChangePassword){if(route[0]!=='bootstrap')throw new AppError('Set your own password in Settings to activate your account.',403);return response({user,users:[user],inquiries:[],clientStates:{},packageRenderers:{},activity:[],templates:[],notifications:[],integrations:{database:'',gmail:'',ai:'',documents:''},mail:mailStatus()});}
 
   if(route[0]==='bootstrap'){await recoverStuckMail();const snap=await db.snapshot(async()=>{const notices=(await db.all('SELECT data FROM notifications') as {data:string}[]).map(r=>JSON.parse(r.data) as Notice).filter(n=>n.recipientIds.includes(user.id)).sort((a,b)=>b.at.localeCompare(a.at));return {notices,records:await inquiries(),users:await allUsers(),activity:await activeInquiryActivity(),templates:await catalog()};});const records=snap.records;return response({user,users:snap.users,inquiries:records,clientStates:clientStates(records),packageRenderers:await packageRenderers(records),activity:snap.activity,templates:snap.templates.map(({file,text,...t})=>({...t,text,file:''})),notifications:snap.notices,integrations:{database:databaseLabel(),gmail:'Local test mailbox · no real Gmail sends',ai:'Simulated · supplied proposal sources only',documents:conversionName()},mail:mailStatus()});}

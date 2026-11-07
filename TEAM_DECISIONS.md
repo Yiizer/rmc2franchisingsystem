@@ -8,6 +8,18 @@ Format: **Decision** — why — where it applies.
 
 ## Product decisions (approved by the Product Owner)
 
+- **Feedback round 2026-11-08** (`FEEDBACK_2026-11-08_PLAN.md`, approved 2026-11-08):
+  - **Q1, who gets expiry reminders: everyone involved.** That means:
+    - the employees who handled the client (`handledBy` plus the preparer of the sent version);
+    - every active Head and Supervisor;
+    - the client's own Division Head / SOA, who already gets the owner reminder with its own wording.
+  - Owner-scoped users never get a reminder about another owner's client: that would break the "they see only their own clients" rule.
+  - **Q2, nobody handled the inquiry:** the PO was unsure. The Head and Supervisors always get the reminder (Q1), so someone is always told, and no extra fallback is needed. Not all employees, to keep the noise down.
+  - **Q3:** "Busiest day" counts **proposals sent** (by `delivery.at`, Manila weekday).
+  - **Q4:** the reminder text says the **actual days left**, plus the exact date.
+  - **Q5:** for Declined and Not yet started, a rise shows **red**, because a rise is bad there.
+  - **Reference image:** use it only for layout and ideas, fitted to what coverdesk has. Do not copy features the system does not have, or its look.
+
 - **Feedback round 2026-11-07** (`FEEDBACK_2026-11-07_PLAN.md`):
   - **Enrolled:** label only. "Won" becomes "Enrolled" everywhere, with the same rows and counts; no stored enrollment status yet.
   - **Labeled-field inquiry entry:** replaces manual entry only. Imported forms keep their review screen. Typed fields are written into a real franchise-form .xlsx and go through the normal intake.

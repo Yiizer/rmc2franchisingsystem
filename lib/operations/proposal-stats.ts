@@ -2,9 +2,9 @@ import { z } from 'zod';
 import { STARTED_HANDLING } from './activity';
 import { AppError, allUsers, db, inquiries } from './database';
 import { canSeeProposalStats } from './permissions';
-import type { AuditEntry, InquiryRecord, ProposalStats, ProposalStatsPeriod, Staff } from './types';
+import type { AuditEntry, InquiryRecord, ProposalStats, ProposalStatsPeriod, ProposalStatsRange, ProposalWindowTotals, Staff } from './types';
 
-// Proposal dashboard numbers (feedback round 2026-11-07, items 3 and 4). Read in ONE database snapshot and computed in JS, which is fine at
+// Monitoring numbers (feedback round 2026-11-07, items 3 and 4). Read in ONE database snapshot and computed in JS, which is fine at
 // hundreds of rows; if the table grows into the tens of thousands, move the bucket counts into SQL over inquiry_summaries.
 // All bucketing is Manila time (UTC+8, no daylight saving); weeks run Monday-Sunday. Pure: computeProposalStats takes records and `now`.
 const HOUR = 3600000, DAY = 24 * HOUR, MANILA = 8 * HOUR;
@@ -61,17 +61,18 @@ function firstStart(record: InquiryRecord, userId: string | undefined, after: nu
   return best;
 }
 
-export function computeProposalStats(records: InquiryRecord[], users: Pick<Staff, 'id' | 'name'>[], period: ProposalStatsPeriod, now: number, range?: { from: number; to: number }): ProposalStats {
+/** `range.to` is inclusive (the start of a Manila date), unless `exact`: then [from, to) is the exact window and the first bucket is clipped to it (90 days by week). */
+export function computeProposalStats(records: InquiryRecord[], users: Pick<Staff, 'id' | 'name'>[], period: ProposalStatsPeriod, now: number, range?: { from: number; to: number; exact?: boolean }): ProposalStats {
   // Buckets, oldest first. Default: the current bucket and the ones before it. With a range: the buckets that cover it (capped).
   const starts: number[] = [];
   if (range) {
-    for (let s = bucketStart(period, range.from); s <= range.to && starts.length < MAX_BUCKETS; s = nextStart(period, s)) starts.push(s);
+    for (let s = bucketStart(period, range.from); (range.exact ? s < range.to : s <= range.to) && starts.length < MAX_BUCKETS; s = nextStart(period, s)) starts.push(s);
   } else {
     for (let s = bucketStart(period, now), i = 0; i < DEFAULT_BUCKETS[period]; i++, s = previousStart(period, s)) starts.unshift(s);
   }
-  const from = starts[0], to = nextStart(period, starts[starts.length - 1]);
+  const from = range?.exact ? range.from : starts[0], to = range?.exact ? range.to : nextStart(period, starts[starts.length - 1]);
   const where = (ms: number) => { if (!Number.isFinite(ms) || ms < from || ms >= to) return -1; let lo = 0, hi = starts.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] <= ms) lo = mid; else hi = mid - 1; } return lo; };
-  const buckets = starts.map(start => ({ label: labelOf(period, start), start: new Date(start).toISOString(), sent: 0, declined: 0, notStarted: 0 }));
+  const buckets = starts.map(start => ({ label: labelOf(period, start), start: new Date(start).toISOString(), received: 0, sent: 0, declined: 0, notStarted: 0 }));
   const funnel = { Received: 0, Started: 0, Submitted: 0, Approved: 0, Sent: 0 };
   const created = new Map<string, number[]>(), handled = new Map<string, number[]>();
   const add = (map: Map<string, number[]>, id: string, ms: number) => { const list = map.get(id) || []; list.push(ms); map.set(id, list); };
@@ -82,6 +83,7 @@ export function computeProposalStats(records: InquiryRecord[], users: Pick<Staff
     for (const index of new Set(delivered.map(item => where(time(item.delivery!.at))).filter(i => i >= 0))) buckets[index].sent++;
     if (record.closure?.kind === 'declined') { const i = where(time(record.closure.at)); if (i >= 0) buckets[i].declined++; }
     const createdIndex = where(time(record.createdAt));
+    if (createdIndex >= 0) buckets[createdIndex].received++;
     if (createdIndex >= 0 && record.status === 'New inquiry' && !record.closure) buckets[createdIndex].notStarted++;
 
     // Funnel over inquiries received in the range. Each step implies the one before it, so the steps are always nested.
@@ -126,12 +128,55 @@ export function computeProposalStats(records: InquiryRecord[], users: Pick<Staff
   return { period, from: new Date(from).toISOString(), to: new Date(to).toISOString(), asOf: new Date(now).toISOString(), buckets, funnel: (Object.keys(funnel) as (keyof typeof funnel)[]).map(step => ({ step, count: funnel[step] })), timing };
 }
 
+// ---------- Monitoring summary (feedback round 2026-11-08): fixed ranges, the previous window of equal length, sends per weekday, sent rate ----------
+const RANGE_DAYS: Partial<Record<ProposalStatsRange, number>> = { '7d': 7, '30d': 30, '90d': 90 };
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+/** The current window [from, to) and the previous one of equal length (Manila). 7d/30d/90d end with today; 12m is this calendar month and the 11 before. */
+export function rangeWindows(range: ProposalStatsRange, now: number): { period: ProposalStatsPeriod; from: number; to: number; previousFrom: number } {
+  const days = RANGE_DAYS[range];
+  if (days) { const to = dayStart(now) + DAY, from = to - days * DAY; return { period: days > 30 ? 'week' : 'day', from, to, previousFrom: from - days * DAY }; }
+  const d = shifted(now), y = d.getUTCFullYear(), m = d.getUTCMonth();
+  return { period: 'month', from: monthStart(y, m - 11), to: monthStart(y, m + 1), previousFrom: monthStart(y, m - 23) };
+}
+/** The four KPI counts over [from, to). Same definitions as the buckets; "sent" counts an inquiry once however often it was delivered. */
+export function windowTotals(records: InquiryRecord[], from: number, to: number): Omit<ProposalWindowTotals, 'from' | 'to'> {
+  const inside = (value: string | undefined) => { const ms = time(value); return ms >= from && ms < to; };
+  let received = 0, sent = 0, declined = 0, notStarted = 0;
+  for (const record of records) {
+    if (inside(record.createdAt)) { received++; if (record.status === 'New inquiry' && !record.closure) notStarted++; }
+    if (record.submissions.some(item => item.delivery && !item.delivery.dryRun && inside(item.delivery.at))) sent++;
+    if (record.closure?.kind === 'declined' && inside(record.closure.at)) declined++;
+  }
+  return { received, sent, declined, notStarted };
+}
+/** Proposals sent per Manila weekday in [from, to) (PO Q3): an inquiry counts once per day it was delivered, the same as the day buckets. */
+export function sendsByWeekday(records: InquiryRecord[], from: number, to: number) {
+  const counts = WEEKDAYS.map(() => 0);
+  for (const record of records) {
+    const days = new Set(record.submissions.filter(item => item.delivery && !item.delivery.dryRun).map(item => time(item.delivery!.at)).filter(ms => ms >= from && ms < to).map(dayStart));
+    for (const day of days) counts[(shifted(day).getUTCDay() + 6) % 7]++;
+  }
+  return WEEKDAYS.map((day, i) => ({ day, sent: counts[i] }));
+}
+export function computeRangeStats(records: InquiryRecord[], users: Pick<Staff, 'id' | 'name'>[], range: ProposalStatsRange, now: number): ProposalStats {
+  const w = rangeWindows(range, now), result = computeProposalStats(records, users, w.period, now, { from: w.from, to: w.to, exact: true });
+  const received = result.funnel[0].count, sent = result.funnel[result.funnel.length - 1].count, iso = (ms: number) => new Date(ms).toISOString();
+  return { ...result, summary: {
+    range,
+    current: { from: iso(w.from), to: iso(w.to), ...windowTotals(records, w.from, w.to) },
+    previous: { from: iso(w.previousFrom), to: iso(w.from), ...windowTotals(records, w.previousFrom, w.from) },
+    weekdays: sendsByWeekday(records, w.from, w.to),
+    sentRate: received ? Math.round(sent / received * 100) : null,
+  } };
+}
+
 const manilaDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).transform(value => Date.parse(value + 'T00:00:00+08:00')).refine(Number.isFinite, 'Use a valid date.');
-const querySchema = z.object({ period: z.enum(['day', 'week', 'month']), from: manilaDate.optional(), to: manilaDate.optional() }).refine(q => (q.from === undefined) === (q.to === undefined), 'Give both from and to, or neither.').refine(q => q.from === undefined || q.to! >= q.from, 'to must not be before from.');
-/** GET monitoring/proposals?period=day|week|month[&from=YYYY-MM-DD&to=YYYY-MM-DD] (Manila dates). Head and Supervisors only. */
+const querySchema = z.object({ range: z.enum(['7d', '30d', '90d', '12m']).optional(), period: z.enum(['day', 'week', 'month']), from: manilaDate.optional(), to: manilaDate.optional() }).refine(q => (q.from === undefined) === (q.to === undefined), 'Give both from and to, or neither.').refine(q => q.from === undefined || q.to! >= q.from, 'to must not be before from.');
+/** GET monitoring/proposals?range=7d|30d|90d|12m (the Monitoring page) or ?period=day|week|month[&from=YYYY-MM-DD&to=YYYY-MM-DD] (Manila dates). Head and Supervisors only. */
 export async function proposalStats(user: Staff, params: URLSearchParams): Promise<ProposalStats> {
-  if (!canSeeProposalStats(user)) throw new AppError('You do not have access to the proposal dashboard.', 403);
-  const query = querySchema.parse({ period: params.get('period') || 'day', from: params.get('from') || undefined, to: params.get('to') || undefined });
+  if (!canSeeProposalStats(user)) throw new AppError('You do not have access to Monitoring.', 403);
+  const query = querySchema.parse({ range: params.get('range') || undefined, period: params.get('period') || 'day', from: params.get('from') || undefined, to: params.get('to') || undefined });
   const { records, users } = await db.snapshot(async () => ({ records: await inquiries(), users: await allUsers() }));
+  if (query.range) return computeRangeStats(records, users, query.range, Date.now());
   return computeProposalStats(records, users, query.period, Date.now(), query.from !== undefined ? { from: query.from, to: query.to! } : undefined);
 }

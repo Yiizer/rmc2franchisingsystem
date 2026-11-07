@@ -8,7 +8,49 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
-## Feedback round 2026-11-07: `FEEDBACK_2026-11-07_PLAN.md` (built 2026-11-08, NOT committed)
+## Feedback round 2026-11-08: `FEEDBACK_2026-11-08_PLAN.md` (built 2026-11-08, NOT committed, NOT deployed)
+
+**Built:**
+1. **Staff expiry reminders.**
+   - Who gets them: the employees who handled the client (`handledBy` + the preparer of the sent version) and every active Head and Supervisor, at 7 and 2 days left.
+   - Wording: "{Client}: protection ends in {n} days ({date}). Ask the agent for a progress report or the client will be released."
+   - Same rule and dedupe as the owner reminders (`reminderDue` in `owner-view.ts`). The notice id is a hash of client + expiry + threshold, inserted with `ON CONFLICT DO NOTHING`. No migration.
+   - Triggers:
+     - the staff 30-second `workspace` poll, at most once per 10-minute slot (`settings` key `protection-reminder-slot:<n>`), run in `after()`;
+     - the daily `/inbound/cron`.
+   - Division Heads / SOAs keep their own reminder, unchanged, and never get a staff notice.
+2. **Monitoring** (renamed from "Proposal dashboard").
+   - `GET monitoring/proposals?range=7d|30d|90d|12m` adds `summary`: current and previous totals, sends per weekday, and the sent rate. `received` was also added per bucket. The old `period` form is unchanged.
+   - New layout:
+     - header with the range control, Export (CSV) and Refresh;
+     - 4 KPI cards with delta pills;
+     - Proposals over time next to Busiest day;
+     - Pipeline next to the Sent rate gauge;
+     - Time per employee.
+   - The Charts / Numbers / Both toggle is kept.
+
+**Verified locally:**
+- `tsc` passes. 0 lint errors in the changed files (the same as HEAD).
+- New tests:
+  - `test-protection-reminders-employees` 6/6;
+  - `test-proposal-stats` 12/12 (5 new range cases with hand-computed tables).
+- `test-roles-scoping` fails only at the accepted line 198. A throwaway copy with only that line changed passes 30/30, including section 7 (owner reminders).
+- Feedback-round scripts all pass: enrolled 7, shared-mobile 5, division-team 9, inquiry-fields 6, reply-recipient 7, email-templates 5.
+- `test-no-ai-text-browser` passes: 54 screens.
+- Dev server checks (port 5196, `test-results/feedback-1108/qa-data`, with 121 extra sample inquiries):
+  - desktop and 375px, with no horizontal scroll;
+  - the toggle survives a reload;
+  - the Export CSV contents were checked;
+  - Retry recovers from an error;
+  - the Employee gets 403 and has no nav item;
+  - the live poll created the staff reminders, and cryssa saw them in Notifications.
+- Screenshots are in `test-results/feedback-1108/`.
+
+**Open:**
+- [ ] Not run on Postgres or TEST. Not deployed: needs PO approval.
+- [ ] Vercel cron jobs run on **production only**. On the preview test version, reminders come only from the staff poll (someone on staff has the app open).
+- [ ] Days left is rounded up (`protectionDaysLeft`). Two clients ending on the same calendar date can read "6 days" and "7 days", depending on the hour.
+
 
 **Live on the test version since 2026-11-08** (PO asked):
 - Deployment: `rmc2-preview-m5rx9sxbu-yiizer.vercel.app`, aliased to https://rmc2-test-yiizer.vercel.app. `next build` passed first. No migration was needed.

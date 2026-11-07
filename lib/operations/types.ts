@@ -91,12 +91,27 @@ export function ageLabel(value: string, now=Date.now()) { const mins=Math.max(0,
 // ---- Feedback round 2026-11-07: response contracts shared by server and UI ----
 /** GET monitoring/proposals?period=day|week|month (Head, Supervisor). Buckets are Manila time; weeks run Monday-Sunday. */
 export type ProposalStatsPeriod = 'day'|'week'|'month';
+export type ProposalStatsRange = '7d'|'30d'|'90d'|'12m';
+/** Monitoring KPI change against the previous period. Neutral when the previous count is 0. Colour follows the meaning (PO Q5): for Declined and
+ * Not yet started (upIsGood=false) a rise is 'bad'. */
+export function kpiDelta(current:number,previous:number,upIsGood:boolean):{text:string;tone:'good'|'bad'|'neutral';direction:'up'|'down'|'flat'}{
+  if(previous<=0)return {text:'—',tone:'neutral',direction:'flat'};
+  const change=Math.round((current-previous)/previous*100);
+  if(change===0)return {text:'0%',tone:'neutral',direction:'flat'};
+  const up=change>0;
+  return {text:Math.abs(change)+'%',tone:up===upIsGood?'good':'bad',direction:up?'up':'down'};
+}
+/** Counts over [from, to). notStarted = received in the window and still "New inquiry" with no closure, as of now. */
+export type ProposalWindowTotals = { from: string; to: string; received: number; sent: number; declined: number; notStarted: number };
 export type ProposalStats = {
   period: ProposalStatsPeriod; from: string; to: string; asOf: string;
-  buckets: { label: string; start: string; sent: number; declined: number; notStarted: number }[];
+  /** received = inquiries created in the bucket (added 2026-11-08 for the Monitoring trend). */
+  buckets: { label: string; start: string; received: number; sent: number; declined: number; notStarted: number }[];
   funnel: { step: 'Received'|'Started'|'Submitted'|'Approved'|'Sent'; count: number }[];
   /** Milliseconds. avg* are null when the matching count is 0. */
   timing: { userId: string; name: string; created: number; avgCreateMs: number|null; sent: number; avgHandlingMs: number|null }[];
+  /** Only with ?range=. sentRate = funnel Sent ÷ Received (whole percent), null when nothing was received. weekdays = proposals sent, Mon..Sun. */
+  summary?: { range: ProposalStatsRange; current: ProposalWindowTotals; previous: ProposalWindowTotals; weekdays: { day: 'Mon'|'Tue'|'Wed'|'Thu'|'Fri'|'Sat'|'Sun'; sent: number }[]; sentRate: number|null };
 };
 /** GET my-team (Division Head only). */
 export type TeamMember = Pick<Staff,'id'|'name'|'email'|'username'|'position'|'phone'|'active'|'mustChangePassword'|'division'>;

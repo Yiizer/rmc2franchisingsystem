@@ -1,27 +1,71 @@
-/* Proposal dashboard (Head and Supervisors). Chart colours are CSS variables built on the operations tokens. */
-.pd-page{--pd-sent:var(--ops-done,#166a43);--pd-declined:var(--ops-error,#a52c26);--pd-idle:#8a98ab;--pd-create:var(--ops-avail,#2459a6);--pd-handling:var(--ops-review,#713ba2);
+/* Monitoring (Head and Supervisors). Chart colours are CSS variables built on the operations tokens. */
+.pd-page{--pd-sent:var(--ops-done,#166a43);--pd-sent-tint:var(--ops-done-tint,#eaf6ee);--pd-declined:var(--ops-error,#a52c26);--pd-idle:#8a98ab;--pd-received:var(--ops-avail,#2459a6);
+ --pd-create:var(--ops-avail,#2459a6);--pd-handling:var(--ops-review,#713ba2);
  --pd-step-1:#0d2142;--pd-step-2:#1d4b8f;--pd-step-3:#2459a6;--pd-step-4:#3f7fc6;--pd-step-5:var(--ops-done,#166a43);
  max-width:1280px;margin:0 auto;min-width:0;color:var(--ops-ink)}
-.pd-controls{display:flex;gap:12px 20px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+/* Header: title left; range, Export and Refresh right */
+.pd-head{gap:16px;flex-wrap:wrap}
+.pd-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pd-export,.pd-refresh{min-height:40px}
+.pd-controls{display:flex;gap:10px 20px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+.pd-window{margin:0;font-size:var(--ops-text-sm);color:var(--ops-muted)}
+.pd-window b{color:var(--ops-ink);font-weight:600}
+.pd-view{margin-left:auto}
 .pd-segment{display:inline-flex;border:1px solid #b9c5d4;border-radius:var(--ops-radius);overflow:hidden;background:var(--ops-surface)}
-.pd-segment button{border:0;border-right:1px solid #b9c5d4;background:var(--ops-surface);color:var(--ops-secondary);font-size:var(--ops-text-sm);font-weight:600;min-height:40px;padding:0 16px;cursor:pointer}
+.pd-segment button{border:0;border-right:1px solid #b9c5d4;background:var(--ops-surface);color:var(--ops-secondary);font-size:var(--ops-text-sm);font-weight:600;min-height:40px;padding:0 14px;cursor:pointer;white-space:nowrap}
 .pd-segment button:last-child{border-right:0}
 .pd-segment button:hover{background:var(--ops-secondary-hover)}
 .pd-segment button.is-active{background:var(--ops-secondary);color:#fff}
 .pd-segment button:focus-visible{outline-offset:-3px}
-.pd-asof{color:var(--ops-muted);font-size:var(--ops-text-xs);margin-left:auto}
+.pd-asof{color:var(--ops-muted);font-size:var(--ops-text-xs)}
 .pd-body{display:grid;gap:16px;min-width:0}
 .pd-body[data-busy]{opacity:.65;transition:opacity .15s}
-.pd-charts{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:16px;min-width:0}
-.pd-numbers{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:16px;min-width:0;align-items:start}
+/* Rows: a wide card next to a narrow one */
+.pd-row{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px;min-width:0;align-items:stretch}
 .pd-card{margin:0;min-width:0}
 .pd-card .ops-card-head h2{margin:0}
 .pd-card .ops-card-head p{margin:4px 0 0;color:var(--ops-muted);font-size:var(--ops-text-xs)}
 .pd-chart{padding:8px 12px 12px;min-width:0}
+/* KPI cards */
+.pd-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;min-width:0}
+.pd-kpi{margin:0;padding:18px 20px;display:grid;gap:6px;min-width:0}
+.pd-kpi-head{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:var(--ops-text-sm);font-weight:600;color:var(--ops-ink)}
+.pd-kpi-head svg{flex:none;color:var(--pd-kpi,var(--ops-muted))}
+.pd-kpi.tone-received{--pd-kpi:var(--pd-received)}.pd-kpi.tone-sent{--pd-kpi:var(--pd-sent)}.pd-kpi.tone-declined{--pd-kpi:var(--pd-declined)}.pd-kpi.tone-idle{--pd-kpi:#5d6c80}
+.pd-kpi-value{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pd-kpi-value strong{font-size:var(--ops-title);line-height:1.1;color:#102343;font-variant-numeric:tabular-nums}
+.pd-kpi small{color:var(--ops-muted);font-size:var(--ops-text-xs)}
+.pd-delta{display:inline-flex;align-items:center;gap:2px;font-size:var(--ops-text-xs);font-weight:700;padding:2px 7px;border-radius:999px;border:1px solid transparent;font-variant-numeric:tabular-nums}
+.pd-delta.is-good{color:var(--ops-done);background:var(--ops-done-tint);border-color:#b7dccb}
+.pd-delta.is-bad{color:var(--ops-error);background:var(--ops-error-tint);border-color:#efc4bd}
+.pd-delta.is-neutral{color:var(--ops-muted);background:var(--ops-info-tint);border-color:var(--ops-line)}
+/* Busiest day: 7 vertical bars, the top day in the strong colour */
+.pd-days{list-style:none;margin:0;padding:12px 16px 16px;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;height:240px}
+.pd-days li{display:grid;grid-template-rows:auto 1fr auto;justify-items:center;gap:6px;min-width:0}
+.pd-day-value{font-size:var(--ops-text-xs);color:var(--ops-muted);font-variant-numeric:tabular-nums}
+.pd-day-track{display:flex;align-items:flex-end;width:100%;max-width:40px;height:100%;background:var(--ops-canvas);border-radius:8px;overflow:hidden}
+.pd-day-bar{display:block;width:100%;background:#c9d3df;border-radius:8px}
+.pd-day-name{font-size:var(--ops-text-xs);color:var(--ops-muted)}
+.pd-days li.is-top .pd-day-bar{background:var(--pd-sent)}
+.pd-days li.is-top .pd-day-value{color:var(--ops-ink);font-weight:700;font-size:var(--ops-text-sm)}
+.pd-days li.is-top .pd-day-name{color:var(--ops-ink);font-weight:700}
+/* Sent rate gauge */
+.pd-rate{display:flex;flex-direction:column}
+.pd-gauge{position:relative;padding:16px 20px 20px;width:100%;max-width:300px;margin:auto}
+.pd-gauge svg{display:block;width:100%;height:auto}
+.pd-gauge-track,.pd-gauge-fill{fill:none;stroke-width:16;stroke-linecap:round}
+.pd-gauge-track{stroke:var(--ops-line)}
+.pd-gauge-fill{stroke:var(--pd-sent)}
+.pd-gauge-label{position:absolute;left:0;right:0;bottom:20px;display:grid;justify-items:center;gap:2px;text-align:center}
+.pd-gauge-label strong{font-size:var(--ops-title);line-height:1;color:#102343;font-variant-numeric:tabular-nums}
+.pd-gauge-label span{font-size:var(--ops-text-xs);color:var(--ops-muted)}
+/* Tables */
 .pd-scroll{overflow-x:auto;max-width:100%}
+.pd-scroll-tall{max-height:340px;overflow-y:auto}
 .pd-scroll:focus-visible{outline-offset:-3px}
 .pd-table{width:100%;border-collapse:collapse;font-size:var(--ops-text-sm);min-width:420px}
-.pd-table thead th{background:#f6f9ff;color:#536d96;font-size:11px;font-weight:600;text-align:left;padding:12px;white-space:nowrap;border-bottom:1px solid var(--ops-line)}
+.pd-table.pd-table-narrow{min-width:0}
+.pd-table thead th{background:#f6f9ff;color:#536d96;font-size:11px;font-weight:600;text-align:left;padding:12px;white-space:nowrap;border-bottom:1px solid var(--ops-line);position:sticky;top:0}
 .pd-table tbody th,.pd-table tbody td,.pd-table tfoot th,.pd-table tfoot td{padding:11px 12px;border-bottom:1px solid #e4ebf5;text-align:left;font-weight:400;vertical-align:middle}
 .pd-table tbody th{font-weight:500;color:var(--ops-ink)}
 .pd-table tbody tr:hover>*{background:#f7faff}
@@ -29,25 +73,16 @@
 .pd-table .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .pd-table thead th.num{text-align:right}
 .pd-none{margin:0;color:var(--ops-muted)}
+/* States */
 .pd-state{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .pd-state h2{margin:0 0 4px;font-size:var(--ops-text-lg)}
 .pd-state p{margin:0;color:var(--ops-muted)}
 .pd-state>div{flex:1;min-width:200px}
 .pd-error{border-color:#efb8ab;background:var(--ops-error-tint)}
 .pd-skeleton{display:grid;gap:16px}
-.pd-skeleton .ops-skeleton{height:220px}
-@media(max-width:1000px){.pd-charts,.pd-numbers{grid-template-columns:minmax(0,1fr)}}
-@media(max-width:760px){
- .pd-controls{gap:10px}
- .pd-segment{flex:1}
- .pd-segment button{flex:1;min-height:44px;padding:0 8px}
- .pd-asof{margin-left:0;width:100%}
- .pd-chart{padding:4px 4px 8px}
- .pd-page .ops-heading{flex-direction:column;align-items:stretch}
- .pd-page .ops-heading .ops-btn{min-height:44px}
-}
-@media(prefers-reduced-motion:reduce){.pd-body[data-busy]{transition:none}}
-/* Step (funnel) chart */
+.pd-sk-kpi{height:112px}
+.pd-sk-card{height:280px}
+/* Step (pipeline) chart */
 .pd-steps{list-style:none;margin:0;padding:8px 4px;display:grid;gap:12px}
 .pd-steps li{display:grid;grid-template-columns:88px 1fr 64px;align-items:center;gap:10px;font-size:13px}
 .pd-step-name{color:var(--ops-ink);font-weight:600}
@@ -56,3 +91,22 @@
 .pd-step-value{display:flex;flex-direction:column;align-items:flex-end;line-height:1.15}
 .pd-step-value b{font-size:15px;color:var(--ops-ink)}
 .pd-step-value small{color:var(--ops-muted);font-size:12px}
+@media(max-width:1100px){.pd-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:1000px){.pd-row{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:760px){
+ .pd-page .ops-heading{flex-direction:column;align-items:stretch}
+ .pd-actions{display:grid;grid-template-columns:1fr auto;gap:10px}
+ .pd-actions .pd-segment{grid-column:1/-1}
+ .pd-segment{display:flex;width:100%}
+ .pd-segment button{flex:1;min-height:44px;padding:0 6px}
+ .pd-export,.pd-refresh{min-height:44px;justify-content:center}
+ .pd-refresh span{display:none}
+ .pd-controls{gap:10px}
+ .pd-view{margin-left:0}
+ .pd-asof{width:100%}
+ .pd-kpis{grid-template-columns:minmax(0,1fr)}
+ .pd-kpi{padding:16px}
+ .pd-chart{padding:4px 4px 8px}
+ .pd-days{padding:12px 8px 16px;gap:4px;height:200px}
+}
+@media(prefers-reduced-motion:reduce){.pd-body[data-busy]{transition:none}}
