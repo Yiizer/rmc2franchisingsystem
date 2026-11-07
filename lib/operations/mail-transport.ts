@@ -4,7 +4,7 @@ import type { SendMailOptions } from 'nodemailer';
 import { isSafeEmail, mailConfig, normalizeEmail } from './mail-config';
 import type { MailConfig } from './mail-config';
 
-export type MailKind = 'reply' | 'details';
+export type MailKind = 'reply' | 'details' | 'decline';
 export type OutboundAttachment = { filename: string; content: Buffer; contentType: string };
 export type OutboundMail = { messageId: string; to: string; subject: string; body: string; attachments: OutboundAttachment[]; kind: MailKind };
 export type DeliveryMode = 'local-test' | 'smtp-redirected' | 'smtp-live';

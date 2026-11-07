@@ -18,7 +18,7 @@ function NotFound({ onBack }: { onBack: () => void }) {
 type TimelineItem = { key: string; at: string; label: string };
 function timeline(client: OwnerClient): TimelineItem[] {
   const items: TimelineItem[] = [{ key: 'received', at: client.createdAt, label: 'Received' }];
-  if (client.sentAt) items.push({ key: 'sent', at: client.sentAt, label: 'Proposal sent' });
+  if (client.sentAt) items.push({ key: 'sent', at: client.sentAt, label: 'Enrolled' });
   for (const r of client.progressReports) {
     items.push({ key: 'f' + r.id, at: r.submittedAt, label: 'Report filed' });
     if (r.status === 'approved' && r.decidedAt) { items.push({ key: 'a' + r.id, at: r.decidedAt, label: 'Report approved' }); items.push({ key: 'e' + r.id, at: r.decidedAt, label: 'Protection extended' }); }

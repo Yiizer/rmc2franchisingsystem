@@ -5,9 +5,9 @@ import type { Staff } from './types';
 import { DIVISIONS, STAFF_ROLES, canApproveProposal, canBeApprover, canManageAccounts, canResetPassword, isOwnerScoped } from './permissions';
 
 export async function securityEvent(user:Staff,action:string){await db.run('INSERT INTO security_events (id,at,actor_id,action) VALUES (?,?,?,?)',randomUUID(),new Date().toISOString(),user.id,action);}
-const username=z.string().trim().min(3).max(50).regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,'Use letters, numbers, dots, dashes or underscores.').transform(value=>value.toLowerCase());
+export const username=z.string().trim().min(3).max(50).regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,'Use letters, numbers, dots, dashes or underscores.').transform(value=>value.toLowerCase());
 const newPassword=z.string().min(14,'Use at least 14 characters.').max(200).refine(value=>!['Rmc2Local!2026','passwordpassword','12345678901234'].includes(value),'Choose a unique password.');
-async function unique(login:string,except?:string){if((await allUsers()).some(user=>user.id!==except&&[user.username||user.id,user.email].some(value=>value.toLowerCase()===login.toLowerCase())))throw new AppError('That username or email is already in use.',409);}
+export async function unique(login:string,except?:string){if((await allUsers()).some(user=>user.id!==except&&[user.username||user.id,user.email].some(value=>value.toLowerCase()===login.toLowerCase())))throw new AppError('That username or email is already in use.',409);}
 const RATE_WINDOW_MS=15*60000,RATE_MAX_ATTEMPTS=8;
 // Counts this attempt BEFORE the password is checked, in one atomic statement (INSERT ... ON CONFLICT DO UPDATE ... RETURNING,
 // the same on SQLite and Postgres), so parallel guesses cannot all slip through a check-then-record gap: at most
@@ -35,7 +35,7 @@ export async function authenticate(input:unknown){
   if(!row||!valid||!JSON.parse(row.data).active){throw new AppError('The username or password is incorrect.',401);}
   await db.run('DELETE FROM auth_attempts WHERE key=?',key);return JSON.parse(row.data) as Staff;
 }
-async function verifyCurrent(user:Staff,password:string){
+export async function verifyCurrent(user:Staff,password:string){
   const key='settings:'+user.id;await checkRate(key);
   const row=await db.get('SELECT password FROM users WHERE id=?',user.id) as {password:string};
   if(!passwordMatches(password,row.password)){throw new AppError('Your current password is incorrect.',403);}
@@ -60,7 +60,7 @@ export async function updateOwnAccount(user:Staff,input:unknown){
   });
 }
 const divisionField=z.enum(DIVISIONS);
-const phoneField=z.string().trim().max(40).regex(/^[0-9+(). -]*$/,'Use digits, spaces and + ( ) - . only.');
+export const phoneField=z.string().trim().max(40).regex(/^[0-9+(). -]*$/,'Use digits, spaces and + ( ) - . only.');
 function roleFields(role:Staff['role'],division:string|undefined,canApprove:boolean){
   if(isOwnerScoped({role})&&!division)throw new AppError('Choose a division for a Division Head or SOA account.',400);
   return {division:isOwnerScoped({role})?division:undefined,canApprove:role==='Head'||(canBeApprover(role)&&canApprove)};
@@ -126,7 +126,7 @@ export async function resetPassword(user:Staff,input:unknown){
     await securityEvent(user,'Reset password and signed out '+target.id);return {user:updated,temporaryPassword};
   });
 }
-async function clearAttempts(target:Staff){for(const login of new Set([target.email,target.username||target.id]))await db.run('DELETE FROM auth_attempts WHERE key=?','login:'+tokenHash(login.toLowerCase()));await db.run('DELETE FROM auth_attempts WHERE key=?','settings:'+target.id);}
+export async function clearAttempts(target:Staff){for(const login of new Set([target.email,target.username||target.id]))await db.run('DELETE FROM auth_attempts WHERE key=?','login:'+tokenHash(login.toLowerCase()));await db.run('DELETE FROM auth_attempts WHERE key=?','settings:'+target.id);}
 /** Head and Admin: clears the sign-in lockout (too many wrong passwords) without changing the password. */
 export async function unlockAccount(user:Staff,input:unknown){
   if(!canResetPassword(user))throw new AppError('You cannot unlock accounts.',403);

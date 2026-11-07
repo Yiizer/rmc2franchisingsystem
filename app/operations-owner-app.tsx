@@ -11,27 +11,29 @@ import { noticeStyle } from './operations-notifications';
 import MyClients from './operations-owner-clients';
 import ClientPage from './operations-owner-client';
 import SubmitInquiry from './operations-owner-submit';
+import OwnerTeam from './operations-owner-team';
 import './operations-notifications.css';
 import './operations-report-queue.css';
 import './operations-owner-app.css';
 
 export type OwnerBoot = { scoped: true; user: OwnerUser; clients: OwnerClient[]; notifications: OwnerNotice[]; unreadCount: number };
-type Route = { page: 'My Clients' | 'Client' | 'Submit inquiry' | 'Notifications' | 'Settings'; id: string };
+type Route = { page: 'My Clients' | 'Client' | 'Submit inquiry' | 'My team' | 'Notifications' | 'Settings'; id: string };
 const parse = (hash: string): Route => {
   const h = hash.replace(/^#/, ''), [a, b] = h.split('/');
   if (a === 'my-clients' && b) return { page: 'Client', id: decodeURIComponent(b) };
   if (a === 'submit-inquiry') return { page: 'Submit inquiry', id: '' };
+  if (a === 'my-team') return { page: 'My team', id: '' };
   if (a === 'notifications') return { page: 'Notifications', id: '' };
   if (a === 'settings') return { page: 'Settings', id: '' };
   return { page: 'My Clients', id: '' };
 };
-const hashFor = (page: string, id = '') => ({ 'My Clients': 'my-clients', Client: 'my-clients/' + encodeURIComponent(id), 'Submit inquiry': 'submit-inquiry', Notifications: 'notifications', Settings: 'settings' } as Record<string, string>)[page] || 'my-clients';
+const hashFor = (page: string, id = '') => ({ 'My Clients': 'my-clients', Client: 'my-clients/' + encodeURIComponent(id), 'Submit inquiry': 'submit-inquiry', 'My team': 'my-team', Notifications: 'notifications', Settings: 'settings' } as Record<string, string>)[page] || 'my-clients';
 
 export default function OwnerApp({ initial, onSignedOut }: { initial: OwnerBoot; onSignedOut: () => void }) {
   const [boot, setBoot] = useState<OwnerBoot>(initial), [loading, setLoading] = useState(false), [error, setError] = useState(''), [now, setNow] = useState(() => Date.now());
   const [route, setRoute] = useState<Route>(() => parse(typeof window === 'undefined' ? '' : window.location.hash));
   const mustChange = !!boot.user.mustChangePassword;
-  const page = mustChange ? 'Settings' : route.page;
+  const page = mustChange ? 'Settings' : route.page === 'My team' && boot.user.role !== 'DivisionHead' ? 'My Clients' : route.page; // My team is for Division Heads only
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -66,6 +68,7 @@ export default function OwnerApp({ initial, onSignedOut }: { initial: OwnerBoot;
         {page === 'My Clients' && <MyClients clients={boot.clients} loading={loading} error={error} onRetry={() => void refresh()} onOpen={openClient} onSubmit={() => void go('Submit inquiry')} now={now} />}
         {page === 'Client' && <ClientPage key={route.id} id={route.id} initial={found} onBack={() => void go('My Clients')} onChanged={() => void refresh()} now={now} />}
         {page === 'Submit inquiry' && <SubmitInquiry division={boot.user.division} onDone={() => void refresh()} onOpenClient={openClient} />}
+        {page === 'My team' && <OwnerTeam />}
         {page === 'Notifications' && <OwnerNotifications notices={boot.notifications} names={names} now={now} onReadAll={() => void read([], true)} onOpen={n => { void read([n.id]); openClient(n.inquiryId); }} />}
         {page === 'Settings' && <AccountSettings user={user} onSignedOut={onSignedOut} />}
       </main>

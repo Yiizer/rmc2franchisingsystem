@@ -82,7 +82,7 @@ export const transaction:Store['transaction']=(run,opts)=>db.transaction(run,opt
 /** Schema version the code expects in app_meta (supabase/migrations). A different version means the migrations and the app are out of step. */
 export const EXPECTED_SCHEMA_VERSION = '1';
 /** Bump when inquiry-index.ts changes what inquiry_summaries / inquiry_keys hold; a mismatch with app_meta re-queues every inquiry. */
-export const PROJECTION_VERSION = '1';
+export const PROJECTION_VERSION = '2'; // 2: inquiry summaries carry sharedMobile (feedback round 2026-11-07)
 /** Queues every inquiry for re-projection (the next synchronizeInquiryIndex rebuilds summaries and keys). Safe to repeat. */
 export async function enqueueFullReindex() {
   await db.transaction(async()=>{

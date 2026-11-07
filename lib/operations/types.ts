@@ -10,7 +10,7 @@ export type CustomizedProposal = { id:string; templateId:string; sourceHash:stri
 export type CustomizedSnapshot = CustomizedProposal & {changes:CustomChange[]};
 export type MailDraft = { to: string; subject: string; body: string };
 export type SourceCell = { cell: string; value: string };
-export type SourceForm = { filename: string; storage: string; sourceHash?:string; format?: 'xlsx' | 'pdf'; kind?:'sample'|'attachment'; sheet: string; cells: SourceCell[]; fields: FormFields; receivedAt: string };
+export type SourceForm = { filename: string; storage: string; sourceHash?:string; format?: 'xlsx' | 'pdf'; kind?:'sample'|'attachment'; sheet: string; cells: SourceCell[]; fields: FormFields; receivedAt: string; /** Address the inquiry came from (set at intake; item 9). */ sender?: string; /** How it arrived. Older records have none. */ origin?: 'email'|'upload'|'manual' };
 export type DuplicateClientMatch = { inquiryId:string; company:string; agentName:string; sameAgent:boolean; reasons:string[]; expiredSameAgent?:boolean; expired?:boolean };
 export type ClientReview = { state:'clear'|'duplicate'|'identify'; identity:string; matches:DuplicateClientMatch[]; exceptions?:{inquiryId:string;identity:string}[]; reviewedBy?:string; reviewedAt?:string; note?:string; reassignedAt?:string };
 export type ClientProtection = { startedAt:string; activityAt:string; expiresAt:string; agentName:string; agentEmail:string; agentPhone:string; activityKind:'proposal'|'details'|'progress-report'; ownerId?:string };
@@ -27,13 +27,13 @@ export type GeneratedPackage = { id: string; templateId: string; sourceHash: str
 export type Submission = { supervisorRevision?:{by:string;fromVersion:number}; supersededBy?:number; version: number; at: string; submittedBy: string; fields: FormFields; email: MailDraft; emailOverrides: string[]; generated: GeneratedPackage; notes: string; warnings: string[]; decision?: { action: 'approve' | 'return'; actorId: string; at: string; note: string; flags: string[]; customizationReviewed?: boolean }; delivery?: { id: string; at: string; mode: 'local-test'|'smtp-redirected'|'smtp-live'; file: string; sentBy?:string; redirectedTo?:string; confirmedManually?:boolean; dryRun?:true } };
 export type AgentTransferRequest = {id:string;at:string;by:string;previousId:string;previousRevision:number;identity:string;previousIdentity:string;reference:string;note:string;kind?:'bor'|'expiry';attachment?:{storage:string;filename:string;mime:string};decision?:{by:string;at:string;action:'approve'|'reject';note:string}};
 export type MailStatus = { mode:'local'|'smtp'; env:'local'|'staging'|'production'; label:string; redirectedTo?:string; dryRun:boolean; warning?:string };
-export type InquiryRecord = { mailFailure?:{code:string;safeReason:string;at:string}; mailUncertain?:boolean; mailDryRun?:{at:string;kind:'reply'|'details';file:string}; historicalAgentChangeBlocked?:boolean; agentTransferRequest?:AgentTransferRequest; id: string; revision: number; status: WorkflowStatus; createdAt: string; updatedAt: string; fields: FormFields; source: SourceForm; closure?:{kind:'declined'|'transferred';at:string;by:string;reason:string;relatedId?:string}; bor?:{fromInquiryId:string;at:string;by:string;reference:string;note:string;attachment:{storage:string;filename:string;mime:string}}; supervisorEdit?:{by:string;at:string;version:number}; clientReview?:ClientReview; protection?:ClientProtection; progressReports?:AgentProgressReport[]; ownerId?:string; ownerAgent?:{name:string;email:string;phone:string}; email: MailDraft; emailOverrides: string[]; templateId: string; customization?: CustomizedProposal; customizationArchive?: CustomizedProposal[]; generated?: GeneratedPackage; submissions: Submission[]; handledBy: string[]; workProgress?: Record<string,{step:number;at:string;paused:boolean}>; history: AuditEntry[]; chat: ChatEntry[]; notes: string; returnNote: string; returnFlags: string[]; detailRequests: { at: string; actorId: string; body: string; to: string; file: string; dryRun?: true }[] };
+export type InquiryRecord = { mailFailure?:{code:string;safeReason:string;at:string}; mailUncertain?:boolean; mailDryRun?:{at:string;kind:'reply'|'details'|'decline';file:string}; historicalAgentChangeBlocked?:boolean; agentTransferRequest?:AgentTransferRequest; id: string; revision: number; status: WorkflowStatus; createdAt: string; updatedAt: string; fields: FormFields; source: SourceForm; closure?:{kind:'declined'|'transferred';at:string;by:string;reason:string;relatedId?:string;/** The decline email sent to the agent, when staff chose to send one. */ email?:{at:string;to:string;file:string}}; bor?:{fromInquiryId:string;at:string;by:string;reference:string;note:string;attachment:{storage:string;filename:string;mime:string}}; supervisorEdit?:{by:string;at:string;version:number}; clientReview?:ClientReview; protection?:ClientProtection; progressReports?:AgentProgressReport[]; ownerId?:string; ownerAgent?:{name:string;email:string;phone:string}; email: MailDraft; emailOverrides: string[]; templateId: string; customization?: CustomizedProposal; customizationArchive?: CustomizedProposal[]; generated?: GeneratedPackage; submissions: Submission[]; handledBy: string[]; workProgress?: Record<string,{step:number;at:string;paused:boolean}>; history: AuditEntry[]; chat: ChatEntry[]; notes: string; returnNote: string; returnFlags: string[]; detailRequests: { at: string; actorId: string; body: string; to: string; file: string; dryRun?: true }[] };
 export type CatalogTemplate = { id: string; name: string; family: string; variant: string; sector: 'Government' | 'All'; sourceName: string; sourceId: string; sourceHash: string; file: string; text: string; placeholders: string[]; warnings: string[]; annualOnly: boolean; active: boolean; storage?:string; updatedAt?:string; updatedBy?:string };
 export type Notice = { id: string; inquiryId: string; title: string; message: string; at: string; recipientIds: string[]; readBy: string[] };
 export type InquiryActivity = { inquiryId:string; userId:string; startedAt:string; seenAt:string; reserved?:boolean; reservedBy?:string };
 export type HandoverRequest = { id:string; requesterId:string; at:string };
 export type WorkspaceData = { mail?: MailStatus; clientStates:Record<string,ClientState>; packageRenderers:Record<string,ProposalRenderer>; user: Staff; users: Staff[]; inquiries: InquiryRecord[]; activity:InquiryActivity[]; templates: CatalogTemplate[]; notifications: Notice[]; integrations: { database: string; gmail: string; ai: string; documents: string } };
-export type InquirySummary = Pick<InquiryRecord,'id'|'revision'|'status'|'createdAt'|'updatedAt'|'fields'|'templateId'|'handledBy'|'workProgress'|'ownerId'> & {pendingReportCount?:number;lastActivityAt?:string;historicalMatchCount?:number;preparedBy?:string;approvedBy?:string;sentBy?:string;customized:boolean; submittedAt?:string; deliveredAt?:string; nextAction?:string};
+export type InquirySummary = Pick<InquiryRecord,'id'|'revision'|'status'|'createdAt'|'updatedAt'|'fields'|'templateId'|'handledBy'|'workProgress'|'ownerId'> & {pendingReportCount?:number;lastActivityAt?:string;historicalMatchCount?:number;preparedBy?:string;approvedBy?:string;sentBy?:string;customized:boolean; submittedAt?:string; deliveredAt?:string; nextAction?:string; /** Client mobile equals the agent mobile (warning only, never blocks). */ sharedMobile?:true};
 export type PageInfo = {page:number; pageSize:number; total:number; pages:number};
 /** A progress report waiting for the Head or a Supervisor (Approval Queue → Progress reports). */
 export type PendingProgressReport = { inquiryId:string; company:string; ownerId?:string; ownerName:string; division:string; reportId:string; submittedAt:string; summary:string; reference:string; sentAt:string; hasAttachment:boolean; protectionExpiresAt?:string };
@@ -61,7 +61,9 @@ export function isStrictEmail(value: string) {
   const [local, domain] = v.split('@');
   return !!local && !local.startsWith('.') && !local.endsWith('.') && !v.includes('..') && domain.includes('.') && !domain.startsWith('.') && !domain.endsWith('.') && !domain.startsWith('-');
 }
-export function defaultEmail(fields: FormFields, template?: Pick<CatalogTemplate,'name'>, preparer = 'Franchising team'): MailDraft {
+/** `custom` (the preparer's saved template, already filled in) replaces the automatic subject and body (feedback round 2026-11-07, item 10). */
+export function defaultEmail(fields: FormFields, template?: Pick<CatalogTemplate,'name'>, preparer = 'Franchising team', custom?: Pick<MailDraft,'subject'|'body'>): MailDraft {
+  if (custom) return { to: fields.agentEmail || '', subject: custom.subject, body: custom.body };
   return { to: fields.agentEmail || '', subject: `Proposal — ${fields.company || 'Account'}${template ? ' — '+template.name : ''}`, body: `Dear ${fields.agentName || 'Agent'},\n\nPlease find attached the ${template?.name || 'healthcare'} proposal for ${fields.company || 'your account'}, prepared from the submitted franchise form.\n\nPlease review the attached proposal for the complete rates, benefits and coverage conditions. Let us know if you need any clarification.\n\nBest regards,\n${preparer}\nFranchising Operations\nRMC2 Consultancy Corporation` };
 }
 export function missingFields(fields: FormFields): string[] {
@@ -85,3 +87,21 @@ export function documentIssues(fields: FormFields, template?: CatalogTemplate, c
 /** Date, time and year in Manila time, e.g. "Nov 5, 2026, 2:14 PM". Used everywhere a moment is shown. */
 export const manilaTime = (value: string) => new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:'Asia/Manila'}).format(new Date(value));
 export function ageLabel(value: string, now=Date.now()) { const mins=Math.max(0,Math.floor((now-Date.parse(value))/60000)); return mins<1?'Just now':mins<60?`${mins}m ago`:mins<1440?`${Math.floor(mins/60)}h ${mins%60}m ago`:`${Math.floor(mins/1440)}d ${Math.floor(mins%1440/60)}h ago`; }
+
+// ---- Feedback round 2026-11-07: response contracts shared by server and UI ----
+/** GET monitoring/proposals?period=day|week|month (Head, Supervisor). Buckets are Manila time; weeks run Monday-Sunday. */
+export type ProposalStatsPeriod = 'day'|'week'|'month';
+export type ProposalStats = {
+  period: ProposalStatsPeriod; from: string; to: string; asOf: string;
+  buckets: { label: string; start: string; sent: number; declined: number; notStarted: number }[];
+  funnel: { step: 'Received'|'Started'|'Submitted'|'Approved'|'Sent'; count: number }[];
+  /** Milliseconds. avg* are null when the matching count is 0. */
+  timing: { userId: string; name: string; created: number; avgCreateMs: number|null; sent: number; avgHandlingMs: number|null }[];
+};
+/** GET my-team (Division Head only). */
+export type TeamMember = Pick<Staff,'id'|'name'|'email'|'username'|'position'|'phone'|'active'|'mustChangePassword'|'division'>;
+/** GET/POST email-templates (own templates only). Placeholders: {agentName} {company} {proposalName} {myName}. */
+export type EmailTemplateKind = 'proposal'|'details'|'decline';
+export type MyEmailTemplates = { proposal?: { subject: string; body: string }; details?: { body: string }; decline?: { body: string }; updatedAt?: string };
+export type EmailTemplatesResponse = { mine: MyEmailTemplates; defaults: Required<Omit<MyEmailTemplates,'updatedAt'>> };
+export const EMAIL_PLACEHOLDERS = ['{agentName}','{company}','{proposalName}','{myName}'] as const;

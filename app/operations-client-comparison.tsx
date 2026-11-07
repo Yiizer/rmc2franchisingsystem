@@ -11,6 +11,7 @@ import { manilaTime } from '@/lib/operations/types';
 import { normalizeClient, protectionDaysLeft } from '@/lib/operations/client-rules';
 
 import { api } from './operations-common';
+import { hasSharedMobile } from '@/lib/operations/phone';
 
 
 
@@ -78,6 +79,7 @@ export default function ClientComparison({ record, match, onOpen, onRecheck, bus
     </table>
 
     <p className="ops-comparison-evidence">Matched on: {match.reasons.join(" · ")}.</p>
+    {hasSharedMobile(record) && <p className="ops-comparison-evidence" role="note">Note: the client’s mobile number is the same as the agent’s. Check that the client details are the client’s own. This does not block the review.</p>}
 
     <div className="ops-comparison-footer">
 

@@ -36,7 +36,7 @@ export function ownerStatusLabel(record:InquiryRecord,state:ClientState):string{
     case 'Waiting for agent details':return 'Waiting for your details';
     case 'Awaiting approval':case 'Supervisor editing':return 'Proposal under review';
     case 'Approved — sending':case 'Approved — email failed':return 'Proposal approved';
-    case 'Sent':return 'Proposal sent';
+    case 'Sent':return 'Enrolled';
     case 'Declined':return 'Closed';
     case 'Transferred':return 'Transferred';
     default:return 'Received';

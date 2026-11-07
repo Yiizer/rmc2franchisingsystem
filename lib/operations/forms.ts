@@ -49,3 +49,5 @@ export async function sampleForm(fields?:FormFields):Promise<Buffer> {
   sheet.getCell('J10').value=fields?(fields.sector==='DepEd'?'GOVT / DepEd':fields.sector==='Government'?'GOVT':'PRIVATE'):'GOVT';
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
+/** Keys a manual entry may supply: the Excel form's mapped cells, the sector (written to J10) and the agent reply email (the sender). */
+export const MANUAL_FIELD_KEYS:readonly string[]=[...Object.keys(mapping),'sector','agentEmail'];

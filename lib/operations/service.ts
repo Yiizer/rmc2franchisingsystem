@@ -23,7 +23,9 @@ import { proposalChecks, proposalFields } from './proposal-fields';
 import { nextWorkAction } from './work-progress';
 import { customDocument, customEditsSchema } from './custom-documents';
 import { fingerprint, generatePackage } from './documents';
-import { parseForm, preservePdfForm } from './forms';
+import { MANUAL_FIELD_KEYS, parseForm, preservePdfForm, sampleForm } from './forms';
+import { replyRecipient, replyRecipientOrNull } from './reply-recipient';
+import { fillPlaceholders, loadMyEmailTemplates } from './email-templates';
 import { cachedRenderer, packageRenderer } from './package-rendering';
 import { getProposalHelp, PROPOSAL_HELP_PROMPTS, suggestTemplates } from './suggestions';
 
@@ -36,8 +38,15 @@ export async function chosen(record:InquiryRecord):Promise<CatalogTemplate|undef
   return template&&snapshot?.sourceDocx?{...template,sourceHash:snapshot.sourceHash,storage:snapshot.sourceDocx,sourceName:snapshot.sourceName||template.sourceName,active:true}:template;
 }
 const draftSchema=z.object({customization:z.object({id:z.string().uuid(),edits:customEditsSchema}).strict().nullable().optional(),revision:z.number().int(),fields:z.record(z.string().max(3000)),templateId:z.string().max(100),notes:z.string().max(10000),email:z.object({to:z.string().max(254),subject:z.string().max(250),body:z.string().max(20000)}),emailOverrides:z.array(z.enum(['to','subject','body'])).max(3),checkpoint:z.object({step:z.number().int().min(0).max(2),paused:z.boolean()}).optional()});
-const mailSchema=z.object({to:z.string().max(254).refine(isSafeEmail,'Enter one valid recipient email address'),subject:z.string().min(1).max(250).refine(v=>!/[\r\n\u2028\u2029\0]/.test(v),'Email subject must be one line'),body:z.string().min(1).max(20000)});
+export const mailSchema=z.object({to:z.string().max(254).refine(isSafeEmail,'Enter one valid recipient email address'),subject:z.string().min(1).max(250).refine(v=>!/[\r\n\u2028\u2029\0]/.test(v),'Email subject must be one line'),body:z.string().min(1).max(20000)});
 
+/** The automatic agent email for a record: the preparer's saved proposal template when they have one (item 10), the built-in wording otherwise. The To line is always the resolved original sender (item 9). */
+async function draftEmail(record:InquiryRecord,template:CatalogTemplate|undefined,user:Staff):Promise<MailDraft>{
+  const mine=(await loadMyEmailTemplates(user.id)).proposal,values={agentName:record.fields.agentName||'Agent',company:record.fields.company||'your account',proposalName:template?.name||'healthcare',myName:user.name};
+  return {...defaultEmail(record.fields,template,user.name,mine?{subject:fillPlaceholders(mine.subject,values),body:fillPlaceholders(mine.body,values)}:undefined),to:replyRecipientOrNull(record)??''};
+}
+/** Applies the automatic draft; `to` is never an override (the recipient is always the original sender). */
+function applyAutomatic(email:MailDraft,overrides:string[],automatic:MailDraft){for(const key of ['to','subject','body'] as const)if(key==='to'||!overrides.includes(key))email[key]=automatic[key];}
 async function workReminder(record:InquiryRecord,user:Staff,paused:boolean){
   const rows=await db.all(`SELECT id,data FROM notifications WHERE ${jsonText(db,'data','inquiryId')}=? AND ${jsonText(db,'data','title')}='Pick up where you left off' ORDER BY id${forUpdate(db)}`,record.id) as {id:string;data:string}[];
   const existing=rows.filter(row=>{const n=JSON.parse(row.data) as Notice;return n.inquiryId===record.id&&n.title==='Pick up where you left off'&&n.recipientIds.includes(user.id);});
@@ -55,13 +64,15 @@ export async function customize(id:string,user:Staff,input:unknown){
     if(record.customization?.templateId===template.id&&record.customization.sourceHash===template.sourceHash)return record;
     if(record.customization)record.customizationArchive=[...(record.customizationArchive||[]),structuredClone(record.customization)];
     const at=new Date().toISOString();record.templateId=template.id;record.customization={id:randomUUID(),templateId:template.id,sourceHash:template.sourceHash,edits:{},createdAt:at,createdBy:user.id,updatedAt:at,updatedBy:user.id};record.status='Preparing proposal';
-    const automatic=defaultEmail(record.fields,template,user.name);for(const key of ['to','subject','body'] as const)if(!record.emailOverrides.includes(key))record.email[key]=automatic[key];
+    applyAutomatic(record.email,record.emailOverrides,await draftEmail(record,template,user));
     audit(record,user,'Created CUSTOMIZED copy of '+template.name);await persist(record,body.revision);return record;
   });
 }
 
 export async function saveDraft(id:string,user:Staff,input:unknown) {
   canPrepare(user);const body=draftSchema.parse(input);
+  const toOverride=body.emailOverrides.includes('to');
+  body.emailOverrides=body.emailOverrides.filter(key=>key!=='to'); // the recipient is not editable (item 9): a valid `to` override is ignored (a malformed one is still refused below)
   // The customized master is read and validated before the transaction (file I/O never runs inside one). Any error
   // is held and raised at the original position below so the order of checks, and their messages, do not change.
   // The held outcome is tied to the master hash it was computed from; if the master changed by the time the transaction
@@ -75,7 +86,7 @@ export async function saveDraft(id:string,user:Staff,input:unknown) {
     const record=await lockedInquiry(id,current=>{try{return {source:current.source,fields:proposalFields(body.fields,current.source.fields)};}catch{return undefined;}});checkRevision(record,body.revision);await assertClientReady(record,true);
     const registered=protectionFor(record);if(registered&&body.fields.agentEmail?.trim().toLowerCase()!==registered.agentEmail.trim().toLowerCase())throw new AppError('The registered agent cannot be changed during the client protection period.',409);
     if(!canEditInquiry(user,record))throw new AppError('This version is locked for review or has already been approved.',409);await requireInquiryHandler(id,user);
-    for(const [label,next,current] of [['agent reply email',body.fields.agentEmail,record.fields.agentEmail],['reply recipient',body.email.to,record.email.to]] as const)if(next&&next!==current&&!isSafeEmail(next))throw new AppError('Enter one valid '+label+' (no commas, semicolons, spaces or brackets).',400);
+    for(const [label,next,current] of [['agent reply email',body.fields.agentEmail,record.fields.agentEmail],...(toOverride?[['reply recipient',body.email.to,record.email.to] as const]:[])] as const)if(next&&next!==current&&!isSafeEmail(next))throw new AppError('Enter one valid '+label+' (no commas, semicolons, spaces or brackets).',400);
     const unknown=Object.keys(body.fields).filter(key=>!(key in LABELS));if(unknown.length)throw new AppError('Unknown form fields: '+unknown.join(', '));
     if(record.supervisorEdit&&body.templateId!==record.templateId)throw new AppError('Keep the submitted template during supervisor edits. Return the proposal to change plans.',409);
     if(body.templateId&&!(await catalog()).some(t=>t.id===body.templateId&&(t.active||!!record.supervisorEdit)))throw new AppError('Choose an available proposal template.');
@@ -98,8 +109,8 @@ export async function saveDraft(id:string,user:Staff,input:unknown) {
     for(const key of ['to','subject','body'] as const)if(record.email[key]!==body.email[key]&&body.emailOverrides.includes(key))changes.push({field:'Email '+key,before:record.email[key],after:body.email[key]});
     record.fields=proposalFields(body.fields,record.source.fields);record.templateId=body.templateId;record.notes=body.notes;record.emailOverrides=[...new Set(body.emailOverrides)];
     if(body.checkpoint)record.workProgress={...record.workProgress,[user.id]:{...body.checkpoint,at:new Date().toISOString()}};
-    const automatic=defaultEmail(record.fields,await chosen(record),user.name);
-    record.email=Object.fromEntries((['to','subject','body'] as const).map(key=>[key,record.emailOverrides.includes(key)?body.email[key]:automatic[key]])) as MailDraft;
+    const automatic=await draftEmail(record,await chosen(record),user);
+    record.email=Object.fromEntries((['to','subject','body'] as const).map(key=>[key,key!=='to'&&record.emailOverrides.includes(key)?body.email[key]:automatic[key]])) as MailDraft;
     if(record.status==='New inquiry'||record.status==='Waiting for agent details')record.status='Preparing proposal';
     await updateClientReview(record,user);
     audit(record,user,body.checkpoint?.paused?'Paused preparation — draft saved':changes.length?'Updated inquiry details':'Started / saved proposal preparation',changes.length?changes:undefined);await persist(record,revision);await workReminder(record,user,!!body.checkpoint?.paused);return record;
@@ -111,14 +122,14 @@ export async function generate(id:string,user:Staff,revision:number) {
   const template=await chosen(record);const issues=preparationIssues(record,template);if(issues.length)throw new AppError('Complete these before generating: '+issues.join('; '));
   const generated=await generatePackage(id,template!,record.fields,user.id,record.customization);
   // The package files are already stored under fresh keys; if the row cannot be committed they are removed again.
-  try{return await transaction(async()=>{const fresh=await inquiry(id);checkRevision(fresh,revision);await assertClientReady(fresh);if(!canEditInquiry(user,fresh))throw new AppError('This proposal was submitted while generation was running.',409);await requireInquiryHandler(id,user);fresh.generated=generated;if(!fresh.supervisorEdit)fresh.status='Preparing proposal';const automatic=defaultEmail(fresh.fields,template,user.name);for(const key of ['to','subject','body'] as const)if(!fresh.emailOverrides.includes(key))fresh.email[key]=automatic[key];audit(fresh,user,'Generated '+(fresh.customization?'CUSTOMIZED ':'')+'proposal PDF, Word document and agent email from '+template!.sourceId);await persist(fresh,revision);return fresh;});}catch(error){await deleteQuietly(generated.docx,generated.pdf);throw error;}
+  try{return await transaction(async()=>{const fresh=await inquiry(id);checkRevision(fresh,revision);await assertClientReady(fresh);if(!canEditInquiry(user,fresh))throw new AppError('This proposal was submitted while generation was running.',409);await requireInquiryHandler(id,user);fresh.generated=generated;if(!fresh.supervisorEdit)fresh.status='Preparing proposal';applyAutomatic(fresh.email,fresh.emailOverrides,await draftEmail(fresh,template,user));audit(fresh,user,'Generated '+(fresh.customization?'CUSTOMIZED ':'')+'proposal PDF, Word document and agent email from '+template!.sourceId);await persist(fresh,revision);return fresh;});}catch(error){await deleteQuietly(generated.docx,generated.pdf);throw error;}
 }
 export async function submit(id:string,user:Staff,revision:number) {
   canPrepare(user);
   // A legacy package's renderer is found by reading its PDF; do that (file I/O) before the transaction, which then
   // uses the cached answer. A cache miss inside the transaction asks the user to retry.
   const early=await inquiry(id);if(early.generated)await packageRenderer(early.generated,{rethrowTransient:true});
-  return await transaction(async()=>{const record=await inquiry(id);checkRevision(record,revision);await assertClientReady(record);if(!canEditInquiry(user,record))throw new AppError('This proposal has already been submitted.',409);await requireInquiryHandler(id,user);const template=await chosen(record),issues=preparationIssues(record,template);if(issues.length)throw new AppError('Resolve these before submission: '+issues.join('; '));if(!record.generated||record.generated.fingerprint!==fingerprint(record.fields,template!,record.customization))throw new AppError('Generate an updated proposal before submitting.');const renderer=cachedRenderer(record.generated);if(!renderer)throw new AppError('The proposal files changed. Reload the inquiry and submit again.',409);if(['browser-print','native-word-legacy'].includes(renderer))throw new AppError('Update the PDF & email before submitting this earlier layout.');mailSchema.parse(record.email);if(record.email.to!==record.fields.agentEmail&&!record.emailOverrides.includes('to'))throw new AppError('Confirm the agent reply recipient.');const warnings=[...(record.customization?["CUSTOMIZED proposal — review all content edits against the original template"]:[]),...template!.warnings,...(record.customization?documentIssues(record.fields,template).filter(issue=>!documentIssues(record.fields,template,true).includes(issue)):[]),...proposalChecks(record.fields,record.source.fields,template).filter(check=>check.kind==='changed').map(check=>'Verify '+(LABELS[check.field]||check.field)+': '+(check.original||'(blank)')+' → '+(check.current||'(blank)')),...record.emailOverrides.map(key=>'Edited email '+key)];const version=record.submissions.length+1,reviewEdit=record.supervisorEdit,originalSubmitter=reviewEdit?record.submissions.at(-1)!.submittedBy:user.id;if(reviewEdit)record.submissions.at(-1)!.supersededBy=version;record.submissions.push({... (reviewEdit?{supervisorRevision:{by:user.id,fromVersion:reviewEdit.version}}:{}),version,at:new Date().toISOString(),submittedBy:originalSubmitter,fields:{...record.fields},email:{...record.email},emailOverrides:[...record.emailOverrides],generated:{...record.generated},notes:record.notes,warnings});delete record.supervisorEdit;record.status='Awaiting approval';for(const staff of await allUsers())await workReminder(record,staff,false);record.returnNote='';record.returnFlags=[];audit(record,user,'Submitted proposal v'+version+' to Emerson and Zeo');await persist(record,revision);await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',id);await db.run("DELETE FROM inquiry_handover WHERE inquiry_id=?",id);await notify(record,record.customization?'Customized proposal awaiting approval':'Proposal awaiting approval',`${user.name} submitted ${record.fields.company} · v${version}.`,(await allUsers()).filter(u=>u.active&&u.canApprove&&u.role==='Supervisor').map(u=>u.id));return record;});
+  return await transaction(async()=>{const record=await inquiry(id);checkRevision(record,revision);await assertClientReady(record);if(!canEditInquiry(user,record))throw new AppError('This proposal has already been submitted.',409);await requireInquiryHandler(id,user);const template=await chosen(record),issues=preparationIssues(record,template);if(issues.length)throw new AppError('Resolve these before submission: '+issues.join('; '));if(!record.generated||record.generated.fingerprint!==fingerprint(record.fields,template!,record.customization))throw new AppError('Generate an updated proposal before submitting.');const renderer=cachedRenderer(record.generated);if(!renderer)throw new AppError('The proposal files changed. Reload the inquiry and submit again.',409);if(['browser-print','native-word-legacy'].includes(renderer))throw new AppError('Update the PDF & email before submitting this earlier layout.');mailSchema.parse(record.email);if(record.email.to!==replyRecipientOrNull(record))throw new AppError('Confirm the agent reply recipient.');const warnings=[...(record.customization?["CUSTOMIZED proposal — review all content edits against the original template"]:[]),...template!.warnings,...(record.customization?documentIssues(record.fields,template).filter(issue=>!documentIssues(record.fields,template,true).includes(issue)):[]),...proposalChecks(record.fields,record.source.fields,template).filter(check=>check.kind==='changed').map(check=>'Verify '+(LABELS[check.field]||check.field)+': '+(check.original||'(blank)')+' → '+(check.current||'(blank)')),...record.emailOverrides.map(key=>'Edited email '+key)];const version=record.submissions.length+1,reviewEdit=record.supervisorEdit,originalSubmitter=reviewEdit?record.submissions.at(-1)!.submittedBy:user.id;if(reviewEdit)record.submissions.at(-1)!.supersededBy=version;record.submissions.push({... (reviewEdit?{supervisorRevision:{by:user.id,fromVersion:reviewEdit.version}}:{}),version,at:new Date().toISOString(),submittedBy:originalSubmitter,fields:{...record.fields},email:{...record.email},emailOverrides:[...record.emailOverrides],generated:{...record.generated},notes:record.notes,warnings});delete record.supervisorEdit;record.status='Awaiting approval';for(const staff of await allUsers())await workReminder(record,staff,false);record.returnNote='';record.returnFlags=[];audit(record,user,'Submitted proposal v'+version+' to Emerson and Zeo');await persist(record,revision);await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',id);await db.run("DELETE FROM inquiry_handover WHERE inquiry_id=?",id);await notify(record,record.customization?'Customized proposal awaiting approval':'Proposal awaiting approval',`${user.name} submitted ${record.fields.company} · v${version}.`,(await allUsers()).filter(u=>u.active&&u.canApprove&&u.role==='Supervisor').map(u=>u.id));return record;});
 }
 export async function decide(id:string,user:Staff,input:unknown) {
   canReview(user);const body=z.object({revision:z.number().int(),version:z.number().int(),action:z.enum(['approve','return']),note:z.string().max(10000),flags:z.array(z.string().max(150)).max(30),failSend:z.boolean().optional(),customizationReviewed:z.boolean().optional()}).parse(input);
@@ -130,7 +141,7 @@ export async function decide(id:string,user:Staff,input:unknown) {
     if(body.action==='return'&&!body.note.trim())throw new AppError('Add a correction note before returning the proposal.');
     latest.decision={action:body.action,actorId:user.id,at:new Date().toISOString(),note:body.note,flags:body.flags,...(latest.generated.customization?{customizationReviewed:body.action==='approve'&&!!body.customizationReviewed}:{})};
     if(body.action==='return'){record.status='Needs correction';record.returnNote=body.note;record.returnFlags=body.flags;audit(record,user,'Returned proposal v'+latest.version+' for correction: '+body.note);await notify(record,'Proposal needs correction',body.note,[latest.submittedBy]);}
-    else{record.status='Approved — sending';audit(record,user,'Approved proposal v'+latest.version+' — automatic agent reply queued');await notify(record,'Proposal approved',`${user.name} approved v${latest.version}. The agent reply is being prepared.`,[latest.submittedBy]);const outboxId=randomUUID();await db.run('INSERT INTO outbox (id,inquiry_id,version,kind,status,data) VALUES (?,?,?,?,?,?)',outboxId,id,latest.version,'proposal','ready',JSON.stringify({id:outboxId,createdAt:new Date().toISOString(),email:latest.email,pdf:latest.generated.pdf,filename:latest.generated.filename,error:''}));}
+    else{record.status='Approved — sending';audit(record,user,'Approved proposal v'+latest.version+' — automatic agent reply queued');await notify(record,'Proposal approved',`${user.name} approved v${latest.version}. The agent reply is being prepared.`,[latest.submittedBy]);const outboxId=randomUUID();latest.email={...latest.email,to:replyRecipient(record)};await db.run('INSERT INTO outbox (id,inquiry_id,version,kind,status,data) VALUES (?,?,?,?,?,?)',outboxId,id,latest.version,'proposal','ready',JSON.stringify({id:outboxId,createdAt:new Date().toISOString(),email:latest.email,pdf:latest.generated.pdf,filename:latest.generated.filename,error:''}));}
     await persist(record,body.revision);return record;
   });
   if(body.action==='approve')await deliver(id,result.submissions.at(-1)!.version,user,!!body.failSend);
@@ -139,14 +150,14 @@ export async function decide(id:string,user:Staff,input:unknown) {
 // ---- Outbound mail (outbox states: ready -> sending -> sent | failed | uncertain) ----
 const STALE_SENDING_MS=120000;
 type MailFailure={code:string;safeReason:string;uncertain:boolean};
-function toFailure(error:unknown):MailFailure{
+export function toFailure(error:unknown):MailFailure{
   if(error instanceof MailSendError)return {code:error.code,safeReason:error.safeReason,uncertain:error.uncertain};
   if(isAppError(error)&&error.status<500)return {code:'BLOCKED',safeReason:error.message,uncertain:false};
   console.error('Mail delivery error',error instanceof Error?error.name:'unknown'); // never the message: it can carry addresses
   return {code:'UNKNOWN',safeReason:MAIL_REASONS.UNKNOWN,uncertain:false};
 }
 const DRY_RUN_TEXT='Dry run — email built and checked, not sent';
-function deliveryText(config:MailConfig,result:SendResult){
+export function deliveryText(config:MailConfig,result:SendResult){
   if(result.dryRun)return {audit:DRY_RUN_TEXT,notice:DRY_RUN_TEXT,detail:'Dry run: nothing was sent. Retry to send it for real once dry run is turned off.'};
   if(result.mode==='local-test')return {audit:'delivered to the local test mailbox',notice:'Approved reply sent — local test',detail:'No real Gmail message was sent.'};
   if(result.mode==='smtp-live')return {audit:'sent by email to the agent',notice:'Approved reply sent',detail:'Sent to the agent.'};
@@ -156,7 +167,7 @@ function deliveryText(config:MailConfig,result:SendResult){
 const attemptMode=(config:MailConfig):DeliveryMode=>config.mode==='smtp'?(config.env==='production'?'smtp-live':'smtp-redirected'):'local-test';
 const maskedRedirect=(config:MailConfig)=>config.mode==='smtp'&&config.env!=='production'&&config.redirectTo.length?config.redirectTo.map(maskEmail).join(', '):'';
 /** Caps are counted per attempt (including failures) in SQLite, so a restart cannot reset them. */
-async function reserveSend(config:MailConfig,kind:string,outboxId:string){
+export async function reserveSend(config:MailConfig,kind:string,outboxId:string){
   if(config.mode!=='smtp'||config.dryRun)return;
   await transaction(async()=>{await db.lock('mail-cap'); // the cap check and the insert are one step, across instances
     const now=Date.now(),count=async(span:number)=>((await db.get('SELECT COUNT(*) AS n FROM mail_sends WHERE at>?',new Date(now-span).toISOString())) as {n:number}).n;
@@ -198,7 +209,7 @@ async function recordFailure(id:string,version:number,user:Staff,rowId:string,fa
 }
 // Storage calls around an SMTP send use a short timeout so a delivery stays well inside STALE_SENDING_MS.
 const STORAGE_TIMEOUT_MS=15000;
-async function storeEml(relative:string,eml:Buffer){try{await files().put(relative,eml,{contentType:MIME.eml,mode:'replace',timeoutMs:STORAGE_TIMEOUT_MS});return relative;}catch{return '';}}
+export async function storeEml(relative:string,eml:Buffer){try{await files().put(relative,eml,{contentType:MIME.eml,mode:'replace',timeoutMs:STORAGE_TIMEOUT_MS});return relative;}catch{return '';}}
 async function deliver(id:string,version:number,user:Staff,fail=false) {
   await recoverStuckMail();
   const row=await db.get("SELECT id,status,data FROM outbox WHERE inquiry_id=? AND version=? AND kind='proposal'",id,version) as {id:string;status:string;data:string}|undefined;
@@ -284,14 +295,14 @@ export async function confirmNotSent(id:string,user:Staff,input:unknown) {
     return record;
   });
 }
-const failureStatus=(failure:MailFailure)=>failure.code==='RATE_LIMITED'?429:422;
+export const failureStatus=(failure:MailFailure)=>failure.code==='RATE_LIMITED'?429:422;
 export async function requestDetails(id:string,user:Staff,input:unknown) {
   canPrepare(user);const body=z.object({revision:z.number().int(),body:z.string().min(1).max(20000)}).parse(input);
   await recoverStuckMail();
   const outboxId=randomUUID(),file='outbox/'+outboxId+'.eml';
   // Client keys, then the lease, before assertClientReady's duplicate check (idx-sync): lock order ck: → lease: → idx-sync.
   const draft=await transaction(async()=>{const record=await lockedInquiry(id);checkRevision(record,body.revision);await db.lock('lease:'+id);await assertClientReady(record);if(record.supervisorEdit||!canEditInquiry(user,record))throw new AppError('The submitted proposal is locked.',409);await requireInquiryHandler(id,user);
-    const email=mailSchema.parse({to:record.fields.agentEmail,subject:'Details needed — '+record.fields.company,body:body.body});
+    const email=mailSchema.parse({to:replyRecipient(record),subject:'Details needed — '+record.fields.company,body:body.body});
     await db.run("UPDATE outbox SET status='failed' WHERE inquiry_id=? AND kind='details' AND status='ready'",id);
     if(await db.get("SELECT 1 FROM outbox WHERE inquiry_id=? AND kind='details' AND status='sending'",id))throw new AppError('A details request is already being sent for this inquiry.',409);
     const version=((await db.get("SELECT MAX(version) AS v FROM outbox WHERE inquiry_id=? AND kind='details'",id) as {v:number|null}).v||0)+1;
@@ -318,7 +329,7 @@ export async function requestDetails(id:string,user:Staff,input:unknown) {
     }
     const stored=await storeEml(file,result.eml);
     return await transaction(async()=>{const record=await inquiry(id),revision=record.revision,at=new Date().toISOString();
-      startClientProtection(record,at,'details');record.detailRequests.push({at,actorId:user.id,to:record.fields.agentEmail,body:body.body,file:stored});record.status='Waiting for agent details';delete record.mailDryRun;
+      startClientProtection(record,at,'details');record.detailRequests.push({at,actorId:user.id,to:draft.to,body:body.body,file:stored});record.status='Waiting for agent details';delete record.mailDryRun;
       audit(record,user,'Requested missing information from the agent — '+text.audit);await persist(record,revision);await settle('sent','');return record;});
   }catch{
     await settle('uncertain','The email was sent but the result could not be saved.');
@@ -327,17 +338,20 @@ export async function requestDetails(id:string,user:Staff,input:unknown) {
 }
 /** Inquiries a Division Head / SOA may submit in 24 hours. */
 const OWNER_DAILY_INTAKE=20;
-export async function intake(user:Staff,file:File,sender:string,options:{ownerId?:string|null}={}) {
+/** `origin` says how the form arrived (stored on the source; item 9). `idempotencyKey` is a settings key: a repeat within 24 h returns the first inquiry (item 7). */
+export async function intake(user:Staff,file:File,sender:string,options:{ownerId?:string|null;origin?:'email'|'upload'|'manual';idempotencyKey?:string}={}) {
   // A Division Head / SOA submits their own client: it goes through the same intake and duplicate checks and is owned by them.
   const scoped=isOwnerScoped(user);
   if(!scoped&&!canImportInquiry(user))throw new AppError('Use an employee or admin account to import an inquiry.',403);
   if(scoped)sender=user.email;
-  // Division Heads / SOAs reach the form parsers directly: cap their submissions per day.
-  if(scoped){
+  const replay=options.idempotencyKey?await replayedIntake(options.idempotencyKey):undefined;if(replay)return replay;
+  // Division Heads / SOAs reach the form parsers directly: cap their submissions per day. Checked early (cheap refusal) and again under a per-user lock in the creating transaction, so parallel requests cannot all pass.
+  const checkCap=async()=>{
     const since=new Date(Date.now()-86400000).toISOString();
     const recent=await db.get<{n:number}>(`SELECT COUNT(*) AS n FROM inquiries WHERE ${jsonText(db,'data','ownerId')}=? AND ${jsonText(db,'data','createdAt')}>?`,user.id,since);
     if(Number(recent?.n||0)>=OWNER_DAILY_INTAKE)throw new AppError(`You can submit up to ${OWNER_DAILY_INTAKE} inquiries a day. Contact franchising if you need to send more.`,429);
-  }
+  };
+  if(scoped)await checkCap();
   const ownerId=scoped?user.id:options.ownerId||undefined;
   const owner=ownerId?(await allUsers()).find(person=>person.id===ownerId&&person.active&&isOwnerScoped(person)):undefined;
   if(ownerId&&!owner)throw new AppError('Choose an active Division Head or SOA as the owner.',422);
@@ -346,9 +360,14 @@ export async function intake(user:Staff,file:File,sender:string,options:{ownerId
   if(!filename.endsWith('.xlsx')&&!filename.endsWith('.pdf'))throw new AppError('Upload the agent’s submitted form as an Excel (.xlsx) or PDF (.pdf) attachment.');
   const source=filename.endsWith('.pdf')?await preservePdfForm(bytes,file.name,sender):await parseForm(bytes,file.name,sender);
   source.sourceHash=createHash('sha256').update(bytes).digest('hex');
+  source.sender=sender.trim();source.origin=options.origin||'upload';
   const divisionTable=await getDivisionTable();
   // The original is already stored under a fresh key; if the row cannot be committed, remove it again.
-  try{return await transaction(async()=>{const at=new Date().toISOString();const record:InquiryRecord={id:'INQ-'+new Date().getFullYear()+'-'+'00000',revision:1,status:'New inquiry',createdAt:at,updatedAt:at,fields:{...source.fields},source,email:defaultEmail(source.fields),emailOverrides:[],templateId:'',submissions:[],handledBy:[],history:[{id:randomUUID(),at,actorId:user.id,actor:user.name,action:scoped?'Submitted by '+user.name+' (own client). All active staff notified.':'Imported agent email form. All active staff notified.'+(owner?' Linked to '+owner.name+'.':'')}],chat:[],notes:'',returnNote:'',returnFlags:[],detailRequests:[]};
+  let reused:InquiryRecord|undefined;
+  try{const created=await transaction(async()=>{
+    if(options.idempotencyKey){await db.lock('intake-key:'+options.idempotencyKey);reused=await replayedIntake(options.idempotencyKey);if(reused)return reused;} // a double click that raced past the first check
+    if(scoped){await db.lock('intake-cap:'+user.id);await checkCap();}
+    const at=new Date().toISOString();const record:InquiryRecord={id:'INQ-'+new Date().getFullYear()+'-'+'00000',revision:1,status:'New inquiry',createdAt:at,updatedAt:at,fields:{...source.fields},source,email:defaultEmail(source.fields),emailOverrides:[],templateId:'',submissions:[],handledBy:[],history:[{id:randomUUID(),at,actorId:user.id,actor:user.name,action:scoped?'Submitted by '+user.name+' (own client). All active staff notified.':'Imported agent email form. All active staff notified.'+(owner?' Linked to '+owner.name+'.':'')}],chat:[],notes:'',returnNote:'',returnFlags:[],detailRequests:[]};
     if(owner)applyOwner(record,owner);
     // No Division Head / SOA linked: fill the division (and the proper branch name) from the branch on the form, using the
     // division table (PO, 2026-11-06). Unclear or unlisted branches stay "Unconfirmed" for staff; the original form text
@@ -357,8 +376,48 @@ export async function intake(user:Staff,file:File,sender:string,options:{ownerId
     await lockRegistry(record); // client identity keys first (Postgres), then the counter row, so two imports of one client are ordered
     record.id='INQ-'+new Date().getFullYear()+'-'+String(await nextInquiryNumber()).padStart(5,'0');
     await updateClientReview(record,user);
-    await persist(record);await notify(record,record.closure?'Request declined — previous registration expired':record.clientReview?.state==='duplicate'?'Duplicate import received — on hold':record.clientReview?.state==='identify'?'Client details needed':'New inquiry',`${record.fields.company||'Agent request'} is ready for form review.`,(await allUsers()).filter(u=>u.active).map(u=>u.id));return record;});}catch(error){await deleteQuietly(source.storage);throw error;}
+    await persist(record);if(options.idempotencyKey){await pruneIntakeKeys(options.idempotencyKey);await db.run('INSERT INTO settings(key,data) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data',options.idempotencyKey,JSON.stringify({inquiryId:record.id,at}));}await notify(record,record.closure?'Request declined — previous registration expired':record.clientReview?.state==='duplicate'?'Duplicate import received — on hold':record.clientReview?.state==='identify'?'Client details needed':'New inquiry',`${record.fields.company||'Agent request'} is ready for form review.`,(await allUsers()).filter(u=>u.active).map(u=>u.id));return record;});if(reused)await deleteQuietly(source.storage);return created;}catch(error){await deleteQuietly(source.storage);throw error;}
 }
+const INTAKE_KEY_LIFE_MS=24*3600000;
+/** Drops this user's expired idempotency keys (the prefix up to the uuid) when a new one is written: a handful of rows at most. */
+async function pruneIntakeKeys(settingsKey:string){
+  const prefix=settingsKey.slice(0,settingsKey.lastIndexOf(':')+1);
+  for(const row of await db.all<{key:string;data:string}>('SELECT key,data FROM settings WHERE key LIKE ?',prefix+'%')){
+    let at=NaN;try{at=Date.parse((JSON.parse(row.data) as {at:string}).at);}catch{/* unreadable: expired */}
+    if(!(Date.now()-at<INTAKE_KEY_LIFE_MS))await db.run('DELETE FROM settings WHERE key=?',row.key);
+  }
+}
+/** The inquiry an earlier intake with this key created (within 24 hours), if any. The key is namespaced by user id, so one user can never replay another's. */
+async function replayedIntake(settingsKey:string):Promise<InquiryRecord|undefined>{
+  const row=await db.get<{data:string}>('SELECT data FROM settings WHERE key=?',settingsKey);if(!row)return undefined;
+  try{const saved=JSON.parse(row.data) as {inquiryId:string;at:string};if(Date.now()-Date.parse(saved.at)<INTAKE_KEY_LIFE_MS)return await inquiry(saved.inquiryId);}catch{/* expired, unreadable or the inquiry is gone: treat as new */}
+  return undefined;
+}
+const manualFieldsSchema=z.object({
+  fields:z.record(z.string().max(1000).transform(value=>value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u0085]/g,'').replace(/[\r\n\t\u2028\u2029]+/g,' '))).superRefine((values,ctx)=>{
+    const unknown=Object.keys(values).filter(key=>!MANUAL_FIELD_KEYS.includes(key));if(unknown.length)ctx.addIssue({code:'custom',message:'Unknown fields: '+unknown.join(', ')});
+    if(values.sector&&!['Private','DepEd','Government'].includes(values.sector))ctx.addIssue({code:'custom',message:'Sector must be Private, DepEd or Government.'});
+    if(!values.company?.trim())ctx.addIssue({code:'custom',message:'Enter the account name.'});
+  }),
+  ownerId:z.string().max(100).optional(),
+  idempotencyKey:z.string().uuid(),
+}).strict();
+/**
+ * Manual entry (item 7): typed fields become a real franchise-form workbook (sampleForm) that goes through the UNCHANGED intake(), so parsing,
+ * duplicate checks, division fill, the owner daily cap and notifications are identical to an imported form. The reply address is fields.agentEmail
+ * (owner-scoped users: their own account email, as intake forces).
+ */
+export async function intakeFields(user:Staff,input:unknown){
+  const body=manualFieldsSchema.parse(input),scoped=isOwnerScoped(user);
+  const {agentEmail,...cells}=body.fields;
+  if(!scoped&&!canImportInquiry(user))throw new AppError('Use an employee or admin account to import an inquiry.',403);
+  if(!scoped&&!isSafeEmail((agentEmail||'').trim()))throw new AppError('Enter a valid agent email: replies go to this address.',400);
+  const company=cells.company.trim().replace(/[\\/:*?"<>|\r\n]+/g,' ').slice(0,80).replace(/[\s.]+$/,'').trim()||'Account';
+  const bytes=await sampleForm({...cells,sector:cells.sector||'Private'});
+  const file=new File([new Uint8Array(bytes)],'Manual entry – '+company+'.xlsx',{type:MIME.xlsx});
+  return await intake(user,file,(agentEmail||'').trim(),{ownerId:body.ownerId,origin:'manual',idempotencyKey:'intake_key:'+user.id+':'+body.idempotencyKey});
+}
+
 /** Sets fields.division (and the canonical branch name) from the form's branch when the table settles it. */
 export function fillDivisionFromBranch(record:InquiryRecord,table:DivisionTable){
   if(record.fields.division?.trim()&&record.fields.division!=='Unconfirmed')return;

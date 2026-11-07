@@ -1,5 +1,6 @@
 'use client';
 import { ArrowDown, ArrowRight, Building2, Check, CheckCircle2, FileText, Layers, CircleAlert, Sparkles } from 'lucide-react';
+import { AI_FEATURES } from '@/lib/operations/features';
 import { suggestTemplates } from '@/lib/operations/suggestions';
 import type { CatalogTemplate, FormFields } from '@/lib/operations/types';
 import { documentIssues } from '@/lib/operations/types';
@@ -13,7 +14,8 @@ const SOURCE_LABELS: Record<string, string[]> = {
 };
 const CUE_ICONS = { plan: FileText, sector: Building2, variant: Layers };
 
-export default function ProposalHelp({fields,templates,selectedId,editable,onChoose,onSource,customized=false}:{customized?:boolean;fields:FormFields;templates:CatalogTemplate[];selectedId:string;editable:boolean;onChoose:(id:string)=>void;onSource:(template:CatalogTemplate)=>void}){
+export default function ProposalHelp(props:Parameters<typeof ProposalHelpPanel>[0]){return AI_FEATURES?<ProposalHelpPanel {...props}/>:null;}
+function ProposalHelpPanel({fields,templates,selectedId,editable,onChoose,onSource,customized=false}:{customized?:boolean;fields:FormFields;templates:CatalogTemplate[];selectedId:string;editable:boolean;onChoose:(id:string)=>void;onSource:(template:CatalogTemplate)=>void}){
   const recommended=suggestTemplates(fields,templates)[0],selected=templates.find(t=>t.id===selectedId);
   if(!recommended)return <p className="ops-ai-comment">No supplied proposal templates are available.</p>;
   const same=selected?.id===recommended.template.id,matched=recommended.score>4;
@@ -29,7 +31,7 @@ export default function ProposalHelp({fields,templates,selectedId,editable,onCho
         <div className="ops-ai-flow-arrow" aria-label="Compare with the suggestion"><ArrowDown size={22}/><span>Compare</span></div>
       </>}
       <div className={'ops-ai-plan suggested'+(matched?'':' manual')}>
-        <span className="ops-ai-plan-label">{same&&matched?<><CheckCircle2 size={14}/>Selected · matches</>:matched?<><Sparkles size={14}/>AI suggestion</>:'Library option · review manually'}</span>
+        <span className="ops-ai-plan-label">{same&&matched?<><CheckCircle2 size={14}/>Selected · matches</>:matched?<><Sparkles size={14}/>Suggestion</>:'Library option · review manually'}</span>
         <b>{recommended.template.name}</b>
         <span className="ops-ai-plan-source">{recommended.template.sourceId}</span>
       </div>

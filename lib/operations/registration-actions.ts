@@ -13,7 +13,13 @@ import { allUsers, AppError, audit, db, inquiry, lockInquiryRows, notify, persis
 import { deleteQuietly, files } from './file-store';
 
 import { clientIdentity, clientState, isRegistered, protectionFor, reviewClient, sameRegisteredAgent } from './client-rules';
-import { canApproveProposal } from './permissions';
+import { canApproveProposal, canPrepareProposal } from './permissions';
+import { replyRecipient } from './reply-recipient';
+import { mailConfig } from './mail-config';
+import { mailTransport } from './mail-transport';
+import type { SendResult } from './mail-transport';
+import { jsonMerge } from './sql-dialect';
+import { deliveryText, failureStatus, mailSchema, recoverStuckMail, reserveSend, storeEml, toFailure } from './service';
 
 import type { InquiryRecord, Staff } from './types';
 
@@ -30,39 +36,83 @@ async function available(id:string,user:Staff){
 }
 
 async function blocksOthers(record:InquiryRecord){for(const other of await matchingInquiries(record))if(other.id!==record.id&&clientState(other,await matchingInquiries(other)).matches.some(match=>match.inquiryId===record.id))return true;return false;}
+/** Everything that must hold before a request can be declined (after the "already declined" shortcut). Throws; the caller holds the row and lease locks. */
+async function declineGuards(record:InquiryRecord,user:Staff,id:string){
+  if(clientState(record,await matchingInquiries(record)).state==='archived')throw new AppError('This expired registration already belongs in Archives. Review a new incoming request instead.',409);
+  if(['Sent','Approved — sending','Approved — email failed'].includes(record.status))throw new AppError('An approved or sent proposal cannot be declined as a new request.',409);
+  if(['Awaiting approval','Supervisor editing'].includes(record.status)&&!canApproveProposal(user))throw new AppError('An approving supervisor must decide a submitted request.',403);
+  if(!canApproveProposal(user)&&(isRegistered(record)||protectionFor(record)||await blocksOthers(record)))throw new AppError('An approving supervisor must decline a request that holds, or is blocking, a client registration.',403);
+  await available(id,user);
+}
+async function applyDecline(record:InquiryRecord,user:Staff,reason:string,expected:number,email?:{at:string;to:string;file:string;audit:string}){
+  record.closure={kind:'declined',at:new Date().toISOString(),by:user.id,reason,relatedId:record.clientReview?.matches[0]?.inquiryId,...(email?{email:{at:email.at,to:email.to,file:email.file}}:{})};
+  delete record.mailDryRun;record.status='Declined';audit(record,user,'Declined request and moved to Archives: '+reason+(email?' — decline email: '+email.audit:''));await persist(record,expected);
+  await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',record.id);await db.run("DELETE FROM inquiry_handover WHERE inquiry_id=?",record.id);
+  await notify(record,'Request declined',reason,(await allUsers()).filter(person=>person.active).map(person=>person.id));return record;
+}
+const declineSchema=z.object({revision:z.number().int(),reason:z.string().trim().min(10).max(3000),email:z.object({send:z.boolean(),body:z.string().max(20000)}).strict().optional()}).strict();
+/**
+ * Decline a request. With email.send the agent is told first, the way requestDetails works (mail I/O outside transactions):
+ * claim an outbox row, send to replyRecipient(record) through the same caps / staging redirect / dry-run, and only then record the decline.
+ * If the send fails nothing is declined and the error is returned, so staff can retry or untick the box.
+ */
 export async function declineInquiry(id:string,user:Staff,input:unknown){
-
-  const body=z.object({revision:z.number().int(),reason:z.string().trim().min(10).max(3000)}).strict().parse(input);
-
-  return await transaction(async()=>{
-
+  const body=declineSchema.parse(input);
+  if(!body.email?.send)return await transaction(async()=>{
     const record=await lockedInquiry(id);if(record.revision!==body.revision)throw new AppError('Reload this inquiry before declining it.',409);
     await db.lock('lease:'+id); // lock order: ck: → lease: → rows → idx-sync (matchingInquiries below takes idx-sync)
-
     if(record.closure)return record;
-
-    if(clientState(record,await matchingInquiries(record)).state==='archived')throw new AppError('This expired registration already belongs in Archives. Review a new incoming request instead.',409);
-
-    if(['Sent','Approved — sending','Approved — email failed'].includes(record.status))throw new AppError('An approved or sent proposal cannot be declined as a new request.',409);
-
-    if(['Awaiting approval','Supervisor editing'].includes(record.status)&&!canApproveProposal(user))throw new AppError('An approving supervisor must decide a submitted request.',403);
-
-    if(!canApproveProposal(user)&&(isRegistered(record)||protectionFor(record)||await blocksOthers(record)))throw new AppError('An approving supervisor must decline a request that holds, or is blocking, a client registration.',403);
-
-    await available(id,user);
-
-    record.closure={kind:'declined',at:new Date().toISOString(),by:user.id,reason:body.reason,relatedId:record.clientReview?.matches[0]?.inquiryId};
-
-    record.status='Declined';audit(record,user,'Declined request and moved to Archives: '+body.reason);await persist(record,body.revision);
-
-    await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',id);await db.run("DELETE FROM inquiry_handover WHERE inquiry_id=?",id);
-
-    await notify(record,'Request declined',body.reason,(await allUsers()).filter(person=>person.active).map(person=>person.id));return record;
-
+    await declineGuards(record,user,id);
+    return await applyDecline(record,user,body.reason,body.revision);
   });
-
+  if(!canPrepareProposal(user))throw new AppError('Use a Head, Supervisor or Employee account to email the agent.',403);
+  const message=z.string().trim().min(1).max(20000).parse(body.email.body);
+  await recoverStuckMail();
+  const outboxId=randomUUID(),file='outbox/'+outboxId+'.eml';
+  const draft=await transaction(async()=>{
+    const record=await lockedInquiry(id);if(record.revision!==body.revision)throw new AppError('Reload this inquiry before declining it.',409);
+    await db.lock('lease:'+id);
+    if(record.closure)throw new AppError('This request was already declined.',409); // never email twice
+    await declineGuards(record,user,id);
+    const email=mailSchema.parse({to:replyRecipient(record),subject:'Request declined — '+(record.fields.company||'your request').replace(/[\r\n\u2028\u2029\0]+/g,' '),body:message});
+    await db.run("UPDATE outbox SET status='failed' WHERE inquiry_id=? AND kind='decline' AND status='ready'",id);
+    if(await db.get("SELECT 1 FROM outbox WHERE inquiry_id=? AND kind='decline' AND status='sending'",id))throw new AppError('A decline email is already being sent for this inquiry.',409);
+    const version=((await db.get("SELECT MAX(version) AS v FROM outbox WHERE inquiry_id=? AND kind='decline'",id) as {v:number|null}).v||0)+1;
+    const now=new Date().toISOString();
+    await db.run('INSERT INTO outbox (id,inquiry_id,version,kind,status,data) VALUES (?,?,?,?,?,?)',outboxId,id,version,'decline','sending',JSON.stringify({id:outboxId,createdAt:now,sendingAt:now,email,error:''}));
+    return email;
+  });
+  const config=mailConfig();
+  const settle=(status:string,error:string)=>db.run(`UPDATE outbox SET status=?,data=${jsonMerge(db,'data',['error'])} WHERE id=?`,status,error,outboxId);
+  let result:SendResult;
+  try{
+    await reserveSend(config,'decline',outboxId);
+    result=await mailTransport(config).send({messageId:outboxId,to:draft.to,subject:draft.subject,body:draft.body,attachments:[],kind:'decline'});
+  }catch(error){
+    const failure=toFailure(error);await settle(failure.uncertain?'uncertain':'failed',failure.safeReason);
+    throw new AppError(failure.uncertain?failure.safeReason+' The message may have been delivered; check the mailbox before sending again. The request was not declined.':failure.safeReason+' The email was not sent and the request was not declined.',failureStatus(failure));
+  }
+  try{
+    const text=deliveryText(config,result);
+    if(result.dryRun){
+      // Dry run: nothing is declined. Only a marker so the UI can offer the built message.
+      const stored=await storeEml('outbox/'+outboxId+'.dry-run.eml',result.eml);
+      return await transaction(async()=>{const record=await inquiry(id),revision=record.revision;record.mailDryRun={at:result.at,kind:'decline',file:stored};audit(record,user,'Decline email: '+text.audit);await persist(record,revision);await settle('dryrun','');return record;});
+    }
+    const stored=await storeEml(file,result.eml);
+    return await transaction(async()=>{
+      const record=await lockedInquiry(id);await db.lock('lease:'+id);
+      // The email is already out: record the decline on whatever revision is current, but every guard still applies.
+      if(record.closure){await settle('sent','');return record;}
+      await declineGuards(record,user,id);
+      const declined=await applyDecline(record,user,body.reason,record.revision,{at:result.at,to:draft.to,file:stored,audit:text.audit});
+      await settle('sent','');return declined;
+    });
+  }catch{
+    await settle('uncertain','The email was sent but the decline could not be recorded.');
+    throw new AppError(result.dryRun?'The dry run could not be recorded.':'The decline email was sent but the decline could not be recorded. Check the mailbox, then decline this request again without the email.',409);
+  }
 }
-
 export async function transferWithBor(id:string,user:Staff,form:FormData){
 
   const body=z.object({revision:z.coerce.number().int(),previousId:z.string().min(1),previousRevision:z.coerce.number().int(),reference:z.string().trim().min(3).max(300),note:z.string().trim().min(10).max(3000),verified:z.literal('true')}).parse(Object.fromEntries(form));

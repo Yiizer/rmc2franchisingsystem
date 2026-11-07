@@ -9,6 +9,9 @@ import { declineInquiry, transferWithBor, decideAgentTransfer, requestExpiredTra
 import { beginSupervisorEdit, cancelSupervisorEdit } from '@/lib/operations/supervisor-edit';
 import { stageTemplate, publishTemplate, setTemplateActive, templateStage } from '@/lib/operations/template-admin';
 import { monitoring } from '@/lib/operations/monitoring';
+import { proposalStats } from '@/lib/operations/proposal-stats';
+import { createSoa, deactivateSoa, listTeam, resetSoaPassword } from '@/lib/operations/division-team';
+import { getEmailTemplates, saveEmailTemplates } from '@/lib/operations/email-templates';
 import { checkInbox, claimInboxCheck, runClaimedInboxCheck, cronAllowed, dismissInbound, importInbound, inboundAttachment, listInbound } from '@/lib/operations/inbound';
 import { chosen } from '@/lib/operations/service';
 import { NextRequest, NextResponse, after } from 'next/server';
@@ -24,7 +27,7 @@ import { templateBytes } from '@/lib/operations/template-source';
 import { isAppError } from '@/lib/operations/errors';
 import { isStorageError } from '@/lib/operations/file-store';
 import { customDocument, customEditsSchema } from '@/lib/operations/custom-documents';
-import { chat, confirmNotSent, confirmSent, customize, decide, generate, intake, recoverStuckMail, requestDetails, retry, saveDraft, submit } from '@/lib/operations/service';
+import { chat, confirmNotSent, confirmSent, customize, decide, generate, intake, intakeFields, recoverStuckMail, requestDetails, retry, saveDraft, submit } from '@/lib/operations/service';
 import { mailStatus } from '@/lib/operations/mail-config';
 import { sampleForm } from '@/lib/operations/forms';
 import { previewWorkbook } from '@/lib/operations/form-preview';
@@ -86,6 +89,9 @@ export async function GET(request:NextRequest,context:Context){try{
   if(route[0]==='push'&&!route[1])return response(await pushSettings(user));
   if(route[0]==='directory')return response(route[1]==='client'&&route[2]?await directoryClient(route[2]):route[1]?{record:await directoryRecord(route[1])}:await clientDirectory(request.nextUrl.searchParams));
   if(route[0]==='inquiries'&&route[1]&&route[2]==='historical-matches')return response({matches:await historicalMatches(await inquiry(route[1]))});
+  if(route[0]==='monitoring'&&route[1]==='proposals'&&route.length===2)return response(await proposalStats(user,request.nextUrl.searchParams));
+  if(route[0]==='my-team'&&route.length===1)return response(await listTeam(user)); // Division Head only; an SOA passes the whitelist and gets 403 here
+  if(route[0]==='email-templates'&&route.length===1)return response(await getEmailTemplates(user));
   if(route[0]==='monitoring')return response(await monitoring(user));
   if(route[0]==='inquiries'&&route.length===2)return response(await inquiryDetails(route[1]));
   if(route[0]==='template-stage'&&route[1]){const staged=await templateStage(user,route[1]);return fileResponse(await privateFile(user,'template:'+staged.template.id,'template-preview',staged.pdf),'application/pdf','template-preview.pdf',false);}
@@ -161,6 +167,13 @@ export async function POST(request:NextRequest,context:Context){try{
   }
   if(route[0]==='logout'){const token=request.cookies.get('rmc2_session')?.value;if(token)await db.run('DELETE FROM sessions WHERE token=?',tokenHash(token));const result=response({ok:true});result.cookies.delete('rmc2_session');return result;}
   if(route[0]==='intake'){const form=await request.formData(),file=form.get('file');if(!(file instanceof File))throw new AppError('Choose the agent’s submitted PDF or Excel form.');const ownerField=form.get('ownerId'),options=!isOwnerScoped(user)&&typeof ownerField==='string'&&ownerField?{ownerId:ownerField}:{};const record=await intake(user,file,String(form.get('sender')||''),options);return isOwnerScoped(user)?response(await ownerIntakeResult(record),201):response({inquiry:record},201);}
+  if(route[0]==='intake-fields'&&route.length===1){const record=await intakeFields(user,await request.json());return isOwnerScoped(user)?response(await ownerIntakeResult(record),201):response({inquiry:record},201);}
+  if(route[0]==='my-team'){ // Division Head only (division-team.ts answers 403 for anyone else, with one message for every failure)
+    if(route.length===2&&route[1]==='create')return response(await createSoa(user,await request.json()),201);
+    if(route.length===3&&route[2]==='deactivate')return response(await deactivateSoa(user,route[1],await request.json()));
+    if(route.length===3&&route[2]==='reset-password')return response(await resetSoaPassword(user,route[1],await request.json()));
+  }
+  if(route[0]==='email-templates'&&route.length===1)return response(await saveEmailTemplates(user,await request.json()));
   if(route[0]==='notifications'){const body=z.union([z.object({all:z.literal(true)}).strict(),z.object({ids:z.array(z.string()).max(500)}).strict()]).parse(await request.json());if('all' in body){await transaction(async()=>{await db.all(`SELECT id FROM notifications WHERE id IN (SELECT notice_id FROM notice_recipients WHERE user_id=? AND is_read=0) ORDER BY id${forUpdate(db)}`,user.id);await db.run(`UPDATE notifications SET data=${jsonAppend(db,'data','readBy')} WHERE id IN (SELECT notice_id FROM notice_recipients WHERE user_id=? AND is_read=0) AND NOT COALESCE(${jsonArrayHas(db,'data','readBy')},false)`,user.id,user.id,user.id);});return response({ok:true});}await transaction(async()=>{for(const id of [...new Set(body.ids)].sort()){const row=await db.get('SELECT data FROM notifications WHERE id=?'+forUpdate(db),id) as {data:string}|undefined;if(!row)continue;const notice=JSON.parse(row.data) as Notice;if(notice.recipientIds.includes(user.id)&&!notice.readBy.includes(user.id)){notice.readBy.push(user.id);await db.run('UPDATE notifications SET data=? WHERE id=?',JSON.stringify(notice),id);}}});return response({ok:true});}
   if(route[0]==='users')return response(await updateAccount(user,await request.json()));
   if(route[0]==='inquiries'&&route[1]&&route[2]==='progress-report'&&route[3]&&route[4]==='decision'&&route.length===5)return response({inquiry:await withHistoricalHold(await decideProgressReport(route[1],route[3],user,await request.json()))});

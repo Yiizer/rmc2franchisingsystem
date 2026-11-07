@@ -78,7 +78,7 @@ export function reviewTemplateChoice(fields: FormFields, templates: CatalogTempl
   const reasons = [...issues, ...unknown, ...(target ? matchTemplate(fields, target).reasons : [])].slice(0, 3);
   return {status, reasons, selectedId, recommendedId:recommendation?.id,
     sourceIds:[...new Set([target?.id, recommendation?.id].filter((id):id is string => !!id))],
-    note:'Simulated review of catalog information only. Open the source to confirm complete eligibility, rates and benefits.'};
+    note:'Based on the catalog details only. Staff review required. Open the source to confirm complete eligibility, rates and benefits.'};
 }
 
 /** Proposal-only quick actions share exactly the same source matching as the visible cards. */

@@ -143,3 +143,25 @@
 .ops-app .ops-oc-filters .dir-filter.is-active b{background:transparent;color:#fff}
 
 .ops-import-owner{display:grid;gap:6px;font-size:13px;font-weight:600;margin:4px 0 12px}.ops-import-owner small{font-weight:400;color:#5a6e8b}
+
+/* My Clients on the employee dashboard's parts (ops-heading, ops-stats, ops-inquiry-table). */
+.ops-oc-dash .ops-heading{margin-bottom:20px}
+.ops-oc-dash .ops-stats.ops-oc-stats{grid-template-columns:repeat(5,minmax(0,1fr));gap:0;border:1px solid #dce4ef;border-radius:12px;background:#fff;overflow:hidden;margin-bottom:20px}
+.ops-oc-dash .ops-oc-stats .ops-stat{border:0;border-right:1px solid #dce4ef;border-radius:0;min-height:94px;padding:18px 20px;gap:6px;cursor:pointer;font:inherit}
+.ops-oc-dash .ops-oc-stats .ops-stat:last-child{border-right:0}
+.ops-oc-dash .ops-oc-stats .ops-stat strong{color:#102343;font-size:29px}
+.ops-oc-dash .ops-oc-stats .ops-stat span{font-size:13px;color:#506780}
+.ops-oc-dash .ops-oc-stats .ops-stat.is-active{background:#f1f6ff;box-shadow:inset 0 -3px 0 var(--ops-orange)}
+.ops-oc-dash .ops-oc-stats .ops-stat:focus-visible{outline:3px solid var(--ops-orange);outline-offset:-3px}
+.ops-oc-inq-table.ops-table{min-width:720px}
+.ops-oc-inq-table td:nth-child(n){max-width:340px}
+.ops-oc-inq-table tbody tr:focus-visible td{background:#f1f6ff}
+@media(max-width:1100px){.ops-oc-dash .ops-stats.ops-oc-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.ops-oc-dash .ops-oc-stats .ops-stat{border-bottom:1px solid #dce4ef}}
+@media(max-width:760px){
+ .ops-oc-dash .ops-stats.ops-oc-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .ops-oc-dash .ops-oc-stats .ops-stat{min-height:90px;padding:16px;border-right:1px solid #dce4ef}
+ .ops-oc-dash .ops-oc-stats .ops-stat:nth-child(even){border-right:0}
+ .ops-oc-dash .ops-oc-stats .ops-stat:last-child{grid-column:1/3;border-right:0;border-bottom:0}
+ .ops-oc-dash .ops-heading{flex-direction:row;align-items:flex-start}
+ .ops-oc-dash .ops-heading .ops-btn{min-height:44px}
+}

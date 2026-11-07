@@ -8,6 +8,21 @@ Format: **Decision** — why — where it applies.
 
 ## Product decisions (approved by the Product Owner)
 
+- **Feedback round 2026-11-07** (`FEEDBACK_2026-11-07_PLAN.md`):
+  - **Enrolled:** label only. "Won" becomes "Enrolled" everywhere, with the same rows and counts; no stored enrollment status yet.
+  - **Labeled-field inquiry entry:** replaces manual entry only. Imported forms keep their review screen. Typed fields are written into a real franchise-form .xlsx and go through the normal intake.
+  - **Timing:** start = first "Started handling" (a new history line, written once per user per inquiry). Time to create = start → submitted for approval (`submissions[v].at`). Handling time = first start by anyone → email delivered (`delivery.at`). Both are wall-clock times, computed from the logged timestamps; averages are per employee for the chosen period.
+  - **Outcome emails go to the original sender.** One helper, `replyRecipient`, resolves the recipient:
+    - an email import → the address it came from;
+    - a manual entry → the agent email typed on the record;
+    - linked to a Division Head / SOA → their account email.
+    - The proposal email's To line is read-only.
+  - **Decline emails the agent.** Pressing Decline opens an email form: "Email the agent" is on by default and the message can be edited. **Request missing details** also emails the original sender. *Return for correction* stays internal.
+  - **AI:** the AI notes and the proposal help/assistant are hidden. The rule-based checker and suggestions stay, renamed "Proposal checks" and "Suggested templates", with no AI wording.
+  - **Proposal dashboard:** for the Head and Supervisors. The Admin keeps service health.
+  - **Division Heads manage SOAs in their own division:** create, deactivate and reset password. Reactivation is for the Head only (the recommendation, as Q8 was not answered).
+  - **My email templates:** each staff member saves their own proposal, details and decline wording, including the sign-off. They are stored per user in `settings`, and only the owner can read them.
+- **Final testing waits until just before production deployment (2026-11-07).** The never-tested items and the full final check (`REMAINING_WORK.md` sections 0 and 2) run together as one gate before phase 8 cutover, not now. Until then, keep building features and testing each change as it is made. Real staff use and real production data still need that gate first.
 - **Demo feedback round (2026-11-05)**: the full list is in `DEMO_FEEDBACK_PLAN.md`.
   - **Roles:** Head (Emerson Dolf Fernandez), Supervisor (Zeo), Employee, Division Head, SOA and a hidden IT Admin. Only the Head manages accounts and templates.
   - **Inquiries and protection:** Division Heads / SOAs send every inquiry and own the 30-day protection. They see only their own clients.

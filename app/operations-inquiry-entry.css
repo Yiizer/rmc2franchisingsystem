@@ -1,0 +1,30 @@
+/* Inquiry entry: "Upload form" | "Fill in details" tabs and the labeled-field grid. */
+.ops-entry{min-width:0}
+.ops-entry-tabs{display:flex;gap:4px;border-bottom:1px solid var(--ops-line);margin:0 0 16px}
+.ops-entry-tabs button{border:0;border-bottom:3px solid transparent;background:none;color:var(--ops-muted);font-size:var(--ops-text);font-weight:600;min-height:44px;padding:0 16px;cursor:pointer;margin-bottom:-1px}
+.ops-entry-tabs button:hover{color:var(--ops-ink)}
+.ops-entry-tabs button.is-active{color:var(--ops-navy);border-bottom-color:var(--ops-orange)}
+.ops-entry-tabs button:focus-visible{outline-offset:-3px}
+.ops-entry [role=tabpanel][hidden]{display:none}
+.ops-entry-form{display:grid;gap:16px;min-width:0}
+.ops-entry-note{margin:0;color:var(--ops-muted);font-size:var(--ops-text-sm)}
+.ops-entry-group{border:0;padding:0;margin:0;min-width:0}
+.ops-entry-group legend{font-weight:700;font-size:var(--ops-text);color:var(--ops-navy);padding:0;margin:0 0 10px}
+.ops-entry-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 20px}
+.ops-entry-field{display:grid;gap:5px;align-content:start;min-width:0}
+.ops-entry-field.wide{grid-column:1/3}
+.ops-entry-field label{font-size:var(--ops-text-sm);font-weight:600;color:var(--ops-ink);margin:0}
+.ops-entry-field input,.ops-entry-field select{width:100%;box-sizing:border-box;min-height:40px;margin:0}
+.ops-entry-field small{color:var(--ops-muted);font-size:var(--ops-text-xs)}
+.ops-entry-req{color:var(--ops-error)}
+.ops-entry-field.invalid input,.ops-entry-field.invalid select{border-color:var(--ops-error);box-shadow:0 0 0 1px var(--ops-error)}
+.ops-entry-field small.ops-entry-error{color:var(--ops-error);font-weight:600}
+.ops-entry-summary{margin:0;color:var(--ops-error);font-size:var(--ops-text-sm)}
+.ops-entry-form .ops-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+@media(max-width:760px){
+ .ops-entry-grid{grid-template-columns:minmax(0,1fr)}
+ .ops-entry-field.wide{grid-column:auto}
+ .ops-entry-field input,.ops-entry-field select{font-size:16px;min-height:44px}
+ .ops-entry-tabs button{flex:1;padding:0 8px}
+ .ops-entry-form .ops-actions .ops-btn{flex:1;min-height:44px}
+}

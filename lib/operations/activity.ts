@@ -102,6 +102,8 @@ const claimLease=(id:string,user:Staff,session:string,tab:string,now:string)=>db
   ON CONFLICT(session,tab) DO UPDATE SET inquiry_id=excluded.inquiry_id,user_id=excluded.user_id,
   started_at=CASE WHEN inquiry_activity.inquiry_id=excluded.inquiry_id THEN inquiry_activity.started_at ELSE excluded.started_at END,seen_at=excluded.seen_at`,session,tab,id,user.id,now,now);
 const nameOf=(users:Staff[],id:string)=>users.find(person=>person.id===id)?.name||'A colleague';
+/** Exact history action the proposal dashboard reads (proposal-stats.ts). */
+export const STARTED_HANDLING='Started handling';
 const label=(record:InquiryRecord)=>record.fields.company||record.id;
 // The history entry is added without bumping the revision: a handover must not make everyone's open copy stale.
 const logHandover=(record:InquiryRecord,user:Staff,action:string)=>{record.history.push({id:randomUUID(),at:new Date().toISOString(),actorId:user.id,actor:user.name,action});};
@@ -111,7 +113,8 @@ export async function updateInquiryActivity(id:string,user:Staff,session:string,
   return await transaction(async()=>{
     // Take-over writes the inquiry row. Lock it before the lease, as client review and details requests do
     // (row → lease: → idx-sync), so the two paths cannot wait on each other.
-    if(body.action==='take-over')await lockInquiryRows([id]);
+    // A first start also writes the row (the "Started handling" log line), so it takes the same row lock. Order is row then lease:, as in saveDraft, requestDetails and take-over.
+    if(body.action==='take-over'||body.action==='start')await lockInquiryRows([id]);
     await db.lock('lease:'+id); // exclusive handling: start/leave/heartbeat for one inquiry run one at a time
     const record=await inquiry(id),now=new Date().toISOString();
     // Heartbeats arrive every 10 s from every open tab: tidy up on start/leave/handover actions, and only throttled on heartbeats.
@@ -132,6 +135,9 @@ export async function updateInquiryActivity(id:string,user:Staff,session:string,
         // Starting converts a reservation made for this user into a real lease.
         await db.run("DELETE FROM inquiry_handover WHERE inquiry_id=? AND kind='reserve' AND user_id=?",id,user.id);
         await claimLease(id,user,session,body.tab,now);
+        // Item 4 (time per employee): the first start by each user is logged once, without a revision bump (like a handover entry),
+        // so a start never makes anyone's open copy stale. persist() with the unchanged revision still guards against a concurrent write.
+        if(!record.history.some(entry=>entry.action===STARTED_HANDLING&&entry.actorId===user.id)){logHandover(record,user,STARTED_HANDLING);await persist(record,record.revision);}
       }else{
         // A late heartbeat cannot recreate activity or steal another handler's lease.
         await db.run('UPDATE inquiry_activity SET seen_at=? WHERE session=? AND tab=? AND inquiry_id=? AND user_id=?',now,session,body.tab,id,user.id);

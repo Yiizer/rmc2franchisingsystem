@@ -24,7 +24,7 @@ export function ClientProtectionChip({ client, now, compact = false }: { client:
   return <span className="ops-oc-chip-wrap"><span className={'ops-client-pill ' + cls}><Icon size={14} aria-hidden="true" />{view.text}{view.tone !== 'neutral' && view.tone !== 'expired' && view.tone !== 'held' && <span className="ops-client-mini-meter" aria-hidden="true"><i style={{ width: Math.min(100, view.days / 30 * 100) + '%' }} /></span>}</span>{!compact && view.sub && <small>{view.sub}</small>}</span>;
 }
 
-export const statusTone = (status: string) => ({ 'Received': 'blue', 'Preparing proposal': 'amber', 'Waiting for your details': 'amber', 'Proposal under review': 'purple', 'Proposal approved': 'green', 'Proposal sent': 'green', 'Already protected': 'amber' } as Record<string, string>)[status] || 'slate';
+export const statusTone = (status: string) => ({ 'Received': 'blue', 'Preparing proposal': 'amber', 'Waiting for your details': 'amber', 'Proposal under review': 'purple', 'Proposal approved': 'green', 'Enrolled': 'green', 'Already protected': 'amber' } as Record<string, string>)[status] || 'slate';
 
 export function OwnerStatus({ value }: { value: string }) { return <span className={'ops-badge ' + statusTone(value)}><span className="ops-dot" />{value}</span>; }
 

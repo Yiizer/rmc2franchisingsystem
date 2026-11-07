@@ -41,3 +41,9 @@ export const canDecideAgentChange = canApproveProposal;
 export const canBeApprover = (role: Role) => role === 'Head' || role === 'Supervisor';
 export const DIVISIONS = ['Division 1', 'Division 2', 'Division 3', 'Division 4', 'Division 5', 'Division 6', 'Division 7'] as const;
 export const STAFF_ROLES = ['Head', 'Supervisor', 'Employee', 'DivisionHead', 'SOA', 'Admin'] as const;
+
+// ---- Feedback round 2026-11-07 ----
+/** Proposal dashboard (sent / declined / not started, funnel, time per employee): Head and Supervisors. The Admin keeps service health. */
+export const canSeeProposalStats = (user: Pick<Staff, 'role'>) => is(user, 'Head', 'Supervisor');
+/** A Division Head adds, deactivates and resets the SOAs of their own division (server also checks the division). */
+export const canManageDivisionSoas = (user: Pick<Staff, 'role'>) => is(user, 'DivisionHead');

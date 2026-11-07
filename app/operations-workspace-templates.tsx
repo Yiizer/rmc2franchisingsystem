@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Check, CheckCircle2, Eye, Pencil, Sparkles, CircleAlert, ArrowLeft, LayoutGrid } from 'lucide-react';
+import { Check, CheckCircle2, Eye, Pencil, CircleAlert, ArrowLeft, LayoutGrid } from 'lucide-react';
 import type { CatalogTemplate, CustomizedProposal } from '@/lib/operations/types';
 import type { suggestTemplates, reviewTemplateChoice } from '@/lib/operations/suggestions';
 
@@ -58,8 +58,8 @@ export default function WorkspaceTemplates({ templates, suggestions, review, rev
     {libraryOpen ? <section id="workspace-template-library" aria-label="Template library"><div className="ops-template-family-filter" role="group" aria-label="Filter by plan family">{families.map(value => <button key={value} className="ops-btn" aria-pressed={visibleFamily === value} onClick={() => setFamily(value)}>{value}</button>)}</div><div className="ops-template-grid">{others.map(template => card(template))}</div>{!others.length && <p className="ops-section-intro">No active templates are available.</p>}</section> : <section aria-label="Suggested templates"><div className="ops-template-grid">{suggestions.map(item => card(item.template, true))}</div>{!suggestions.length && <p className="ops-suggestions-stale">{active.length ? 'No matching templates for the known details. Confirm the requested plan or use View all templates to choose manually.' : 'No active templates are available. Ask an administrator to add a template.'}</p>}</section>}
 
     {advisorOpen?<>
-    <section className="ops-template-advisor compact" aria-label="AI template advisor">
-      <div className="ops-advisor-heading"><div><h3><Sparkles size={18}/>AI template advisor</h3><small>Simulated AI · staff review required</small></div><button className="ops-btn" disabled={busy || !active.length} onClick={onReview}>{reviewStale ? 'Review again' : selectedId ? 'Check selected template' : 'Explain recommendation'}</button><button className="ops-btn" aria-label="Dismiss template advice" onClick={()=>setAdvisorOpen(false)}>Dismiss</button></div>
+    <section className="ops-template-advisor compact" aria-label="Suggested templates">
+      <div className="ops-advisor-heading"><div><h3>Suggested templates</h3><small>Staff review required</small></div><button className="ops-btn" disabled={busy || !active.length} onClick={onReview}>{reviewStale ? 'Review again' : selectedId ? 'Check selected template' : 'Explain recommendation'}</button><button className="ops-btn" aria-label="Dismiss template advice" onClick={()=>setAdvisorOpen(false)}>Dismiss</button></div>
       <p>Compare the chosen template with the client’s request and see why a plan fits.</p>
       {review && <div className="ops-advisor-result" aria-live="polite">{reviewStale ? <p className="ops-suggestions-stale"><CircleAlert size={17}/>Details or templates changed · review again</p> : <>
         <b className={'ops-advisor-verdict ' + (review.status === 'Matches known requirements' ? 'matched' : 'attention')}>{review.status === 'Matches known requirements' ? <CheckCircle2 size={18}/> : <CircleAlert size={18}/>} {review.status}</b>
@@ -69,6 +69,6 @@ export default function WorkspaceTemplates({ templates, suggestions, review, rev
         <small>{review.note}</small>
       </>}</div>}
     </section>
-    </>:<button className="ops-btn" onClick={()=>setAdvisorOpen(true)}><Sparkles size={16}/>Show template advisor</button>}
+    </>:<button className="ops-btn" onClick={()=>setAdvisorOpen(true)}><LayoutGrid size={16}/>Show suggested templates</button>}
   </section>;
 }

@@ -4,6 +4,7 @@ import { CheckCircle2, FileSpreadsheet, RefreshCw, TriangleAlert, Upload } from 
 import type { OwnerClient } from '@/lib/operations/owner-view';
 import { api } from './operations-common';
 import { manilaDate } from './operations-owner-chip';
+import InquiryEntry from './operations-inquiry-entry';
 
 const MAX_BYTES = 7 * 1024 * 1024;
 const mb = (bytes: number) => (bytes / 1024 / 1024).toFixed(1);
@@ -32,10 +33,10 @@ export default function SubmitInquiry({ division, onDone, onOpenClient }: { divi
   }
   const reset = () => { setResult(null); setFile(null); setError(''); setFileError(''); };
   return <div className="ops-oc-page ops-oc-submit">
-    <header className="ops-oc-heading"><div><h1 ref={heading} tabIndex={-1}>Submit inquiry</h1><p>Upload the franchise inquiry form (Excel or PDF). Franchising will take it from there.</p></div></header>
+    <header className="ops-oc-heading"><div><h1 ref={heading} tabIndex={-1}>Submit inquiry</h1><p>Upload the franchise inquiry form (Excel or PDF), or fill in the details yourself. Franchising will take it from there.</p></div></header>
     {result && !result.alreadyProtected && <section className="ops-message green ops-oc-result" role="status"><CheckCircle2 size={22} aria-hidden="true" /><div><b>Inquiry submitted</b><p>{result.client.client} was received on {manilaDate(result.client.createdAt)}. You can follow it in My Clients.</p><div className="ops-actions"><button className="ops-btn primary" onClick={() => onOpenClient(result.client.id)}>View client</button><button className="ops-btn" onClick={reset}>Submit another</button></div></div></section>}
     {result?.alreadyProtected && <section className="ops-message amber ops-oc-result" role="alert"><TriangleAlert size={22} aria-hidden="true" /><div><b>This client is already protected.</b><div className="ops-actions"><button className="ops-btn" onClick={reset}>Submit a different client</button></div></div></section>}
-    {!result && <form className="ops-card ops-pad" onSubmit={submit}>
+    {!result && <div className="ops-card ops-pad"><InquiryEntry variant="owner" onCreated={r => { setResult(r as Result); onDone(); }} upload={<form onSubmit={submit}>
       <div className={'ops-dropzone' + (file ? ' has-file' : '') + (dragging ? ' dragging' : '')} onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); choose(e.dataTransfer.files?.[0] || null); }}>
         <Upload size={26} aria-hidden="true" />
         <div><button type="button" className="ops-btn" onClick={() => input.current?.click()}>Choose file</button><span className="ops-oc-desktop-only"> or drag it here</span></div>
@@ -47,6 +48,6 @@ export default function SubmitInquiry({ division, onDone, onOpenClient }: { divi
       {division && <p className="ops-oc-muted">Filed under: {division}</p>}
       {error && <p role="alert" className="ops-message amber">{error}</p>}
       <div className="ops-actions"><button className="ops-btn primary" disabled={!file || busy}>{busy ? <><RefreshCw size={16} className="ops-spin" aria-hidden="true" />Submitting…</> : 'Submit inquiry'}</button></div>
-    </form>}
+    </form>} /></div>}
   </div>;
 }

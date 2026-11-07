@@ -1,6 +1,7 @@
 import { db, inquiry, jsonParam } from './database';
 import { clientIdentityKeys, lastActivityAt, protectionFor } from './client-rules';
 import { isSampleForm, reportStatus } from './types';
+import { hasSharedMobile } from './phone';
 import type { InquiryRecord, InquirySummary } from './types';
 
 export function inquirySummary(record: InquiryRecord): InquirySummary {
@@ -17,6 +18,7 @@ export function inquirySummary(record: InquiryRecord): InquirySummary {
     preparedBy: record.submissions.at(-1)?.generated.preparedBy,
     approvedBy: record.submissions.at(-1)?.decision?.action==='approve'?record.submissions.at(-1)?.decision?.actorId:undefined,
     sentBy: record.submissions.at(-1)?.delivery?.sentBy,
+    ...(hasSharedMobile(record) ? {sharedMobile: true as const} : {}),
   };
 }
 

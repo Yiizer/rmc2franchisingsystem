@@ -10,7 +10,9 @@ export async function api<T>(path:string,body?:unknown):Promise<T>{
 }
 export const staffName=(users:Staff[],id:string)=>users.find(u=>u.id===id)?.name||id;
 export const initials=(name:string)=>name.split(' ').map(w=>w[0]).slice(0,2).join('');
-export function Status({value}:{value:WorkflowStatus}){const tone=value==='Needs correction'?'red':value==='Preparing proposal'?'preparing':value==='New inquiry'?'blue':value==='Sent'?'green':['Awaiting approval','Supervisor editing'].includes(value)?'purple':value.includes('failed')||value==='Waiting for agent details'?'amber':'slate';return <span className={'ops-badge '+tone}><span className="ops-dot"/>{value}</span>;}
+/** Owner/staff-facing name of a workflow status: a delivered proposal reads "Enrolled" (the stored status stays "Sent"). */
+export const statusLabel=(value:string)=>value==='Sent'?'Enrolled':value==='Sent today'?'Enrolled today':value;
+export function Status({value}:{value:WorkflowStatus}){const tone=value==='Needs correction'?'red':value==='Preparing proposal'?'preparing':value==='New inquiry'?'blue':value==='Sent'?'green':['Awaiting approval','Supervisor editing'].includes(value)?'purple':value.includes('failed')||value==='Waiting for agent details'?'amber':'slate';return <span className={'ops-badge '+tone}><span className="ops-dot"/>{statusLabel(value)}</span>;}
 export function Modal({title,onClose,children,wide=false,drawer=false}:{title:string;onClose:()=>void;children:React.ReactNode;wide?:boolean;drawer?:boolean}){
   const dialog=useRef<HTMLElement>(null),close=useRef(onClose);close.current=onClose;
   useEffect(()=>{

@@ -21,7 +21,7 @@ export async function monitoring(user:Staff,probe=false){
   }catch{await deleteQuietly(probeKey);services.push({name:'Private file storage',state:'offline',detail:storageDetail});}
   const converter=conversionName();let state:'available'|'healthy'|'offline'=converter.includes('needs setup')?'offline':'available',detail=converter;
   if(probe&&state!=='offline')try{const template=(await catalog()).find(item=>item.active);if(!template)throw Error();await pdfFromDocx(await templateBytes(template),true);state='healthy';detail='Word-to-PDF conversion completed';}catch{state='offline';detail='PDF conversion check failed';}
-  services.push({name:'PDF converter',state,detail},{name:'Email',state:'simulated',detail:'Local test mailbox; no live email connection'},{name:'AI provider',state:'simulated',detail:'Source-based assistance; no live AI provider connected'});
+  services.push({name:'PDF converter',state,detail},{name:'Email',state:'simulated',detail:'Local test mailbox; no live email connection'});
   const usage=await db.get('SELECT COUNT(*) requests,COALESCE(SUM(input_tokens),0) "inputTokens",COALESCE(SUM(output_tokens),0) "outputTokens" FROM ai_usage WHERE at>=?',new Date(Date.now()-30*86400000).toISOString());
   return {checkedAt:new Date().toISOString(),durationMs:Date.now()-started,database:{mode:db.dialect},services,ai:{connected:false,period:'Last 30 days',usage,detail:'No paid AI requests are made by the current assistant.'}};
 }

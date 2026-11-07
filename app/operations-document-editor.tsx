@@ -1,13 +1,14 @@
 'use client';
 import { manilaTime } from '@/lib/operations/types';
 import { useEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react';
-import { Download, FileText, RefreshCw, RotateCcw, Check, Eye, Sparkles } from 'lucide-react';
+import { Download, FileText, RefreshCw, RotateCcw, Check, Eye } from 'lucide-react';
 import CustomDocument from './operations-custom-document';
 import type { CatalogTemplate, FormFields, CustomizedProposal, CustomEdit, GeneratedPackage } from '@/lib/operations/types';
 import { addresseeName, philippinePhone, proposalTitles } from '@/lib/operations/proposal-fields';
 import type { PDFDocumentProxy, RenderTask, TextLayer } from 'pdfjs-dist';
 import { endpoint } from './operations-common';
 import ProposalAiNotes from './operations-ai-notes';
+import { AI_FEATURES } from '@/lib/operations/features';
 import ProposalDetailChecks, { useProposalDetailCheck, ProposalCheckButton, ProposalCheckResults } from './operations-proposal-checks';
 import { sameProposalFields, sameProposalEdits } from '@/lib/operations/proposal-state';
 import './operations-document.css';
@@ -63,11 +64,11 @@ export default function ProposalDocumentEditor({template,fields,originalFields,e
   useEffect(()=>()=>{void activePdf.current?.loadingTask.destroy();},[]);
   function updatePreview(){setOriginal(false);setSnapshot(JSON.stringify({fields,customEdits:customization?.edits}));setRetry(value=>value+1);}
   async function save(){setLocalSaving(true);try{if(await onSave()&&!embedded)onClose?.();}finally{setLocalSaving(false);}}
-  const notesOpen=!externalAssistance&&(checked||helpVisible||localTemplateHelp);
+  const notesOpen=AI_FEATURES&&!externalAssistance&&(checked||helpVisible||localTemplateHelp);
   function closeNotes(){setChecked(false);setLocalTemplateHelp(false);onDismissHelp?.();}
   function toggleNotes(){if(notesOpen)closeNotes();else if(helpContent)setLocalTemplateHelp(true);else setChecked(true);}
   return <div ref={editor} className={'ops-doc-editor'+(embedded?' embedded':'')+(geometry.available<620?' compact':'')+(geometry.available<500?' short':'')} style={{'--ops-doc-sticky-top':geometry.top+'px','--ops-doc-toolbar-top':geometry.toolbarTop+'px','--ops-doc-available-height':geometry.available+'px'} as CSSProperties}>
-    <div ref={toolbar} className="ops-doc-toolbar">{customization&&<div className="ops-custom-view-tabs">{!embedded&&<span className="ops-badge customized">Customized</span>}<button className="ops-btn" aria-pressed={customEditing} disabled={!editable} onClick={()=>setCustomEditing(true)}>Edit document</button><button className="ops-btn" aria-pressed={!customEditing} onClick={()=>{updatePreview();setCustomEditing(false);}}>PDF preview</button></div>}<div><FileText size={18}/><b>{template.sourceId}</b><span>{template.variant}</span></div><div><button className="ops-btn" aria-pressed={original} onClick={()=>{setOriginal(!original);if(customization)setCustomEditing(false);}}><Eye size={15}/>{original?'Show filled proposal':'Show blank template'}</button><label>Zoom<select aria-label="Proposal zoom" value={zoom} onChange={e=>setZoom(e.target.value)}><option value="fit">Fit width</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option></select></label><a className="ops-link" href={endpoint+'/source/'+template.id}><Download size={15}/>Blank Word template</a>{useSavedPdf&&!outdated&&<a className="ops-link" href={savedPdf} download><Download size={15}/>Download PDF</a>}{!externalAssistance&&<button className="ops-btn ops-ai-toggle" aria-expanded={notesOpen} onClick={toggleNotes}><Sparkles size={15}/>AI notes</button>}</div></div>
+    <div ref={toolbar} className="ops-doc-toolbar">{customization&&<div className="ops-custom-view-tabs">{!embedded&&<span className="ops-badge customized">Customized</span>}<button className="ops-btn" aria-pressed={customEditing} disabled={!editable} onClick={()=>setCustomEditing(true)}>Edit document</button><button className="ops-btn" aria-pressed={!customEditing} onClick={()=>{updatePreview();setCustomEditing(false);}}>PDF preview</button></div>}<div><FileText size={18}/><b>{template.sourceId}</b><span>{template.variant}</span></div><div><button className="ops-btn" aria-pressed={original} onClick={()=>{setOriginal(!original);if(customization)setCustomEditing(false);}}><Eye size={15}/>{original?'Show filled proposal':'Show blank template'}</button><label>Zoom<select aria-label="Proposal zoom" value={zoom} onChange={e=>setZoom(e.target.value)}><option value="fit">Fit width</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option></select></label><a className="ops-link" href={endpoint+'/source/'+template.id}><Download size={15}/>Blank Word template</a>{useSavedPdf&&!outdated&&<a className="ops-link" href={savedPdf} download><Download size={15}/>Download PDF</a>}{AI_FEATURES&&!externalAssistance&&<button className="ops-btn ops-ai-toggle" aria-expanded={notesOpen} onClick={toggleNotes}>AI notes</button>}</div></div>
     <div className={'ops-doc-layout'+(notesOpen?' has-ai-notes':'')}>
       <div className="ops-doc-sidebar-column"><aside ref={sidebar} className="ops-doc-fields">
         <div className="ops-doc-fields-scroll" role="region" aria-label="Proposal fields" tabIndex={0}><div className="ops-doc-fields-intro"><h3>{editable?'Fill proposal details':'Proposal details'}</h3><p>{editable?<>From the form. Click <b>Update preview</b> after edits.</>:<>This version is read-only.</>}</p></div>
@@ -86,7 +87,7 @@ export default function ProposalDocumentEditor({template,fields,originalFields,e
             <button className="ops-btn ops-save-changes" disabled={busy||localSaving||!dirty} onClick={save}>{localSaving?'Saving…':'Save changes'}</button>
             <button className="ops-btn" disabled={busy||localSaving||updating} onClick={updatePreview}><RefreshCw size={15}/>Update preview</button>
           </div>}
-          <div className="ops-checker-label"><b>AI proposal checker</b><small>Simulated AI · staff review required</small></div><ProposalCheckButton check={detailCheck} disabled={busy||localSaving}/>
+          <div className="ops-checker-label"><b>Proposal checks</b></div><ProposalCheckButton check={detailCheck} disabled={busy||localSaving}/>
           <small className="ops-doc-control-status" role="status">{editable && (busy||localSaving ? 'Please wait · ' : dirty ? 'Unsaved changes · ' : 'All changes saved · ')}{outdated&&!original?'Preview needs updating':'Compare with the submitted form'}</small>
         </footer>
         </div>

@@ -3,6 +3,75 @@
 This is the one checklist of what is left before RMC2 runs on real data. Details and the reasons behind
 each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entries) and `MIGRATION_PLAN.md`.
 
+> **PO decision (2026-11-07): final testing is saved for just before production deployment.** Sections 0
+> ("Built but never tested") and 2 ("Final check") run together as one gate before phase 8 cutover. Until then,
+> work on the other items and test each change as it is built. Nothing goes to production or real staff use
+> without that gate.
+
+## Feedback round 2026-11-07: `FEEDBACK_2026-11-07_PLAN.md` (built 2026-11-08, NOT committed)
+
+**Live on the test version since 2026-11-08** (PO asked):
+- Deployment: `rmc2-preview-m5rx9sxbu-yiizer.vercel.app`, aliased to https://rmc2-test-yiizer.vercel.app. `next build` passed first. No migration was needed.
+- **Online read-only smoke check: 15/15 passed** (`vercel curl` against the TEST database):
+  - all role sign-ins;
+  - the dashboard on Postgres (12 months, funnel 14/9/7/5/5, 3 employees timed);
+  - the Employee getting 403 on the dashboard;
+  - email templates;
+  - the Division Head's My team, with the SOA and Head-route 403s;
+  - the directory (99 Enrolled);
+  - the inquiry list after the summary rebuild.
+- **Not done online:**
+  - no click-through in a browser;
+  - no decline email or staging-redirect send;
+  - no fill-in-details inquiry created.
+
+**Built:** all 10 items.
+1. "Won" is now "Enrolled".
+2. Shared-mobile flag.
+3. Proposal dashboard for Head and Supervisors (charts, numbers, step chart).
+4. Timing per employee.
+5. Division Head manages SOAs in their own division.
+6. Owner My Clients rebuilt on the employee dashboard parts.
+7. "Fill in details" inquiry entry.
+8. AI hidden.
+9. Outcome emails go to the original sender, and decline now emails the agent.
+10. My email templates.
+
+**Verified locally:**
+- `tsc` passes. No changed file gained a lint error compared with HEAD.
+- New tests pass:
+  - `test-feedback-enrolled` (7)
+  - `test-feedback-shared-mobile` (5)
+  - `test-proposal-stats` (7)
+  - `test-division-team` (9)
+  - `test-inquiry-fields` (6)
+  - `test-reply-recipient` (7)
+  - `test-email-templates` (5)
+  - `test-no-ai-text-browser`: 53 screens across all 6 roles.
+- HTTP route permissions were checked on a local dev server (port 5195, data in `test-results/feedback-1107/qa-data`).
+- Browser checks at desktop and 375px:
+  - the dashboard and its view toggle surviving a reload;
+  - fill-in entry and the shared-mobile flag;
+  - decline email to the original sender (local mailbox);
+  - templates and Save as my template;
+  - My team;
+  - My Clients;
+  - the Enrolled and Archived tabs.
+- Code review and security review were run, and their findings fixed.
+
+**Open:**
+- [ ] **PO decision:** `scripts/test-roles-scoping.mjs:198` still expects the owner status "Proposal sent". It is now "Enrolled" (PO decision Q1). With only that expectation changed, the script passes 30/30.
+  - `test-phase2-ui-browser.mjs` and `revamp-navigation.mjs` need the same kind of text update: the "My team" nav item, "Proposal dashboard", and the "Enrolled" tab.
+- [ ] Not run on Postgres or TEST at all.
+  - The `PROJECTION_VERSION` bump (1→2, so existing rows get `sharedMobile`) re-queues every inquiry for the summary index on the first start after deploy.
+  - The new "Started handling" write takes the row lock, then the lease. That matches saveDraft and take-over, but it is not load-tested (`test-pg-concurrency`).
+- [ ] The decline email has not been sent through real SMTP, dry run or staging redirect. Only local mail mode was tested.
+- [ ] **Known low risk:** for emailed forms, the reply address comes from Reply-To/From as before. An unverified Reply-To could make the decline, details and proposal emails go to that address. Consider showing "Reply-To differs from From" on the To line.
+- [ ] The manual-entry reply address is fixed at intake. Fixing a typo in the agent email later does not change where emails go.
+- [ ] `app/franchise-workspace.tsx` (the old prototype with AI wording) is unreachable. Delete it with the PO's OK.
+- [ ] Update `PHASE2_UI_SPEC.md`: the owner status "Proposal sent" is now "Enrolled".
+- [ ] Older scripts that fail identically on HEAD, so they are not caused by this round: `test-directory-model` (stale fixture DBs), `test-workspace-advisors`, `test-mail-service` (confirmSent by Head), `test-config` (8 seeded users).
+
 ## Demo feedback round (2026-11-05): `DEMO_FEEDBACK_PLAN.md`
 
 **Phase 1 is done and live on the test version** (commit `42cae43`, not pushed):

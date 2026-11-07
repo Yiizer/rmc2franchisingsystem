@@ -76,7 +76,7 @@ export function projectHistorical(row:HistoricalRow,today=manilaToday()):Registe
 export type DirectoryListing={items:RegisterEntry[];total:number;page:number;pages:number;sheets:string[];agents:string[];branches:string[];counts:{key:StatusKey;count:number}[];columns:{key:string;label:string}[];asOf:string};
 
 
-export const directoryGroups = {active:{label:'Active',tone:'blue'},won:{label:'Won',tone:'green'},lost:{label:'Lost',tone:'red'},notStarted:{label:'Not started',tone:'gray'},review:{label:'Needs review',tone:'amber'}} as const;
+export const directoryGroups = {active:{label:'Active',tone:'blue'},won:{label:'Enrolled',tone:'green'},lost:{label:'Lost',tone:'red'},notStarted:{label:'Not started',tone:'gray'},review:{label:'Needs review',tone:'amber'}} as const;
 export type DirectoryGroup=keyof typeof directoryGroups;
 export function statusGroup(key:StatusKey):DirectoryGroup {return ['closed','sent'].includes(key)?'won':['expired','disapproved'].includes(key)?'lost':['todo','unknown'].includes(key)?'notStarted':key==='review'?'review':'active';}
 export type DirectoryEdit={id:string;historical_id:string;field:string;old_value:string;new_value:string;actor:string;at:string;reason:string};
