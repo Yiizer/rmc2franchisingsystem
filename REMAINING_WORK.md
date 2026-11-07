@@ -23,7 +23,10 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
   - no browser click-through;
   - the staff reminder sweep has not been triggered on purpose, to avoid sending pushes. It runs on its own the first time staff open the app (the poll, once per 10 minutes).
 
-**Monitoring redesign, no page scroll (2026-11-08, after the deploy above; NOT committed, NOT deployed):**
+**Monitoring redesign, no page scroll (2026-11-08): commit `0e7898d`, live on the test version.**
+- **Deployment:** `rmc2-preview-ofaj7x76r-yiizer.vercel.app`, aliased to https://rmc2-test-yiizer.vercel.app. `next build` passed first.
+- **Online read-only smoke check: 12/12** (the same checks as above).
+- **Not checked online:** no browser click-through of the new layout on the test version.
 - **What changed:** only `app/operations-proposal-dashboard.tsx` and `.css`. No API, type or library change. Details are in `TEAM_DECISIONS.md` (2026-11-08 round).
 - **Verified locally:**
   - `tsc` passes, and the file has 0 lint errors.
