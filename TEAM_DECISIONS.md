@@ -19,6 +19,15 @@ Format: **Decision** — why — where it applies.
   - **Q4:** the reminder text says the **actual days left**, plus the exact date.
   - **Q5:** for Declined and Not yet started, a rise shows **red**, because a rise is bad there.
   - **Reference image:** use it only for layout and ideas, fitted to what coverdesk has. Do not copy features the system does not have, or its look.
+  - **Monitoring redesign (PO, 2026-11-08): no page scroll on desktop.**
+    - **Fit:** the page is a fixed-height grid that fits one screen at 1366×768 and up. Below 1024px wide the cards stack and the page scrolls.
+    - **View toggle:** **"Both" is removed** (supersedes "the Charts / Numbers / Both toggle is kept"). Only Charts and Numbers remain. A stored "both" opens Charts.
+    - **KPIs:** 5 tiles; Sent rate is now a tile.
+    - **No earlier data:** the delta pill is hidden, and the tile says "No earlier data to compare".
+    - **Trend:** grouped columns, with no smoothed curves.
+    - **Busiest day:** horizontal rows. Under 5 sends, it shows "Too few sends to compare days" and highlights nothing.
+    - **Pipeline:** left-aligned bars, with "of received", "of step before" and the biggest drop.
+    - **Time per employee:** shows as many rows as fit (at most 4, most sent first). The rest are in "View all".
 
 - **Feedback round 2026-11-07** (`FEEDBACK_2026-11-07_PLAN.md`):
   - **Enrolled:** label only. "Won" becomes "Enrolled" everywhere, with the same rows and counts; no stored enrollment status yet.

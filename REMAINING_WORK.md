@@ -23,6 +23,20 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
   - no browser click-through;
   - the staff reminder sweep has not been triggered on purpose, to avoid sending pushes. It runs on its own the first time staff open the app (the poll, once per 10 minutes).
 
+**Monitoring redesign, no page scroll (2026-11-08, after the deploy above; NOT committed, NOT deployed):**
+- **What changed:** only `app/operations-proposal-dashboard.tsx` and `.css`. No API, type or library change. Details are in `TEAM_DECISIONS.md` (2026-11-08 round).
+- **Verified locally:**
+  - `tsc` passes, and the file has 0 lint errors.
+  - `test-proposal-stats` 12/12; `test-protection-reminders-employees` 6/6; `test-no-ai-text-browser` 54 screens.
+  - On port 5196: no page scroll and no clipped card for 7d / 30d / 90d / 12m, in both Charts and Numbers, at 1440×900 and 1366×768.
+  - 375px: no horizontal scroll.
+  - A stored "both" opens Charts; Numbers survives a reload; Export downloads the CSV.
+  - With 7 employees: "View all (7)" and the dialog work, and Escape closes it.
+- Screenshots: `test-results/feedback-1108/redesign-*.png`.
+- **Not checked:**
+  - windows shorter than 620px (the page scrolls normally there, by design);
+  - real data with more than 3 employees (only injected rows were tried).
+
 **Built:**
 1. **Staff expiry reminders.**
    - Who gets them: the employees who handled the client (`handledBy` + the preparer of the sent version) and every active Head and Supervisor, at 7 and 2 days left.
