@@ -25,12 +25,13 @@ export { canTakeOver } from './types';
 // on a live session), by an active employee/supervisor, on an inquiry still being worked, one owner per inquiry (the
 // earliest), and not archived or held. Housekeeping (pruneActivity) runs on start/leave/heartbeat and, throttled, on polls.
 // A live reservation (a supervisor assigned the inquiry to someone who has not opened it yet) owns the inquiry outright.
-export async function activeInquiryActivity():Promise<InquiryActivity[]>{
+/** `inquiryId` limits the read to one inquiry in SQL (the owner rule is per inquiry, so the answer is the same). */
+export async function activeInquiryActivity(inquiryId?:string):Promise<InquiryActivity[]>{
   const now=new Date(),cutoff=new Date(now.getTime()-ACTIVITY_TTL_MS).toISOString();
   const valid=`SELECT a.* FROM inquiry_activity a JOIN inquiries i ON i.id=a.inquiry_id JOIN users u ON u.id=a.user_id
       WHERE a.seen_at>=? AND a.session IN (SELECT token FROM sessions WHERE expires>?)
       AND ${jsonBool(db,'u.data','active')} AND ${jsonText(db,'u.data','role')} IN ('Head','Employee','Supervisor')
-      AND ${jsonText(db,'i.data','status')} IN ${ACTIVE_STATUSES}`;
+      AND ${jsonText(db,'i.data','status')} IN ${ACTIVE_STATUSES}${inquiryId?' AND a.inquiry_id=?':''}`;
   // The owner of an inquiry is its earliest lease (ties by user id); only that user's rows are reported.
   const owner=db.dialect==='postgres'
     ?`SELECT DISTINCT ON (inquiry_id) inquiry_id,user_id FROM valid ORDER BY inquiry_id,started_at,user_id`
@@ -38,10 +39,10 @@ export async function activeInquiryActivity():Promise<InquiryActivity[]>{
   const rows=await db.all<InquiryActivity>(`WITH valid AS (${valid}), owner AS (${owner})
     SELECT v.inquiry_id AS "inquiryId",v.user_id AS "userId",MIN(v.started_at) AS "startedAt",MAX(v.seen_at) AS "seenAt"
     FROM valid v JOIN owner o ON o.inquiry_id=v.inquiry_id AND o.user_id=v.user_id
-    GROUP BY v.inquiry_id,v.user_id ORDER BY "startedAt"`,cutoff,now.toISOString());
+    GROUP BY v.inquiry_id,v.user_id ORDER BY "startedAt"`,cutoff,now.toISOString(),...(inquiryId?[inquiryId]:[]));
   const reserved=await db.all<{inquiry_id:string;user_id:string;by_user:string;at:string}>(`SELECT h.inquiry_id,h.user_id,h.by_user,h.at FROM inquiry_handover h JOIN inquiries i ON i.id=h.inquiry_id JOIN users u ON u.id=h.user_id
       WHERE h.kind='reserve' AND h.until_at>=? AND ${jsonBool(db,'u.data','active')} AND ${jsonText(db,'u.data','role')} IN ('Head','Employee','Supervisor')
-      AND ${jsonText(db,'i.data','status')} IN ${ACTIVE_STATUSES}`,now.toISOString());
+      AND ${jsonText(db,'i.data','status')} IN ${ACTIVE_STATUSES}${inquiryId?' AND h.inquiry_id=?':''}`,now.toISOString(),...(inquiryId?[inquiryId]:[]));
   const held=new Set(reserved.map(row=>row.inquiry_id));
   const all:InquiryActivity[]=[...rows.filter(row=>!held.has(row.inquiryId)),...reserved.map(row=>({inquiryId:row.inquiry_id,userId:row.user_id,startedAt:row.at,seenAt:row.at,reserved:true,reservedBy:row.by_user}))];
   const result:InquiryActivity[]=[];
@@ -84,13 +85,13 @@ export async function pruneActivityThrottled():Promise<void>{
  * rules as handling. Used by decline, BOR transfer and client review, which do not require holding the lock themselves
  * but must not act under a colleague (PO decision 2026-11-05). */
 export async function colleagueHolding(id:string,user:Pick<Staff,'id'>){
-  return (await activeInquiryActivity()).find(row=>row.inquiryId===id&&row.userId!==user.id);
+  return (await activeInquiryActivity(id)).find(row=>row.inquiryId===id&&row.userId!==user.id);
 }
 
 export async function requireInquiryHandler(id:string,user:Staff){
   await assertClientReady(await inquiry(id),true);
   if(db.inTransaction())await db.lock('lease:'+id); // a start for this inquiry must not slip in between this check and the caller's commit
-  const owner=(await activeInquiryActivity()).find(row=>row.inquiryId===id);
+  const owner=(await activeInquiryActivity(id)).find(row=>row.inquiryId===id);
   if(!owner)throw new AppError('Start handling this inquiry before making changes. Your previous handling session may have expired.',423);
   const name=(await allUsers()).find(person=>person.id===owner.userId)?.name||'A colleague';
   // A reservation is not a lease: even the person it was made for must start handling before changing anything.
@@ -130,7 +131,7 @@ export async function updateInquiryActivity(id:string,user:Staff,session:string,
         await db.run('DELETE FROM inquiry_activity WHERE session=? AND tab=? AND user_id=?',session,body.tab,user.id);
       }else if(body.action==='start'){
         await assertClientReady(record,true);
-        const owner=(await activeInquiryActivity()).find(row=>row.inquiryId===id);
+        const owner=(await activeInquiryActivity(id)).find(row=>row.inquiryId===id);
         if(owner&&owner.userId!==user.id)await requireInquiryHandler(id,user);
         // Starting converts a reservation made for this user into a real lease.
         await db.run("DELETE FROM inquiry_handover WHERE inquiry_id=? AND kind='reserve' AND user_id=?",id,user.id);
@@ -140,11 +141,12 @@ export async function updateInquiryActivity(id:string,user:Staff,session:string,
         if(!record.history.some(entry=>entry.action===STARTED_HANDLING&&entry.actorId===user.id)){logHandover(record,user,STARTED_HANDLING);await persist(record,record.revision);}
       }else{
         // A late heartbeat cannot recreate activity or steal another handler's lease.
-        await db.run('UPDATE inquiry_activity SET seen_at=? WHERE session=? AND tab=? AND inquiry_id=? AND user_id=?',now,session,body.tab,id,user.id);
+        // Only a live lease is refreshed: one already past ACTIVITY_TTL_MS stays expired even if pruning has not run yet.
+        await db.run('UPDATE inquiry_activity SET seen_at=? WHERE session=? AND tab=? AND inquiry_id=? AND user_id=? AND seen_at>=?',now,session,body.tab,id,user.id,new Date(Date.now()-ACTIVITY_TTL_MS).toISOString());
       }
     }
     if(body.action==='request-handover'||body.action==='dismiss-handover'||body.action==='take-over'){
-      const owner=(await activeInquiryActivity()).find(row=>row.inquiryId===id),users=await allUsers();
+      const owner=(await activeInquiryActivity(id)).find(row=>row.inquiryId===id),users=await allUsers();
       if(body.action==='request-handover'){
         if(!canPrepareProposal(user)||!canEditInquiry(user,record))throw new AppError('Employee or supervisor access is required to ask for a handover.',403);
         if(!owner)throw new AppError('Nobody is handling this inquiry right now. You can start handling it yourself.',409);
@@ -181,7 +183,7 @@ export async function updateInquiryActivity(id:string,user:Staff,session:string,
       }
     }
     if(isClientArchived(record))await db.run('DELETE FROM inquiry_activity WHERE inquiry_id=?',id);
-    const activity=(await activeInquiryActivity()).filter(row=>row.inquiryId===id);
+    const activity=(await activeInquiryActivity(id)).filter(row=>row.inquiryId===id);
     const holds=!!await db.get('SELECT tab FROM inquiry_activity WHERE session=? AND tab=? AND inquiry_id=?',session,body.tab,id)&&activity.some(row=>row.userId===user.id&&!row.reserved);
     // The holder's tab learns about a colleague's request from this response.
     let handover:HandoverRequest|null=null;

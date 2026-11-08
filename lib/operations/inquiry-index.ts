@@ -3,6 +3,7 @@ import { clientIdentityKeys, lastActivityAt, protectionFor } from './client-rule
 import { isSampleForm, reportStatus } from './types';
 import { hasSharedMobile } from './phone';
 import type { InquiryRecord, InquirySummary } from './types';
+import type { SqlParam } from './store';
 
 export function inquirySummary(record: InquiryRecord): InquirySummary {
   return {
@@ -52,20 +53,30 @@ function clientProjection(record: InquiryRecord): InquiryRecord {
  * inquiry changed meanwhile is simply queued again by its trigger (no lost enqueue). Runs inside a transaction
  * (joining the caller's); a failure rolls the claim back with it. Must not run inside snapshot(): call it first.
  */
+/** Inquiries per statement in an index sync (keeps SQLite and Postgres well under their parameter limits). */
+const INDEX_BATCH = 200;
 export async function synchronizeInquiryIndex() {
   if (!await db.get('SELECT id FROM inquiry_index_pending LIMIT 1')) return;
   await db.transaction(async () => {
     await db.lock('idx-sync');
-    const pending = await db.all<{id: string}>('DELETE FROM inquiry_index_pending RETURNING id');
-    for (const {id} of pending) {
-      await db.run('DELETE FROM inquiry_keys WHERE inquiry_id=?', id);
-      const row = await db.get<{data: string}>('SELECT data FROM inquiries WHERE id=?', id);
-      if (!row) await db.run('DELETE FROM inquiry_summaries WHERE id=?', id);
-      else {
+    const pending = (await db.all<{id: string}>('DELETE FROM inquiry_index_pending RETURNING id')).map(row => row.id);
+    // Set-based, a batch at a time: a full reindex is a few statements per batch instead of four per inquiry, so the
+    // idx-sync lock (and the request that runs this) is held for far less time. Same result as one inquiry at a time.
+    for (let start = 0; start < pending.length; start += INDEX_BATCH) {
+      const ids = pending.slice(start, start + INDEX_BATCH), marks = ids.map(() => '?').join(',');
+      await db.run(`DELETE FROM inquiry_keys WHERE inquiry_id IN (${marks})`, ...ids);
+      const rows = await db.all<{id: string; data: string}>(`SELECT id,data FROM inquiries WHERE id IN (${marks})`, ...ids);
+      const found = new Set(rows.map(row => row.id)), gone = ids.filter(id => !found.has(id));
+      if (gone.length) await db.run(`DELETE FROM inquiry_summaries WHERE id IN (${gone.map(() => '?').join(',')})`, ...gone);
+      if (!rows.length) continue;
+      const summaries: SqlParam[] = [], keys: SqlParam[] = [];
+      for (const row of rows) {
         const record: InquiryRecord = JSON.parse(row.data);
-        await db.run('INSERT INTO inquiry_summaries (id,data,summary) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,summary=excluded.summary', id, jsonParam(clientProjection(record)), jsonParam(inquirySummary(record)));
-        if (!isSampleForm(record.source)) for (const [kind, value] of clientIdentityKeys(record)) await db.run('INSERT INTO inquiry_keys (inquiry_id,kind,value) VALUES (?,?,?) ON CONFLICT DO NOTHING', id, kind, value);
+        summaries.push(row.id, jsonParam(clientProjection(record)), jsonParam(inquirySummary(record)));
+        if (!isSampleForm(record.source)) for (const [kind, value] of clientIdentityKeys(record)) keys.push(row.id, kind, value);
       }
+      await db.run(`INSERT INTO inquiry_summaries (id,data,summary) VALUES ${rows.map(() => '(?,?,?)').join(',')} ON CONFLICT(id) DO UPDATE SET data=excluded.data,summary=excluded.summary`, ...summaries);
+      if (keys.length) await db.run(`INSERT INTO inquiry_keys (inquiry_id,kind,value) VALUES ${Array.from({length: keys.length / 3}, () => '(?,?,?)').join(',')} ON CONFLICT DO NOTHING`, ...keys);
     }
   });
 }

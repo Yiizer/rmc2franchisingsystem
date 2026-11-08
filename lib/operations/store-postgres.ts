@@ -108,6 +108,7 @@ export function toPositional(sql: string): string {
 
 // ---------------------------------------------------------------- errors
 const BUSY = 'Database busy. Try again.';
+const PAUSED = 'The database cannot be reached right now. It may be paused: ask the administrator to check Supabase.';
 const CONTENDED = 'Another colleague is working on this client, try again';
 const CONNECTION_CODES = new Set([
   'CONNECTION_DESTROYED', 'CONNECT_TIMEOUT', 'CONNECTION_CLOSED', 'CONNECTION_ENDED', 'QUEUE_TIMEOUT',
@@ -147,6 +148,9 @@ const isServerError = (error: unknown, code: string) => (error as { name?: unkno
 export function mapPgError(error: unknown): unknown {
   if (error instanceof AppError) return error;
   const code = codeOf(error);
+  // A paused or deleted Supabase project: the pooler answers "Tenant or user not found". It will not fix itself (a
+  // paused free project is restored from the Supabase dashboard), so say so plainly instead of "busy" or a 500.
+  if (/tenant or user not found/i.test(String((error as { message?: unknown } | null)?.message ?? ''))) { logOnce('XX000-tenant'); return tagged(PAUSED, 503, 'XX000'); }
   if (code === '55P03' || code === '57014') return tagged(CONTENDED, 503, code);
   if (code === '23505') return tagged('This record already exists. Reload to see the latest changes.', 409, code);
   if (isRetryableCode(code)) return tagged(BUSY, 503, code);
@@ -181,9 +185,15 @@ export function buildClientOptions(url: string, env: NodeJS.ProcessEnv = process
   const local = LOCAL_HOSTS.has(hostOf(url));
   const wantsPlain = (env.RMC2_DATABASE_SSL ?? '').toLowerCase() === 'disable';
   if (wantsPlain && !local) throw new Error('RMC2_DATABASE_SSL=disable is only allowed for a localhost database');
+  // REMAINING_WORK §2: with the Supabase CA (Project Settings > Database > SSL certificate) in RMC2_DATABASE_CA, the
+  // server certificate and host name are verified, so nobody in between can pose as the database. Without it the link
+  // is encrypted but unverified ('require'). RMC2_DATABASE_SSL=verify-full makes the CA mandatory.
+  const ca = (env.RMC2_DATABASE_CA ?? '').replace(/\\n/g, '\n').trim(); // a one-line env value may carry literal \n
+  if (ca && !ca.includes('BEGIN CERTIFICATE')) throw new Error('RMC2_DATABASE_CA must be a PEM certificate');
+  if ((env.RMC2_DATABASE_SSL ?? '').toLowerCase() === 'verify-full' && !ca) throw new Error('RMC2_DATABASE_SSL=verify-full needs RMC2_DATABASE_CA');
   return {
     prepare: false,
-    ssl: wantsPlain ? (false as const) : ('require' as const),
+    ssl: wantsPlain ? (false as const) : ca ? { ca, rejectUnauthorized: true } : ('require' as const),
     max: 3,
     idle_timeout: 10,
     max_lifetime: 1800,

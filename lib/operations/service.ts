@@ -368,14 +368,14 @@ export async function intake(user:Staff,file:File,sender:string,options:{ownerId
   try{const created=await transaction(async()=>{
     if(options.idempotencyKey){await db.lock('intake-key:'+options.idempotencyKey);reused=await replayedIntake(options.idempotencyKey);if(reused)return reused;} // a double click that raced past the first check
     if(scoped){await db.lock('intake-cap:'+user.id);await checkCap();}
-    const at=new Date().toISOString();const record:InquiryRecord={id:'INQ-'+new Date().getFullYear()+'-'+'00000',revision:1,status:'New inquiry',createdAt:at,updatedAt:at,fields:{...source.fields},source,email:defaultEmail(source.fields),emailOverrides:[],templateId:'',submissions:[],handledBy:[],history:[{id:randomUUID(),at,actorId:user.id,actor:user.name,action:scoped?'Submitted by '+user.name+' (own client). All active staff notified.':'Imported agent email form. All active staff notified.'+(owner?' Linked to '+owner.name+'.':'')}],chat:[],notes:'',returnNote:'',returnFlags:[],detailRequests:[]};
+    const at=new Date().toISOString();const record:InquiryRecord={id:'INQ-'+manilaYear()+'-'+'00000',revision:1,status:'New inquiry',createdAt:at,updatedAt:at,fields:{...source.fields},source,email:defaultEmail(source.fields),emailOverrides:[],templateId:'',submissions:[],handledBy:[],history:[{id:randomUUID(),at,actorId:user.id,actor:user.name,action:scoped?'Submitted by '+user.name+' (own client). All active staff notified.':'Imported agent email form. All active staff notified.'+(owner?' Linked to '+owner.name+'.':'')}],chat:[],notes:'',returnNote:'',returnFlags:[],detailRequests:[]};
     if(owner)applyOwner(record,owner);
     // No Division Head / SOA linked: fill the division (and the proper branch name) from the branch on the form, using the
     // division table (PO, 2026-11-06). Unclear or unlisted branches stay "Unconfirmed" for staff; the original form text
     // is kept in source.fields.
     else fillDivisionFromBranch(record,divisionTable);
     await lockRegistry(record); // client identity keys first (Postgres), then the counter row, so two imports of one client are ordered
-    record.id='INQ-'+new Date().getFullYear()+'-'+String(await nextInquiryNumber()).padStart(5,'0');
+    record.id='INQ-'+manilaYear()+'-'+String(await nextInquiryNumber()).padStart(5,'0');
     await updateClientReview(record,user);
     await persist(record);if(options.idempotencyKey){await pruneIntakeKeys(options.idempotencyKey);await db.run('INSERT INTO settings(key,data) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data',options.idempotencyKey,JSON.stringify({inquiryId:record.id,at}));}await notify(record,record.closure?'Request declined — previous registration expired':record.clientReview?.state==='duplicate'?'Duplicate import received — on hold':record.clientReview?.state==='identify'?'Client details needed':'New inquiry',`${record.fields.company||'Agent request'} is ready for form review.`,(await allUsers()).filter(u=>u.active).map(u=>u.id));return record;});if(reused)await deleteQuietly(source.storage);return created;}catch(error){await deleteQuietly(source.storage);throw error;}
 }
@@ -428,6 +428,8 @@ export function fillDivisionFromBranch(record:InquiryRecord,table:DivisionTable)
   record.fields={...record.fields,division:place.division,...(exact?{branch:place.branch!}:{})};
 }
 // One atomic statement on both databases: the row lock makes concurrent imports take distinct numbers and a rollback gives the number back.
+/** The year in an inquiry number is the Manila year (the server clock is UTC, so 1 January before 8 a.m. would otherwise get last year). */
+export const manilaYear=(at=new Date())=>Number(new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Manila',year:'numeric'}).format(at));
 async function nextInquiryNumber() { const row=await db.get<{n:number}>("UPDATE counters SET n=n+1 WHERE name='inquiry' RETURNING n");if(!row)throw new Error('The inquiry counter is missing.');return Number(row.n); }
 export async function alternatives(record:InquiryRecord) { return suggestTemplates(record.fields,await catalog()).map(option=>option.template); }
 export async function chat(id:string,user:Staff,input:unknown) {

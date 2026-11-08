@@ -38,7 +38,8 @@ export default function RequestsPage({ now, onOpen }: { now: number; onOpen: (re
   };
   const list = (data?.messages ?? []).filter(m => show === 'all' || m.state === 'new');
   const waiting = (data?.messages ?? []).filter(m => m.state === 'new').length;
-  const verified = (m: InboundMessage) => m.auth.dmarc === 'pass' || (m.auth.spf === 'pass' && m.auth.dkim === 'pass');
+  // Same rule as the server (lib/operations/inbound.ts senderVerified): DMARC pass aligned with the From domain. The results are information only, never identity.
+  const verified = (m: InboundMessage) => m.auth.dmarc === 'pass' && m.auth.aligned === true;
   return <>
     <div className="ops-heading"><div><h1>Requests</h1><p>{data && !data.connected ? 'The inbox is not connected on this server (email is in local test mode).' : 'Agent emails from the test inbox, checked every 30 seconds while the app is open. Excel forms become inquiries automatically; anything else waits here for you.'}{data?.checkedAt ? ' Last checked ' + manilaTime(data.checkedAt) + ' (' + ageLabel(data.checkedAt, now) + ').' : ''}</p></div>
       <button className="ops-btn primary" onClick={check} disabled={!!busy}><RefreshCw size={16} className={busy === 'check' ? 'ops-spin' : ''} />{busy === 'check' ? 'Checking…' : 'Check mail now'}</button></div>

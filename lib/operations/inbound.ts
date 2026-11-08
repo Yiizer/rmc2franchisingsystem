@@ -20,13 +20,15 @@ import type { InquiryRecord, Staff } from './types';
 export type InboundAttachment = { name: string; type: string; size: number; key: string };
 export type InboundMessage = {
   id: string; messageId: string; receivedAt: string; from: string; fromName: string; replyTo: string; subject: string;
-  snippet: string; attachments: InboundAttachment[]; auth: { spf: string; dkim: string; dmarc: string };
+  snippet: string; attachments: InboundAttachment[]; auth: { spf: string; dkim: string; dmarc: string; aligned?: boolean };
   state: 'new' | 'imported' | 'dismissed'; inquiryId?: string; handledBy?: string; handledAt?: string; importError?: string;
 };
 /** The actor recorded in history for automatic imports. Not a sign-in account. */
 const EMAIL_INTAKE: Staff = { id: 'email-intake', name: 'Email intake (automatic)', role: 'Employee', email: '', active: true, position: 'System', canApprove: false } as Staff;
 const AUTO_CHECK_MS = 30 * 1000;
 const MAILBOX = 'INBOX', FIRST_RUN_DAYS = 14, MAX_PER_CHECK = 25, MAX_ATTACHMENT = 7 * 1024 * 1024;
+/** Larger emails are not downloaded (memory and time on a serverless function); they are listed for a person to open in the mailbox. */
+const MAX_MESSAGE = 15 * 1024 * 1024, MAX_ATTACHMENTS = 5;
 const FORM_TYPES: Record<string, string> = { xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', pdf: 'application/pdf' };
 
 function imapSettings() {
@@ -40,7 +42,26 @@ export const inboundConnected = () => !!imapSettings();
 const requireStaff = (user: Staff) => { if (!canReviewInbound(user)) throw new AppError('Your role cannot review incoming email.', 403); };
 /** The authserv-id of the inbox provider's own Authentication-Results header (Gmail: mx.google.com). */
 const TRUSTED_AUTHSERV = (process.env.RMC2_IMAP_AUTHSERV_ID || 'mx.google.com').trim().toLowerCase();
-const authResult = (header: string, name: string) => (header.match(new RegExp('\\b' + name + '=(\\w+)', 'i'))?.[1] || 'none').toLowerCase();
+/** Reads SPF, DKIM and DMARC from our provider's Authentication-Results header, one ";"-separated result at a time. Only a
+ *  result at the START of a token counts, so sender-controlled text inside it (smtp.mailfrom=, header.i=) cannot fake a
+ *  pass. `aligned` is true only for DMARC pass on the exact domain of the From address. */
+export function readAuthResults(header: string, fromAddress: string) {
+  const out = { spf: 'none', dkim: 'none', dmarc: 'none', aligned: false };
+  let dmarcFrom = '';
+  for (const token of header.split(';').slice(1).map(t => t.trim())) {
+    const m = token.match(/^(spf|dkim|dmarc)=([a-z]+)/i);
+    if (!m) continue;
+    const method = m[1].toLowerCase() as 'spf' | 'dkim' | 'dmarc';
+    if (out[method] !== 'none') continue; // the first result for each method
+    out[method] = m[2].toLowerCase();
+    if (method === 'dmarc') dmarcFrom = (token.match(/\bheader\.from=([^\s;()]+)/i)?.[1] || '').toLowerCase();
+  }
+  const domain = (fromAddress.split('@')[1] || '').toLowerCase();
+  out.aligned = out.dmarc === 'pass' && !!domain && dmarcFrom === domain;
+  return out;
+}
+/** Positive proof the From address is genuine: DMARC pass, aligned with the From domain. Older records lack `aligned` and so never qualify. */
+export const senderVerified = (auth: InboundMessage['auth']) => auth.dmarc === 'pass' && auth.aligned === true;
 const safeName = (name: string) => name.replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '').slice(0, 80) || 'attachment';
 
 /** Reads new messages from the inbox (read-only) and stores them. Returns how many were added. */
@@ -52,7 +73,7 @@ export async function checkInbox(): Promise<{ added: number; imported: number; c
   if (!settings) return { added: 0, imported: 0, checkedAt, connected: false };
   const cursor = await db.get<{ uidvalidity: string; last_uid: number }>('SELECT uidvalidity,last_uid FROM inbound_cursor WHERE mailbox=?', MAILBOX);
   const client = new ImapFlow({ host: settings.host, port: settings.port, secure: true, auth: { user: settings.user, pass: settings.pass }, logger: false });
-  const fetched: { uid: number; source: Buffer }[] = [];
+  const fetched: { uid: number; source: Buffer }[] = [], oversize: { uid: number; size: number; subject: string; from: string; messageId: string }[] = [];
   let uidValidity = '';
   try {
     await client.connect();
@@ -60,15 +81,35 @@ export async function checkInbox(): Promise<{ added: number; imported: number; c
     uidValidity = String(box.uidValidity);
     const fresh = !cursor || cursor.uidvalidity !== uidValidity;
     const range = fresh ? await client.search({ since: new Date(Date.now() - FIRST_RUN_DAYS * 86400000) }, { uid: true }) : await client.search({ uid: (Number(cursor.last_uid) + 1) + ':*' }, { uid: true });
-    const uids = (Array.isArray(range) ? range : []).filter(uid => fresh || uid > Number(cursor!.last_uid)).sort((a, b) => a - b).slice(-MAX_PER_CHECK);
-    if (uids.length) for await (const message of client.fetch(uids.join(','), { uid: true, source: true }, { uid: true })) if (message.source) fetched.push({ uid: message.uid, source: message.source });
+    // Oldest first: the cursor only moves past what was read, so a burst of more than MAX_PER_CHECK is read over the next checks.
+    const uids = (Array.isArray(range) ? range : []).filter(uid => fresh || uid > Number(cursor!.last_uid)).sort((a, b) => a - b).slice(0, MAX_PER_CHECK);
+    const small: number[] = [];
+    if (uids.length) for await (const message of client.fetch(uids.join(','), { uid: true, size: true, envelope: true }, { uid: true })) {
+      if ((message.size || 0) > MAX_MESSAGE) oversize.push({ uid: message.uid, size: message.size || 0, subject: message.envelope?.subject || '', from: message.envelope?.from?.[0]?.address || '', messageId: message.envelope?.messageId || '' });
+      else small.push(message.uid);
+    }
+    if (small.length) for await (const message of client.fetch(small.join(','), { uid: true, source: true }, { uid: true })) if (message.source) fetched.push({ uid: message.uid, source: message.source });
   } catch (error) {
     console.error('[inbound] mailbox check failed:', (error as { code?: string })?.code || (error instanceof Error ? error.name : 'error'));
     throw new AppError('The test inbox could not be checked right now. Try again shortly.', 503);
   } finally { await client.logout().catch(() => client.close()); }
 
   let added = 0, imported = 0, lastUid = cursor && cursor.uidvalidity === uidValidity ? Number(cursor.last_uid) : 0;
-  for (const item of fetched.sort((a, b) => a.uid - b.uid)) {
+  /** An email that cannot be read or stored is listed as skipped with the reason, so it never blocks the emails after it. */
+  const skipped = async (uid: number, messageId: string, info: { subject?: string; from?: string }, reason: string) => {
+    const id = randomUUID(), record: InboundMessage = { id, messageId: (messageId || 'uid-' + uidValidity + '-' + uid).slice(0, 300), receivedAt: new Date().toISOString(), from: (info.from || '').toLowerCase(), fromName: '', replyTo: '', subject: (info.subject || '(no subject)').slice(0, 300), snippet: '', attachments: [], auth: { spf: 'none', dkim: 'none', dmarc: 'none', aligned: false }, state: 'dismissed', handledBy: 'email-filter', handledAt: new Date().toISOString(), importError: reason };
+    const result = await db.run('INSERT INTO inbound_messages (id,message_id,received_at,state,data) VALUES (?,?,?,?,?) ON CONFLICT (message_id) DO NOTHING', id, record.messageId, record.receivedAt, record.state, jsonParam(record));
+    if (result.changes) added++;
+  };
+  const work: ({ uid: number; item: { uid: number; source: Buffer } } | { uid: number; big: { uid: number; size: number; subject: string; from: string; messageId: string } })[] = [...fetched.map(item => ({ uid: item.uid, item })), ...oversize.map(big => ({ uid: big.uid, big }))].sort((a, b) => a.uid - b.uid);
+  try {
+  for (const entry of work) {
+    if ('big' in entry) {
+      await skipped(entry.uid, entry.big.messageId, entry.big, 'This email is ' + Math.round(entry.big.size / 1048576) + ' MB, too large to read here. Open it in the mailbox.');
+      lastUid = Math.max(lastUid, entry.uid); continue;
+    }
+    const item = entry.item;
+    try {
     const parsed = await simpleParser(item.source);
     const messageId = (parsed.messageId || 'uid-' + uidValidity + '-' + item.uid).slice(0, 300);
     const exists = await db.get('SELECT id FROM inbound_messages WHERE message_id=?', messageId);
@@ -79,7 +120,7 @@ export async function checkInbox(): Promise<{ added: number; imported: number; c
       const id = randomUUID(), attachments: InboundAttachment[] = [];
       for (const [index, part] of parsed.attachments.entries()) {
         const ext = (part.filename || '').toLowerCase().split('.').pop() || '';
-        if (!FORM_TYPES[ext] || part.size > MAX_ATTACHMENT) continue;
+        if (!FORM_TYPES[ext] || part.size > MAX_ATTACHMENT || attachments.length >= MAX_ATTACHMENTS) continue;
         const key = `inbound/${id}/${index}-${safeName(part.filename || 'form.' + ext)}`;
         await files().put(key, part.content, { contentType: FORM_TYPES[ext], mode: 'replace' });
         attachments.push({ name: part.filename || 'form.' + ext, type: ext, size: part.size, key });
@@ -93,7 +134,7 @@ export async function checkInbox(): Promise<{ added: number; imported: number; c
       const record: InboundMessage = {
         id, messageId, receivedAt: (parsed.date ?? new Date()).toISOString(), from: (from?.address || '').toLowerCase(), fromName: from?.name || '',
         replyTo: replyTo.toLowerCase(), subject: (parsed.subject || '(no subject)').slice(0, 300), snippet: (parsed.text || '').replace(/\s+/g, ' ').trim().slice(0, 400),
-        attachments, auth: { spf: authResult(authHeader, 'spf'), dkim: authResult(authHeader, 'dkim'), dmarc: authResult(authHeader, 'dmarc') }, state: 'new',
+        attachments, auth: readAuthResults(authHeader, (from?.address || '').toLowerCase()), state: 'new',
       };
       // Newsletters and notifications (no-reply senders, mailing lists, bulk mail) with no form attached are never agent
       // requests: they are recorded as skipped (still listed under All) instead of waiting in "To review".
@@ -113,9 +154,16 @@ export async function checkInbox(): Promise<{ added: number; imported: number; c
         }
       }
     }
+    } catch (error) {
+      console.error('[inbound] message skipped:', (error as { code?: string })?.code || (error instanceof Error ? error.name : 'error'));
+      await skipped(item.uid, '', {}, 'This email could not be read. Open it in the mailbox.'); // if even this fails, the finally below keeps the cursor before it
+    }
     lastUid = Math.max(lastUid, item.uid);
   }
+  } finally {
+    // Saved even when a database error stops the loop, so the emails already handled are not read again.
   await db.run('INSERT INTO inbound_cursor (mailbox,uidvalidity,last_uid,checked_at) VALUES (?,?,?,?) ON CONFLICT (mailbox) DO UPDATE SET uidvalidity=excluded.uidvalidity,last_uid=excluded.last_uid,checked_at=excluded.checked_at', MAILBOX, uidValidity, lastUid, checkedAt);
+  }
   if (added > imported) { try { await inboxHook?.(added - imported); } catch { /* phone notifications never fail a check */ } }
   return { added, imported, checkedAt, connected: true };
 }
@@ -178,9 +226,9 @@ export async function importInbound(user: Staff, id: string, index: number, auto
     if (!attachment) throw new AppError('Choose one of the form attachments.', 400);
     const bytes = await files().get(attachment.key);
     // A sender that is an active Division Head / SOA account links the inquiry to them, but only on positive proof the
-    // mail really came from that address (DMARC pass, or SPF and DKIM pass, from our provider's own header) and only when
+    // mail really came from that address (DMARC pass aligned with the From domain, from our provider's own header) and only when
     // replies would go back to that same address. Anything else imports unlinked for staff to link by hand.
-    const verified = record.auth.dmarc === 'pass' || (record.auth.spf === 'pass' && record.auth.dkim === 'pass');
+    const verified = senderVerified(record.auth);
     const sameReply = !record.replyTo || record.replyTo.trim().toLowerCase() === record.from.trim().toLowerCase();
     const autoOwner = ownerOverride === undefined && verified && sameReply ? await ownerForEmail(record.from) : undefined;
     const ownerId = ownerOverride !== undefined ? ownerOverride : autoOwner?.id ?? null;
