@@ -139,9 +139,10 @@ console.log('PASS Intake fills the division from the form branch (Antipolo → D
 pass('Manual import accepts an optional ownerId (active Division Head / SOA only); Head and Supervisor stay blocked from importing');
 // e-mail intake: sender address matches (case-insensitive, trimmed) an active owner account
 {
-  const sendMail=async(from,file,auth={spf:'pass',dkim:'pass',dmarc:'pass'})=>{
+  /* Since 2026-11-09 an owner link needs DMARC pass ALIGNED with the From domain (auth.aligned) and no foreign Reply-To (inbound.ts senderVerified / sameReply). */
+  const sendMail=async(from,file,auth={spf:'pass',dkim:'pass',dmarc:'pass',aligned:true},replyTo='')=>{
     const id=randomUUID(),key='inbound/'+id+'/0-form.xlsx';await filesModule.files().put(key,Buffer.from(await file.arrayBuffer()),{contentType:'application/octet-stream'});
-    const record={id,messageId:'m-'+id,receivedAt:new Date().toISOString(),from,fromName:'',replyTo:'',subject:'form',snippet:'',attachments:[{name:'form.xlsx',type:'xlsx',size:file.size,key}],auth,state:'new'};
+    const record={id,messageId:'m-'+id,receivedAt:new Date().toISOString(),from,fromName:'',replyTo,subject:'form',snippet:'',attachments:[{name:'form.xlsx',type:'xlsx',size:file.size,key}],auth,state:'new'};
     await db.run('INSERT INTO inbound_messages (id,message_id,received_at,state,data) VALUES (?,?,?,?,?)',id,record.messageId,record.receivedAt,'new',JSON.stringify(record));
     return inbound.importInbound(cryssa,id,0,true);
   };
@@ -150,6 +151,8 @@ pass('Manual import accepts an optional ownerId (active Division Head / SOA only
   assert.equal((await owners.ownerForEmail('  DIVISIONHEAD@rmc2.local ')).id,dhA.id);
   const stranger=await sendMail('stranger@example.com',await formFor('Stranger Corp'));assert.equal(stranger.ownerId,undefined);
   const spoof=await sendMail('divisionhead@rmc2.local',await formFor('Spoof Corp'),{spf:'fail',dkim:'none',dmarc:'fail'});assert.equal(spoof.ownerId,undefined,'a sender that failed authentication is not linked');
+  const unaligned=await sendMail('divisionhead@rmc2.local',await formFor('Unaligned Corp'),{spf:'pass',dkim:'pass',dmarc:'pass',aligned:false});assert.equal(unaligned.ownerId,undefined,'DMARC pass that is not aligned with the From domain is not linked');
+  const foreignReply=await sendMail('divisionhead@rmc2.local',await formFor('Reply To Corp'),undefined,'someone-else@example.com');assert.equal(foreignReply.ownerId,undefined,'a different Reply-To address is not linked');
   await db.run("UPDATE users SET data=json_set(data,'$.active',json('false')) WHERE id=?",'soa');
   const inactive=await sendMail('soa@rmc2.local',await formFor('Inactive Owner Corp'));assert.equal(inactive.ownerId,undefined,'inactive owner accounts are not matched');
   await db.run("UPDATE users SET data=json_set(data,'$.active',json('true')) WHERE id=?",'soa');
@@ -195,7 +198,8 @@ pass('A duplicate submission by another Division Head returns only alreadyProtec
   const allowedKeys=['id','client','status','createdAt','lastActivityAt','division','branch','protection','progressReports','hasSentProposal','sentAt'];
   assert.deepEqual(Object.keys(dto).sort(),allowedKeys.sort(),'DTO has exactly the agreed fields');
   assert.deepEqual(Object.keys(dto.protection).sort(),['daysLeft','expiresAt','held','startedAt']);
-  assert.equal(dto.status,'Proposal sent');assert.equal(dto.hasSentProposal,true);assert.equal(dto.protection.daysLeft,20);assert.equal(dto.protection.held,false);
+  /* the owner-facing label for a delivered proposal is 'Enrolled' since the 2026-11-07 feedback round (owner-view.ts ownerStatusLabel) */
+  assert.equal(dto.status,'Enrolled');assert.equal(dto.hasSentProposal,true);assert.equal(dto.protection.daysLeft,20);assert.equal(dto.protection.held,false);
   const text=JSON.stringify(dto);
   for(const secret of ['history','chat','notes','storage','agentEmail','clientReview','matches','Sampaguita'])assert.equal(text.includes(secret),false,'DTO must not contain '+secret);
   // everything of A is invisible to B, in exactly the same way as a missing id

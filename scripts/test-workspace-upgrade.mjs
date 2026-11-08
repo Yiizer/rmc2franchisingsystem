@@ -37,8 +37,8 @@ try{
   await call('cryssa','notifications',{ids:[]},403,{Origin:'https://unrelated.example.test'});
   pass('Login does not enumerate staff; cross-origin changes are rejected');
   const person={name:'QA New Employee',username:'qa'+run,email:'qa'+run+'@example.test',role:'Employee',position:'QA',canApprove:false,currentPassword:'Rmc2Local!2026'};
-  await call('cryssa','create-account',person,403);await call('admin','create-account',{...person,currentPassword:'incorrect'},403);
-  const created=await call('admin','create-account',person,201);assert.ok(created.temporaryPassword.length>=20);
+  await call('cryssa','create-account',person,403);await call('admin','create-account',person,403);await call('emerson','create-account',{...person,currentPassword:'incorrect'},403); /* account management is Head-only (canManageAccounts); the Admin only resets passwords / unlocks */
+  const created=await call('emerson','create-account',person,201);assert.ok(created.temporaryPassword.length>=20);
   await call('fresh','login',{email:person.username,password:created.temporaryPassword});await call('fresh','notifications',{ids:[]},403);await call('fresh','sample-form',undefined,403);assert.deepEqual((await bootstrap('fresh')).inquiries,[]);
   await call('fresh','account-settings',{username:person.username,currentPassword:'wrong',password:'New QA passphrase 2026!'},403);
   await call('fresh','account-settings',{username:'admin',currentPassword:created.temporaryPassword,password:'New QA passphrase 2026!'},409);
@@ -47,7 +47,7 @@ try{
   await call('fresh','bootstrap',undefined,401);await call('fresh2','bootstrap',undefined,401);
   await call('fresh','login',{email:person.username+'updated',password:'New QA passphrase 2026!'});
   const stored=database.prepare('SELECT password FROM users WHERE id=?').get(created.user.id).password;assert.ok(!stored.includes('New QA passphrase'));
-  pass('Admin creates unique staff accounts; temporary password must change; credentials are hashed and all old sessions are revoked');
+  pass('Head creates unique staff accounts; temporary password must change; credentials are hashed and all old sessions are revoked');
   for(let i=0;i<8;i++)await call('unknown','login',{email:'rate-limit-'+run,password:'bad'},401);
   await call('unknown','login',{email:'rate-limit-'+run,password:'bad'},429);pass('Repeated login failures are throttled');
 
@@ -72,11 +72,11 @@ try{
   let laterBor=await intake('Expired client '+run,'Clement '+run,'Riley','riley@example.test');
   assert.equal(laterBor.clientReview.matches.length,1);assert.equal(laterBor.clientReview.matches[0].inquiryId,freshAgent.id);
   const laterBorForm=new FormData();Object.entries({revision:laterBor.revision,previousId:freshAgent.id,previousRevision:freshAgent.revision,reference:'Later BOR '+run,note:'Verified the current client holder and new BOR agent.',verified:'true'}).forEach(([key,value])=>laterBorForm.set(key,String(value)));laterBorForm.set('file',new File([bor],'later-bor.pdf'));
-  laterBor=(await call('cryssa','inquiries/'+laterBor.id+'/bor-transfer',laterBorForm)).inquiry;
+  laterBor=(await call('emerson','inquiries/'+laterBor.id+'/bor-transfer',laterBorForm)).inquiry;
   pass('Expired history still rejects the former agent but does not block a later verified BOR handover',laterBor.clientReview.state==='clear');
   function borForm(verified=true){const form=new FormData();Object.entries({revision:incoming.revision,previousId:active.id,previousRevision:active.revision,reference:'QA verified BOR '+run,note:'Verified client authorization and incoming agent identity.',verified:String(verified)}).forEach(([key,value])=>form.set(key,String(value)));form.set('file',new File([bor],'bor.pdf'));return form;}
-  await call('cryssa','inquiries/'+incoming.id+'/bor-transfer',borForm(false),400);
-  incoming=(await call('cryssa','inquiries/'+incoming.id+'/bor-transfer',borForm())).inquiry;
+  await call('emerson','inquiries/'+incoming.id+'/bor-transfer',borForm(false),400);
+  incoming=(await call('emerson','inquiries/'+incoming.id+'/bor-transfer',borForm())).inquiry; /* an Employee only files a transfer request for supervisor approval; the Head transfers directly */
   const transferred=(await bootstrap('cryssa')).inquiries.find(record=>record.id===active.id);
   pass('Verified BOR transfers to a different agent, archives the previous registration, and records both audit trails',!!incoming.bor&&incoming.clientReview.state==='clear'&&transferred.closure.relatedId===incoming.id&&transferred.status==='Transferred');
   assert.deepEqual(await call('cryssa','file/'+incoming.id+'/bor'),Buffer.from(bor));await call('anonymous','file/'+incoming.id+'/bor',undefined,401);
@@ -92,12 +92,12 @@ try{
   const master=initial.templates.find(t=>t.id==='d054'),bytes=await call('admin','source/d054'),zip=new PizZip(bytes);zip.file('word/document.xml',zip.file('word/document.xml').asText().replace('appreciate','appreciate very much'));
   const changed=zip.generate({type:'nodebuffer'});
   function uploadForm(file=changed,id='d054'){const form=new FormData();Object.entries({templateId:id,expectedHash:id?master.sourceHash:'',family:master.family,variant:'Standard',sector:'All',annualOnly:'false',warnings:'QA replacement source notes'}).forEach(([key,value])=>form.set(key,value));form.set('file',new File([file],'qa-updated-template.docx'));return form;}
-  const unsafe=new PizZip(bytes);unsafe.file('word/vbaProject.bin','fake');await call('admin','template-upload',uploadForm(unsafe.generate({type:'nodebuffer'})),400);
-  const external=new PizZip(bytes);external.file('word/_rels/unsafe.rels','<Relationships><Relationship TargetMode="External" Target="file:///private"/></Relationships>');await call('admin','template-upload',uploadForm(external.generate({type:'nodebuffer'})),400);
-  const staged=await call('admin','template-upload',uploadForm(),201);assert.equal((await bootstrap('admin')).templates.find(t=>t.id==='d054').sourceHash,master.sourceHash);
-  await call('admin','template-publish',{id:staged.id,reviewed:false},400);await call('cryssa','template-publish',{id:staged.id,reviewed:true},403);
-  await call('admin','template-publish',{id:staged.id,reviewed:true});assert.equal((await bootstrap('admin')).templates.find(t=>t.id==='d054').sourceHash,createHash('sha256').update(changed).digest('hex'));
-  pass('Admin replacement requires validated DOCX, rendered preview and explicit review; active and previous versions are preserved');
+  const unsafe=new PizZip(bytes);unsafe.file('word/vbaProject.bin','fake');await call('emerson','template-upload',uploadForm(unsafe.generate({type:'nodebuffer'})),400);
+  const external=new PizZip(bytes);external.file('word/_rels/unsafe.rels','<Relationships><Relationship TargetMode="External" Target="file:///private"/></Relationships>');await call('emerson','template-upload',uploadForm(external.generate({type:'nodebuffer'})),400);
+  const staged=await call('emerson','template-upload',uploadForm(),201);assert.equal((await bootstrap('admin')).templates.find(t=>t.id==='d054').sourceHash,master.sourceHash);
+  await call('emerson','template-publish',{id:staged.id,reviewed:false},400);await call('cryssa','template-publish',{id:staged.id,reviewed:true},403);
+  await call('emerson','template-publish',{id:staged.id,reviewed:true});assert.equal((await bootstrap('admin')).templates.find(t=>t.id==='d054').sourceHash,createHash('sha256').update(changed).digest('hex'));
+  pass('Head replacement requires validated DOCX, rendered preview and explicit review; active and previous versions are preserved');
   assert.deepEqual(await call('cryssa','file/'+proposal.id+'/pdf?version=1'),oldPdf);
   const model=await call('emerson','custom-document',{inquiryId:proposal.id,templateId:'d054',fields:proposal.fields,edits:{}}),block=model.blocks.find(block=>block.original.includes('appreciate'));
   assert.ok(block,'Supervisor edits use the archived submitted master even after the live template changes');
@@ -109,9 +109,9 @@ try{
   assert.deepEqual(await call('zeo','file/'+proposal.id+'/pdf?version=2'),reviewedPdf);
   const eml=(await call('zeo','file/'+proposal.id+'/eml?version=2')).toString();assert.ok(eml.replace(/\r\n/g,'').includes(reviewedPdf.toString('base64')));
   pass('Supervisor edits produce a new version; either supervisor approves it; the delivered PDF is exact and the old version is unchanged');
-  const added=await call('admin','template-upload',uploadForm(changed,''),201);await call('admin','template-publish',{id:added.id,reviewed:true});
-  const addedTemplate=(await bootstrap('admin')).templates.find(t=>t.id===added.template.id);assert.ok(addedTemplate.active);await call('admin','template-active',{id:addedTemplate.id,expectedHash:addedTemplate.sourceHash,active:false});
-  pass('Admin can add a distinct template, view its version history, and retire it without deleting files',(await call('admin','template-history')).versions.length>=3);
+  const added=await call('emerson','template-upload',uploadForm(changed,''),201);await call('emerson','template-publish',{id:added.id,reviewed:true});
+  const addedTemplate=(await bootstrap('admin')).templates.find(t=>t.id===added.template.id);assert.ok(addedTemplate.active);await call('emerson','template-active',{id:addedTemplate.id,expectedHash:addedTemplate.sourceHash,active:false});
+  pass('Head can add a distinct template, view its version history, and retire it without deleting files',(await call('emerson','template-history')).versions.length>=3);
   const health=await call('admin','monitoring-check',{});pass('Admin connectivity checks exercise database, private storage and PDF conversion; token counts reflect no live AI usage',health.services.filter(s=>['Database','Private file storage','PDF converter'].includes(s.name)).every(s=>s.state==='healthy')&&health.ai.usage.requests===0);
   await writeFile(out+'/fixtures.json',JSON.stringify({proposalId:proposal.id,duplicateId:duplicate.id,incomingId:incoming.id,createdUser:created.user.id,run},null,2));
 }finally{database.close();await writeFile(out+'/checks.json',JSON.stringify(checks,null,2));}

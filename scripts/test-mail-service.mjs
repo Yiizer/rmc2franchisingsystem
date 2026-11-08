@@ -25,7 +25,7 @@ const ok = config => ({ at: new Date().toISOString(), providerId: 'fake', mode: 
 transport.setTestTransport(config => ({ send: async mail => { sends.push(mail); return behavior ? await behavior(config, mail) : ok(config, mail); } }));
 const fail = (code, uncertain = false) => async () => { throw new MailSendError(code, undefined, true, uncertain); };
 
-const users = await allUsers(), emerson = users.find(u => u.id === 'emerson'), admin = users.find(u => u.id === 'admin'), emp = users.find(u => u.id === 'cryssa');
+const users = await allUsers(), emerson = users.find(u => u.id === 'emerson'), admin = users.find(u => u.id === 'admin'), zeo = users.find(u => u.id === 'zeo'), emp = users.find(u => u.id === 'cryssa');
 mkdirSync(path.join(dir, 'files'), { recursive: true }); writeFileSync(path.join(dir, 'files', 'x.pdf'), '%PDF-1.4 test');
 const base = (await db.all('SELECT id FROM inquiries ORDER BY id')).map(r => r.id)[0];
 let counter = 0;
@@ -84,7 +84,8 @@ await check('failed -> retry -> uncertain blocks retry, then confirmSent matrix'
   assert.equal(r.status, 'Approved — sending'); assert.equal(r.mailUncertain, true); assert.equal(r.mailFailure, undefined); assert.equal(await outbox(id), 'uncertain');
   const calls = sends.length; await status(() => retry(id), 409); assert.equal(sends.length, calls, 'uncertain must never resend');
   const rev = (await inquiry(id)).revision;
-  await status(async () => svc.confirmSent(id, emerson, { revision: rev, reason: 'checked the inbox ok' }), 403);
+  /* Rule (permissions.ts canConfirmDelivery, since 2026-11-06): Admin and Head may confirm; a Supervisor (even an approver) and an Employee may not. */
+  await status(async () => svc.confirmSent(id, zeo, { revision: rev, reason: 'checked the inbox ok' }), 403);
   await status(async () => svc.confirmSent(id, emp, { revision: rev, reason: 'checked the inbox ok' }), 403);
   await rejectsZod(() => svc.confirmSent(id, admin, { revision: rev, reason: 'short' }));
   await status(async () => svc.confirmSent(id, admin, { revision: rev - 1, reason: 'checked the inbox ok' }), 409);
@@ -99,7 +100,7 @@ await check('confirmNotSent matrix and failed -> retry -> uncertain -> not sent 
   const id = await fresh(); behavior = fail('NETWORK'); await approve(id);
   behavior = fail('TIMEOUT', true); await retry(id);
   const rev = (await inquiry(id)).revision;
-  await status(async () => svc.confirmNotSent(id, emerson, { revision: rev, reason: 'it never arrived' }), 403);
+  await status(async () => svc.confirmNotSent(id, zeo, { revision: rev, reason: 'it never arrived' }), 403);
   await rejectsZod(() => svc.confirmNotSent(id, admin, { revision: rev, reason: 'no' }));
   const other = await fresh(); behavior = fail('NETWORK'); await approve(other);
   await status(async () => svc.confirmNotSent(other, admin, { revision: (await inquiry(other)).revision, reason: 'not uncertain at all' }), 409);
