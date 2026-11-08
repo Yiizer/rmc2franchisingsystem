@@ -8,6 +8,45 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## Pilot plan item 2: files over 4.5 MB (commit `071ef49`; live on the test version since 2026-11-09)
+
+Vercel caps a function's request and response at 4.5 MB. Files over 4 MB now skip the function both ways.
+- **Uploads:** `api()` in `app/operations-common.tsx` asks `POST uploads/start` for a signed upload link, sends the
+  file straight to private storage, and calls the normal route with `file__upload`. `resolveUploads`
+  (`lib/operations/large-files.ts`) swaps the real file back in before any existing check runs. This covers intake,
+  BOR transfer, template upload and Division Head progress reports, with no screen changes.
+  - Keys are built from the signed-in user, so nobody can claim another person's upload.
+  - Uploads expire after an hour, are deleted once used, and are capped at 15 MB (checked again after reading).
+  - Each person gets at most 20 upload links an hour, counted when issued and logged in `file_access` as
+    `upload-start`, and at most 10 unfinished uploads.
+  - The type comes from the extension; routes still check the bytes.
+- **Downloads:** after the route's permission check and the access log, a 302 to a 60-second signed link
+  (`no-store`, `no-referrer`, named for downloads). This covers the 12 private-file routes. Large email
+  attachments on Requests are parked under `transfer/down` and linked.
+- **Clean-up:** transfer files older than an hour are swept after workspace responses, at most every 10 minutes per
+  server.
+- **On this computer** nothing changes: there are no signed links, and files go through the app as before.
+- **Checked:**
+  - `scripts/test-large-files.mjs`: 10/10, local and simulated signed storage.
+  - `test-client-protection`: 48/48 over HTTP.
+  - **Online:** `scripts/large-files-check-online.mjs` 4/4.
+    - A 6.1 MB form is refused the old way (HTTP 413).
+    - The same form goes in through a signed link and became `INQ-2026-00161` (a fictional test inquiry). Its upload
+      id can't be reused.
+    - It downloads through the signed link byte for byte.
+    - Small files still download directly.
+  - **From the browser (as the Head):** the PUT to storage returned 200, and the PDF viewer's `fetch` follows the
+    redirect (6.1 MB), so storage allows the cross-site calls both ways.
+  - A security-engineer review found no critical or high issues. The medium findings are fixed: issued-link cap,
+    size re-check, scheduled sweep, type not taken from the browser.
+- **Known, not fixed:**
+  - Set the Supabase bucket's file size limit to 15 MB. It's a storage setting, **left for PO approval**.
+  - Two parallel requests with the same upload id could both use it (the person's own file, low risk).
+  - The upload is consumed before the route's own permission and validation checks, so a refused file has to be
+    chosen again.
+  - Excel form previews over 4.5 MB still go through the function.
+  - A real template over 4 MB hasn't been uploaded yet.
+
 ## Pilot plan item 8: dark mode (commits `4e22f2b`, `891e214`; live on the test version since 2026-11-09)
 
 - **Choice:** Light, Dark or System (default System). It's on the login screen (icons, top right) and in
@@ -457,7 +496,7 @@ Decisions are in `TEAM_DECISIONS.md` (Monitoring feedback round 2026-11-08b).
   - template upload/publish;
   - the auto-import of an emailed form (someone has to email the sample form to the test inbox);
   - the send-failure, cap and inbox-down cases;
-  - files over 4.5 MB (phase 5);
+  - ~~files over 4.5 MB (phase 5)~~ done 2026-11-09, see "Pilot plan item 2" at the top;
   - concurrent users and a cold start.
 
 **Online app in a real browser.** Online, everything so far was driven through the API only.
@@ -471,10 +510,10 @@ Decisions are in `TEAM_DECISIONS.md` (Monitoring feedback round 2026-11-08b).
 - [ ] Request missing details (sends an email).
 - [ ] Decline, a duplicate-client hold, and the supervisor's decision on the duplicate.
 - [ ] Progress reports with attachments, and BOR / agent transfer.
-- [ ] Template admin online: upload, preview, publish. Template files over 4.5 MB will fail online.
+- [ ] Template admin online: upload, preview, publish. (Large template uploads now go through signed links, so they're no longer capped at 4.5 MB; not yet tried with a real template over 4 MB.)
 - [ ] Users & roles, account settings and password change, notifications, and the monitoring page.
-- [ ] Downloads over about 4.5 MB (large PDFs and .eml files). These likely fail online until phase 5.
-- [ ] Uploads over 4.5 MB. These are refused online; this is known.
+- [x] Downloads over about 4.5 MB: a 302 to a 60-second signed link (2026-11-09, `scripts/large-files-check-online.mjs`).
+- [x] Uploads over 4.5 MB: through a signed upload link (2026-11-09, same script, and from the browser).
 
 **Email edge cases, with real Gmail.**
 - [ ] A send failure and an "uncertain" send, with the admin confirming or retrying.
@@ -538,8 +577,7 @@ The full specialist reviews were deferred. Run all of them together over everyth
 ## 3. Product and migration phases still open (`MIGRATION_PLAN.md`)
 
 - [ ] **Phase 5 (rest).**
-  - Signed download links for browsers: PDFs over about 4.5 MB can't be downloaded through the app on Vercel yet.
-  - Signed uploads for files over 4.5 MB: uploads up to 7/15 MB are refused online today.
+  - ~~Signed download and upload links for files over 4.5 MB~~ done 2026-11-09 (commit `071ef49`).
   - The "export from Word and upload" fallback.
   - Font mapping (Arial → Liberation Sans).
   - **Client sign-off on the sample PDFs** in `test-results/proofs/vercel-pdf/out`.
