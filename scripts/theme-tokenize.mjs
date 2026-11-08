@@ -17,8 +17,9 @@ const APP = 'app', OUT = path.join(APP, 'operations-theme-dark.css');
 const check = process.argv.includes('--check');
 const files = readdirSync(APP).filter(f => f.endsWith('.css') && f !== path.basename(OUT)).sort();
 
-/** Paper-like areas that must stay light in dark mode: proposal documents, PDFs, spreadsheets, email previews. */
-export const KEEP_LIGHT = ['.ops-keep-light', '.ops-doc-paper', '.ops-doc-page', '.ops-saved-pdf-pages', '.ops-pdf-preview', '.ops-submitted-pdf', '.ops-sheet-viewport', '.ops-et-preview'];
+/** Paper-like areas that must stay light in dark mode: proposal documents, PDFs, spreadsheets, email previews.
+    Saved-PDF pages are canvases (always light), so their frame and status line follow the theme. */
+export const KEEP_LIGHT = ['.ops-keep-light', '.ops-doc-paper', '.ops-doc-page', '.ops-pdf-preview', '.ops-submitted-pdf', '.ops-sheet-viewport', '.ops-et-preview'];
 /** Hand-tuned dark values, keyed by variable name. */
 const OVERRIDES = {
   '--dk-bg-f5f7fc': '#0f1622', '--dk-bg-f7f8fc': '#0f1622', '--dk-bg-f5f7fa': '#0f1622', // page canvas
