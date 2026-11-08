@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { allUsers, AppError, db, passwordHash, passwordMatches, tokenHash, transaction } from './database';
+import { allUsers, AppError, checkPassword, db, hashPassword, tokenHash, transaction } from './database';
 import type { Staff } from './types';
 import { DIVISIONS, STAFF_ROLES, canApproveProposal, canBeApprover, canManageAccounts, canResetPassword, isOwnerScoped } from './permissions';
 
@@ -8,12 +8,17 @@ export async function securityEvent(user:Staff,action:string){await db.run('INSE
 export const username=z.string().trim().min(3).max(50).regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,'Use letters, numbers, dots, dashes or underscores.').transform(value=>value.toLowerCase());
 const newPassword=z.string().min(14,'Use at least 14 characters.').max(200).refine(value=>!['Rmc2Local!2026','passwordpassword','12345678901234'].includes(value),'Choose a unique password.');
 export async function unique(login:string,except?:string){if((await allUsers()).some(user=>user.id!==except&&[user.username||user.id,user.email].some(value=>value.toLowerCase()===login.toLowerCase())))throw new AppError('That username or email is already in use.',409);}
-const RATE_WINDOW_MS=15*60000,RATE_MAX_ATTEMPTS=8;
+// Sign-in limits per 15 minutes (REMAINING_WORK §2 security):
+//  * per account: 8 attempts, counted on the account itself, so "emerson" and "emerson@rmc2.local" share one count;
+//  * per IP address: 60 attempts (a whole office may share one address), which a correct password does not reset;
+//  * site-wide: 300 wrong passwords. This stops a spread-out guessing run, at the cost that such a run can make
+//    everyone wait 15 minutes. A Vercel Firewall rate-limit rule in front is the better first line in production.
+const RATE_WINDOW_MS=15*60000,RATE_MAX_ATTEMPTS=8,IP_MAX_ATTEMPTS=60,GLOBAL_MAX_FAILURES=300,GLOBAL_KEY='login-failures:all';
 // Counts this attempt BEFORE the password is checked, in one atomic statement (INSERT ... ON CONFLICT DO UPDATE ... RETURNING,
 // the same on SQLite and Postgres), so parallel guesses cannot all slip through a check-then-record gap: at most
 // RATE_MAX_ATTEMPTS attempts per window are ever verified, the next one gets 429 and the block lasts 15 minutes.
 // The window restarts 15 minutes after its first attempt; a successful sign-in deletes the row.
-export async function checkRate(key:string){
+export async function checkRate(key:string,max=RATE_MAX_ATTEMPTS){
   const now=Date.now(),W=RATE_WINDOW_MS;
   const row=await db.get<{blocked_until:number}>(`INSERT INTO auth_attempts (key,failures,window_start,blocked_until) VALUES (?,1,CAST(? AS BIGINT),0)
     ON CONFLICT(key) DO UPDATE SET
@@ -21,24 +26,38 @@ export async function checkRate(key:string){
       window_start=CASE WHEN auth_attempts.blocked_until<=CAST(? AS BIGINT) AND CAST(? AS BIGINT)-auth_attempts.window_start>${W} THEN CAST(? AS BIGINT) ELSE auth_attempts.window_start END,
       blocked_until=CASE WHEN auth_attempts.blocked_until>CAST(? AS BIGINT) THEN auth_attempts.blocked_until
         WHEN CAST(? AS BIGINT)-auth_attempts.window_start>${W} THEN 0
-        WHEN auth_attempts.failures+1>${RATE_MAX_ATTEMPTS} THEN CAST(? AS BIGINT)+${W} ELSE 0 END
+        WHEN auth_attempts.failures+1>${max} THEN CAST(? AS BIGINT)+${W} ELSE 0 END
     RETURNING blocked_until`,key,now,now,now,now,now,now,now,now,now);
   if(row&&Number(row.blocked_until)>now)throw new AppError('Too many attempts. Wait 15 minutes before trying again.',429);
 }
-export async function authenticate(input:unknown){
+/** Read-only: refuses while a key is blocked, without counting this attempt. */
+async function refuseIfBlocked(key:string){
+  const row=await db.get<{blocked_until:number}>('SELECT blocked_until FROM auth_attempts WHERE key=?',key);
+  if(row&&Number(row.blocked_until)>Date.now())throw new AppError('Too many attempts. Wait 15 minutes before trying again.',429);
+}
+/** Rows whose window and block are both over carry no information; drop them so the table stays small. */
+export async function pruneAttempts(){const old=Date.now()-RATE_WINDOW_MS;await db.run('DELETE FROM auth_attempts WHERE blocked_until<CAST(? AS BIGINT) AND window_start<CAST(? AS BIGINT)',Date.now(),old);}
+const loginKey=(id:string)=>'login-user:'+id;
+/** `ip` is the caller's address when known (Vercel's x-forwarded-for); locally it is usually absent. */
+export async function authenticate(input:unknown,ip=''){
   const body=z.object({email:z.string().trim().min(1).max(254),password:z.string().min(1).max(200)}).strict().parse(input);
-  const key='login:'+tokenHash(body.email.toLowerCase());await checkRate(key);
-  const row=(await db.all('SELECT data,password FROM users') as {data:string;password:string}[]).find(row=>{const user:Staff=JSON.parse(row.data);return [user.email,user.username||user.id].some(value=>value.toLowerCase()===body.email.toLowerCase());});
+  if(Math.random()<0.05)await pruneAttempts();
+  await refuseIfBlocked(GLOBAL_KEY);
+  if(ip)await checkRate('login-ip:'+tokenHash(ip),IP_MAX_ATTEMPTS);
+  const typed=body.email.toLowerCase();
+  const row=(await db.all('SELECT data,password FROM users') as {data:string;password:string}[]).find(row=>{const user:Staff=JSON.parse(row.data);return [user.email,user.username||user.id].some(value=>value.toLowerCase()===typed);});
+  // Known accounts count on the account; unknown names on the typed text. Both answer the same way, so this tells nobody which names exist.
+  const key=row?loginKey(JSON.parse(row.data).id):'login:'+tokenHash(typed);await checkRate(key);
   // Constant-cost password verification also applies to unknown usernames.
   const fallback='00000000000000000000000000000000:'+ '00'.repeat(64);
-  const valid=passwordMatches(body.password,row?.password||fallback);
-  if(!row||!valid||!JSON.parse(row.data).active){throw new AppError('The username or password is incorrect.',401);}
+  const valid=await checkPassword(body.password,row?.password||fallback);
+  if(!row||!valid||!JSON.parse(row.data).active){await checkRate(GLOBAL_KEY,GLOBAL_MAX_FAILURES).catch(()=>{});throw new AppError('The username or password is incorrect.',401);}
   await db.run('DELETE FROM auth_attempts WHERE key=?',key);return JSON.parse(row.data) as Staff;
 }
 export async function verifyCurrent(user:Staff,password:string){
   const key='settings:'+user.id;await checkRate(key);
   const row=await db.get('SELECT password FROM users WHERE id=?',user.id) as {password:string};
-  if(!passwordMatches(password,row.password)){throw new AppError('Your current password is incorrect.',403);}
+  if(!(await checkPassword(password,row.password))){throw new AppError('Your current password is incorrect.',403);}
   await db.run('DELETE FROM auth_attempts WHERE key=?',key);
 }
 export async function updateOwnAccount(user:Staff,input:unknown){
@@ -53,7 +72,7 @@ export async function updateOwnAccount(user:Staff,input:unknown){
     if(!current?.active)throw new AppError('This account is no longer active.',403);
     await unique(body.username,user.id);const updated={...current,username:body.username,mustChangePassword:false};
     await db.run('UPDATE users SET data=? WHERE id=?',JSON.stringify(updated),user.id);
-    if(body.password)await db.run('UPDATE users SET password=? WHERE id=?',passwordHash(body.password),user.id);
+    if(body.password)await db.run('UPDATE users SET password=? WHERE id=?',await hashPassword(body.password),user.id);
     await db.run('DELETE FROM sessions WHERE user_id=?',user.id);
     await db.run('DELETE FROM inquiry_activity WHERE user_id=?',user.id);
     await securityEvent(user,'Changed own account credentials; all sessions revoked');return updated;
@@ -76,7 +95,7 @@ export async function createAccount(user:Staff,input:unknown){
     await unique(body.username);await unique(body.email);
     const temporaryPassword=randomBytes(18).toString('base64url');
     const person:Staff={id:randomUUID(),name:body.name,username:body.username,email:body.email.toLowerCase(),role:body.role,position:body.position,canApprove:extra.canApprove,active:true,mustChangePassword:true,...(extra.division?{division:extra.division}:{}),...(body.phone?{phone:body.phone}:{})};
-    await db.run('INSERT INTO users (id,data,password) VALUES (?,?,?)',person.id,JSON.stringify(person),passwordHash(temporaryPassword));
+    await db.run('INSERT INTO users (id,data,password) VALUES (?,?,?)',person.id,JSON.stringify(person),await hashPassword(temporaryPassword));
     await securityEvent(user,'Created staff account '+person.id+' ('+person.role+')');return {user:person,temporaryPassword};
   });
 }
@@ -120,13 +139,13 @@ export async function resetPassword(user:Staff,input:unknown){
     // approvers (Head, Supervisor) and Division Heads / SOAs, who own clients, are reset by the Head.
     if(user.role==='Admin'&&target.role!=='Employee')throw new AppError('Ask the Head to reset this account.',403);
     const temporaryPassword=randomBytes(18).toString('base64url'),updated:Staff={...target,mustChangePassword:true};
-    await db.run('UPDATE users SET data=?,password=? WHERE id=?',JSON.stringify(updated),passwordHash(temporaryPassword),target.id);
+    await db.run('UPDATE users SET data=?,password=? WHERE id=?',JSON.stringify(updated),await hashPassword(temporaryPassword),target.id);
     await db.run('DELETE FROM sessions WHERE user_id=?',target.id);await db.run('DELETE FROM inquiry_activity WHERE user_id=?',target.id);
     await clearAttempts(target);
     await securityEvent(user,'Reset password and signed out '+target.id);return {user:updated,temporaryPassword};
   });
 }
-export async function clearAttempts(target:Staff){for(const login of new Set([target.email,target.username||target.id]))await db.run('DELETE FROM auth_attempts WHERE key=?','login:'+tokenHash(login.toLowerCase()));await db.run('DELETE FROM auth_attempts WHERE key=?','settings:'+target.id);}
+export async function clearAttempts(target:Staff){for(const login of new Set([target.email,target.username||target.id]))await db.run('DELETE FROM auth_attempts WHERE key=?','login:'+tokenHash(login.toLowerCase()));await db.run('DELETE FROM auth_attempts WHERE key=?',loginKey(target.id));await db.run('DELETE FROM auth_attempts WHERE key=?','settings:'+target.id);}
 /** Head and Admin: clears the sign-in lockout (too many wrong passwords) without changing the password. */
 export async function unlockAccount(user:Staff,input:unknown){
   if(!canResetPassword(user))throw new AppError('You cannot unlock accounts.',403);

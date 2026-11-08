@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { AppError, db, passwordHash, transaction } from './database';
+import { AppError, db, hashPassword, transaction } from './database';
 import { isAppError } from './errors';
 import { canManageDivisionSoas } from './permissions';
 import { checkRate, clearAttempts, phoneField, securityEvent, unique, username, verifyCurrent } from './accounts';
@@ -47,7 +47,7 @@ export async function createSoa(session: Staff, input: unknown) {
     try { await unique(body.username); await unique(body.email); } catch (error) { if (isAppError(error) && error.status === 409) throw new AppError('Choose a different username or email.', 409); throw error; }
     const temporaryPassword = randomBytes(18).toString('base64url');
     const person: Staff = { id: randomUUID(), name: body.name, username: body.username, email: body.email.toLowerCase(), role: 'SOA', position: body.position, canApprove: false, active: true, mustChangePassword: true, division: head.division, ...(body.phone ? { phone: body.phone } : {}) };
-    await db.run('INSERT INTO users (id,data,password) VALUES (?,?,?)', person.id, JSON.stringify(person), passwordHash(temporaryPassword));
+    await db.run('INSERT INTO users (id,data,password) VALUES (?,?,?)', person.id, JSON.stringify(person), await hashPassword(temporaryPassword));
     await securityEvent(head, 'Created SOA account ' + person.id + ' in ' + head.division);
     return { user: member(person), temporaryPassword };
   });
@@ -76,7 +76,7 @@ export async function resetSoaPassword(session: Staff, id: string, input: unknow
     await db.lock('users-admin');
     await actingHead(session);
     const target = await ownSoa(head, id), temporaryPassword = randomBytes(18).toString('base64url'), updated: Staff = { ...target, mustChangePassword: true };
-    await db.run('UPDATE users SET data=?,password=? WHERE id=?', JSON.stringify(updated), passwordHash(temporaryPassword), target.id);
+    await db.run('UPDATE users SET data=?,password=? WHERE id=?', JSON.stringify(updated), await hashPassword(temporaryPassword), target.id);
     await db.run('DELETE FROM sessions WHERE user_id=?', target.id); await db.run('DELETE FROM inquiry_activity WHERE user_id=?', target.id);
     await clearAttempts(target);
     await securityEvent(head, 'Reset password and signed out SOA ' + target.id + ' in ' + head.division);

@@ -3,7 +3,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
-import { randomUUID, randomBytes, scryptSync, createHash, timingSafeEqual } from 'node:crypto';
+import { randomUUID, randomBytes, scrypt, scryptSync, createHash, timingSafeEqual } from 'node:crypto';
 import type { CatalogTemplate, InquiryRecord, Notice, Staff } from './types';
 import { defaultEmail } from './types';
 import { isOwnerScoped } from './permissions';
@@ -124,6 +124,10 @@ export async function lockInquiryRows(ids:string[]) {
 export function jsonParam(value:unknown):string { return db.dialect==='postgres'?JSON.stringify(value,(_key,item)=>typeof item==='string'?item.replace(/\u0000/g,''):item):JSON.stringify(value); }
 export function passwordHash(password: string) { const salt=randomBytes(16).toString('hex');return salt+':'+scryptSync(password,salt,64).toString('hex'); }
 export function passwordMatches(password: string, stored: string) { const [salt,hash]=stored.split(':');const actual=scryptSync(password,salt,64),expected=Buffer.from(hash,'hex');return actual.length===expected.length&&timingSafeEqual(actual,expected); }
+/** Same hash as passwordHash, without blocking the server while it runs (sign-in, password changes). */
+const scryptAsync=(password:string,salt:string)=>new Promise<Buffer>((resolve,reject)=>scrypt(password,salt,64,(error,key)=>error?reject(error):resolve(key)));
+export async function hashPassword(password: string) { const salt=randomBytes(16).toString('hex');return salt+':'+(await scryptAsync(password,salt)).toString('hex'); }
+export async function checkPassword(password: string, stored: string) { const [salt,hash]=stored.split(':');const actual=await scryptAsync(password,salt),expected=Buffer.from(hash,'hex');return actual.length===expected.length&&timingSafeEqual(actual,expected); }
 export const tokenHash=(token:string)=>createHash('sha256').update(token).digest('hex');
 export async function allUsers():Promise<Staff[]> { return (await db.all<{data:string}>('SELECT data FROM users')).map(r=>JSON.parse(r.data)); }
 export async function inquiries():Promise<InquiryRecord[]> { return (await db.all<{data:string}>('SELECT data FROM inquiries')).map(r=>JSON.parse(r.data) as InquiryRecord).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)); }
