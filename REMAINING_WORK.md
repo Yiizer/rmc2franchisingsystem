@@ -8,6 +8,19 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## Settings tabs and the top-bar theme toggle (commit `da3d7ca`; live on the test version since 2026-11-09)
+
+- **Settings** (`app/operations-settings.tsx`) is split into Profile, Security, Notifications and Email templates
+  tabs. Accounts that must set a password see only Security. Username and password save separately through the
+  same `account-settings` call, and both still sign out every session.
+- **Theme:** the Appearance card is gone. A sun/moon toggle sits in the top bar and on the sign-in screen. With
+  nothing saved, the app still follows the device setting.
+- **Checked:**
+  - Locally: typecheck, `theme:check` and the browser in light, dark and at 375 px.
+  - **Online** (deployment `rmc2-preview-d13156rny`, aliased to rmc2-test): read-only check only. The page loads
+    (200), the new Settings and toggle text is in the served bundle, the old Appearance text is not, and the API
+    still refuses requests that aren't signed in (401). Nobody signed in online for this check.
+
 ## Pilot plan item 2: files over 4.5 MB (commit `071ef49`; live on the test version since 2026-11-09)
 
 Vercel caps a function's request and response at 4.5 MB. Files over 4 MB now skip the function both ways.
