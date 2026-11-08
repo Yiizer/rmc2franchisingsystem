@@ -8,6 +8,29 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## Pilot plan item 6: error tracking (commit `0d9afe6`; live on the test version since 2026-11-09)
+
+PO decision 2026-11-09: use our own logging, not an outside service (no Sentry account, no cost).
+
+- **What it does:** uncaught errors, unhandled promise rejections and screens that fail to draw are logged
+  automatically into the same `problem_reports` table. No migration was needed: an app error is a row whose id
+  starts with `err-` and whose data has `kind: 'error'`. The Head and Admin see them on the **App errors** tab of
+  Problem reports, with a count, first and last time, who hit it, the page, the open inquiry, the app version,
+  the window, the browser and a short stack.
+- **Limits:** one entry per distinct error per app version. Repeats add to its count, and an error marked Fixed
+  that happens again is reopened as New. At most 20 new error entries per person a day; these do not count
+  against the 30 typed reports. The browser sends at most 5 per page load, ignores browser-extension errors,
+  "Script error." and ResizeObserver noise, and skips server answers that were already shown to the person.
+  Stacks keep 12 frames without the site address or query strings. Form contents are never sent.
+- **Blank screens:** `app/error.tsx` now shows "Something went wrong on this screen" with Try again and
+  Reload page, and logs the error.
+- **Checks:** `scripts/test-problem-reports.mjs` 11/11 (4 new: dedupe and count, reopen after fixed, refused
+  input, the daily cap). Locally on `next start`: an uncaught error and an unhandled promise were both logged
+  and shown on the tab. Online as the Head: a deliberate test error was logged with version `0d9afe6`, shown on
+  the tab, and marked Fixed.
+- **Not checked:** the "Something went wrong" screen was built and compiled but not triggered in a browser
+  (no screen currently fails to draw). It will show the first time one does.
+
 ## Pilot plan item 5: Report a problem (live on the test version since 2026-11-08)
 
 - **Migration `20261108000000` applied to TEST** (PO approved 2026-11-08) with the new `scripts/apply-migration-test.mjs`: one file, in a transaction, test project only. Afterwards:
