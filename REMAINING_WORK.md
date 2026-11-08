@@ -467,6 +467,24 @@ Decisions are in `TEAM_DECISIONS.md` (Monitoring feedback round 2026-11-08b).
 
 ## 0. Built but never tested (try these first)
 
+**Second online check, 2026-11-09 (`scripts/section0-more-online.mjs`): 6/6 passed through the API on the TEST version, plus browser checks.**
+- Fictional data only. No email was sent.
+- **Passed:**
+  - **BOR transfer:** an Employee (Jefferson) asked for the agent change on a held request (`INQ-2026-00168`). It waited for approval, Zeo approved it, `INQ-2026-00167` became Transferred and the new request was clear. The inquiry page shows "Client assigned by verified BOR".
+  - **Template admin:** a copy of D054 was uploaded as a new template, the preview PDF came back (17 pages), an Employee was refused publishing (403), the Head published it, Employees saw it, then it was retired again. It stays in the list as a retired "Online Check Plan".
+  - **Accounts:** the Head created an Employee. On the temporary password the account sees only an empty shell (no inquiries, no templates; the directory is 403). It set its own password, the temporary one stopped working, and once the Head deactivated it, sign-in failed (401).
+  - **Notifications:** list, then mark all read.
+  - **Two people at once:** two agents sent the same new client at the same moment. Both got their own reference and exactly one was held. Two staff pressed Start handling together: one got it, the other was told who is handling it (423).
+- **In the browser online (signed in as the Head):**
+  - **Requests:** both tabs, "Check mail now" ("No new email"), a newsletter skipped automatically, and a form imported automatically.
+  - **Automatic import of an emailed Excel form** had already happened: the email of 2026-11-06 became `INQ-2026-00154`.
+  - **Phone (375px) and tablet (768px):** 17 pages at 375px and 15 at 768px, with no page scroll and no error alert. Wide parts (status tab strips, tables) scroll inside their own box.
+- **Real local data (`.data`):** backed up to `D:Codescoverdesk-data-backup-20261109` (outside the repo) first. Started once with `next start` on port 5173; mail stays on this computer. Sign-in, bootstrap (12 inquiries), workspace, directory, Monitoring, divisions, email templates, Requests and opening an inquiry all work. The upgrade wrote to `rmc2.sqlite-wal`.
+- **Issues found:**
+  - [x] **F6, fixed:** the footer said "Saved on the local server" on the online version. It now says "Saved online" there and "Saved on this computer" locally.
+  - [ ] **F7, needs a PO decision:** in the real local data, Emerson is still a **Supervisor**, not the Head, and there is no Head account. So nobody there can manage accounts, divisions, templates or problem reports. The online test version was changed separately. Changing it is an edit to real account data, so it waits for approval. It matters only if this copy is used again, or imported at cutover.
+- **Left on the TEST database:** `INQ-2026-00162` to `00168` (fictional, wiped at cutover). Three deactivated accounts `check.11081953`, `check.11081955` and `check.11081957`: accounts are **kept** at cutover, so delete them with the demo accounts (item 4).
+
 **Online check, 2026-11-08 (`scripts/pilot-check-online.mjs`): 9/9 passed through the API on the TEST version.**
 - Fictional data only, with 3 emails sent to the test inbox.
 - The checks fell over twice along the way, and both times the cause was the script, not the app:
@@ -519,18 +537,18 @@ Decisions are in `TEAM_DECISIONS.md` (Monitoring feedback round 2026-11-08b).
   - concurrent users and a cold start.
 
 **Online app in a real browser.** Online, everything so far was driven through the API only.
-- [ ] The Requests page: layout, "Check mail now", the error notes, "Imported automatically".
-- [ ] **Automatic import of an emailed Excel form, end to end.** Use the sample form in `test-results/Franchise-Form-Mabini-Integrated-School.xlsx`.
+- [x] The Requests page: layout, "Check mail now", "Imported automatically" (2026-11-09). The error notes were not seen: no failing email arrived.
+- [x] **Automatic import of an emailed Excel form, end to end** (`INQ-2026-00154`, 2026-11-06). Use the sample form in `test-results/Franchise-Form-Mabini-Integrated-School.xlsx`.
 - [ ] An emailed PDF goes to Requests, then **Create inquiry** by hand.
-- [ ] Phone and tablet layout of the online version. This was tested locally only.
+- [x] Phone and tablet layout of the online version (2026-11-09, 375px and 768px).
 
 **Online workflow steps never run.** Only import → PDF → submit → approve → send has been verified.
-- [ ] Supervisor returns a proposal, then the employee corrects and resubmits.
-- [ ] Request missing details (sends an email).
-- [ ] Decline, a duplicate-client hold, and the supervisor's decision on the duplicate.
-- [ ] Progress reports with attachments, and BOR / agent transfer.
-- [ ] Template admin online: upload, preview, publish. (Large template uploads now go through signed links, so they're no longer capped at 4.5 MB; not yet tried with a real template over 4 MB.)
-- [ ] Users & roles, account settings and password change, notifications, and the monitoring page.
+- [x] Supervisor returns a proposal, then the employee corrects and resubmits (2026-11-08, API).
+- [x] Request missing details (sends an email) (2026-11-08, API).
+- [x] Decline, a duplicate-client hold, and the supervisor's decision on the duplicate (2026-11-08, API and browser).
+- [x] Progress reports with attachments (2026-11-08) and BOR / agent transfer (2026-11-09). The expired-registration transfer was not run online: it needs a registration that has really expired.
+- [x] Template admin online: upload, preview, publish, retire (2026-11-09). (Large template uploads now go through signed links, so they're no longer capped at 4.5 MB; not yet tried with a real template over 4 MB.)
+- [x] Users & roles, account settings and password change, notifications, and the monitoring page (2026-11-09).
 - [x] Downloads over about 4.5 MB: a 302 to a 60-second signed link (2026-11-09, `scripts/large-files-check-online.mjs`).
 - [x] Uploads over 4.5 MB: through a signed upload link (2026-11-09, same script, and from the browser).
 
@@ -542,9 +560,9 @@ Decisions are in `TEAM_DECISIONS.md` (Monitoring feedback round 2026-11-08b).
 - [ ] Inbox unreachable, or the app password revoked.
 
 **Data and environment.**
-- [ ] **The real data (`.data`, port 5173) has never run the phase 2–4 code.** Back up `.data` first, then start the local app once and check it.
+- [x] **The real data (`.data`, port 5173) has run the new code once (2026-11-09; see F7).** Back up `.data` first, then start the local app once and check it.
 - [x] The historical client directory is loaded online (2026-11-06) and the directory filters were checked there.
-- [ ] Two or more people using the online version at the same time. The stress tests were stopped part-way.
+- [~] Two or more people using the online version at the same time: two same-moment races pass (2026-11-09). The full stress tests T1–T10 are in §2. The stress tests were stopped part-way.
 - [ ] A cold start after the free Supabase project pauses (it pauses after 7 idle days).
 
 ## 1. Must do before sharing the online link with anyone else
