@@ -339,9 +339,9 @@ Decisions are in `TEAM_DECISIONS.md` (Monitoring feedback round 2026-11-08b).
     - **Checked locally on port 5197** (a fresh QA data dir with `next start`): open, reload, a hash link while signed in, an unknown id, the sidebar, and a link while signed out.
     - **Checked online** on `rmc2-preview-i345ttcjq-yiizer.vercel.app` (aliased to rmc2-test): `#inquiry/INQ-2026-00155` opens and survives a reload.
     - **Not checked:** a supervisor opening an Awaiting-approval inquiry from a link. There was no such record, and the routing rule is unchanged.
-  - [ ] **F2, minor:** Client Directory at 375px squeezes two filter dropdowns to bare arrows.
-  - [ ] **F3, minor:** at about 960px wide (a tablet, or a narrow window), the "Sent" status card on the review step wraps into a tall narrow column. It is fine at 1366px.
-  - [ ] **F4, noise:** every page load requests `GET my-clients` first (the owner check). Staff get a 404, which shows as a console error. Harmless, but it clutters error tracking (item 6).
+  - [x] **F2, fixed in `b989a19`:** the dropdowns now wrap two to a row on phones (checked locally at 375px). Before: Client Directory at 375px squeezes two filter dropdowns to bare arrows.
+  - [x] **F3, fixed in `b989a19`:** the card now stacks by its own width (a container query). Checked online at 964px: one column, headline at full width. Before: at about 960px wide (a tablet, or a narrow window), the "Sent" status card on the review step wraps into a tall narrow column. It is fine at 1366px.
+  - [x] **F4, fixed in `b989a19`:** `GET session` returns only `scoped`. Checked locally (staff 200 with no `my-clients` call; the Division Head still gets My Clients) and online (staff load: `session` 200, no 404). Before: every page load requests `GET my-clients` first (the owner check). Staff get a 404, which shows as a console error. Harmless, but it clutters error tracking (item 6).
   - [x] **F5, PO decided "Require company name" (2026-11-08).** A hold now needs the same company or the same file. A shared contact name alone no longer holds.
     - Checks: `test-duplicate-company-rule` 4/4 (new), and `test-client-protection` 48/48 on a QA `next start` server on port 5190.
     - Three test steps assumed the old rule and were updated: the name-only hold, the false-match clearance (now on a same-company record), and the PDF save step.
