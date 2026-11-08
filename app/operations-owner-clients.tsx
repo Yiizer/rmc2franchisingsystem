@@ -59,7 +59,7 @@ export default function MyClients({ clients, loading, error, onRetry, onOpen, on
         : !list.length ? <div className="ops-oc-empty"><Users size={28} aria-hidden="true" /><h3>No clients yet</h3><p>When you submit an inquiry, the client will show up here with its protection dates.</p><button className="ops-btn primary" onClick={onSubmit}><Upload size={16} />Submit inquiry</button></div>
         : !shown.length ? <div className="ops-oc-empty"><Search size={28} aria-hidden="true" /><h3>No clients match</h3><p>Try a different name or clear the filters.</p><button className="ops-btn" onClick={clear}>Clear filters</button></div>
         : <div className={error ? 'ops-oc-dim' : ''}>
-          <div className="ops-table-scroll ops-oc-table-wrap"><table className="ops-table ops-inquiry-table ops-oc-inq-table"><thead><tr><th>Account</th><th>Status</th><th>Received</th><th>Updated</th></tr></thead>
+          <div className="ops-table-scroll ops-oc-table-wrap"><table className="ops-table ops-inquiry-table ops-oc-inq-table"><thead><tr><th>Inquiry</th><th>Status</th><th>Received</th><th>Updated</th></tr></thead>
             <tbody>{slice.map(c => <tr key={c.id} tabIndex={0} role="link" aria-label={'Open ' + c.client} onClick={() => onOpen(c.id)} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onOpen(c.id); } }}>
               <td data-label="Account"><b className="ops-account">{c.client}</b><small>{sub(c)}</small><small>Protection: {protectionView(c, now).text}</small></td>
               <td data-label="Status"><OwnerStatus value={c.status} />{hasPendingReport(c) && <small>Progress report under review</small>}</td>

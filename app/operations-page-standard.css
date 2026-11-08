@@ -1,0 +1,57 @@
+/* One page standard for every screen, taken from the staff Dashboard (PO, 2026-11-09): page heading, cards, tables
+   and status tabs look the same in the staff app and the Division Head / SOA portal. Component tokens first, then
+   the rules. The prefix ".ops-app .ops-body .ops-main" outranks the per-page files, whatever order they load in.
+   Colours are existing tokens only, so dark mode follows (npm run theme:check). */
+.ops-app{
+  --page-title-size:28px;--page-title-weight:750;--page-title-tracking:-.01em;
+  --page-sub-size:14px;--page-sub-color:var(--dk-text-526780,#526780);--page-head-gap:24px;
+  --page-card-radius:12px;--page-card-line:var(--dk-line-dce4ef,#dce4ef);
+  --page-card-head-pad:18px 20px;--page-card-head-sub:12px;
+  --page-th-bg:var(--dk-bg-f7f9fc,#f7f9fc);--page-th-ink:var(--dk-text-4b627d,#4b627d);--page-th-size:11px;--page-th-tracking:.04em;--page-th-pad:18px 20px;
+  --page-td-size:14px;--page-td-pad:22px 20px;--page-row-line:var(--dk-line-e0e7f0,#e0e7f0);--page-row-hover:var(--dk-bg-fafcff,#fafcff);
+  --page-tab-ink:var(--dk-text-526780,#526780);--page-tab-active-ink:var(--dk-text-102343,#102343);--page-tab-accent:var(--dk-line-d14a0b,#d14a0b);
+}
+
+/* ---------- Page heading ---------- */
+.ops-app .ops-body .ops-main :is(.ops-heading,.dir-page-heading,.ops-oc-heading,.pd-title,.ops-settings-head) h1{font-size:var(--page-title-size);font-weight:var(--page-title-weight);letter-spacing:var(--page-title-tracking);line-height:1.2;margin:0}
+.ops-app .ops-body .ops-main :is(.ops-heading,.dir-page-heading,.ops-oc-heading,.pd-title,.ops-settings-head) h1+p,
+.ops-app .ops-body .ops-main :is(.ops-heading,.dir-page-heading,.ops-oc-heading,.pd-title,.ops-settings-head)>div>p:first-of-type{font-size:var(--page-sub-size);color:var(--page-sub-color);margin-top:7px}
+.ops-app .ops-body .ops-main>.ops-heading,.ops-app .ops-body .ops-main>div>.ops-heading:first-child{margin-bottom:var(--page-head-gap)}
+
+/* ---------- Cards ---------- */
+.ops-app .ops-body .ops-main .ops-card,.ops-app .ops-body .ops-main .dir-register{border-radius:var(--page-card-radius);box-shadow:none;border-color:var(--page-card-line)}
+.ops-app .ops-body .ops-main .dir-register{overflow:hidden}
+.ops-app .ops-body .ops-main .ops-card-head{padding:var(--page-card-head-pad)}
+.ops-app .ops-body .ops-main .ops-card-head p{font-size:var(--page-card-head-sub);color:var(--page-sub-color);margin:4px 0 0}
+
+/* ---------- Tables (desktop; phone layouts keep their own card rows) ---------- */
+@media(min-width:761px){
+  .ops-app .ops-body .ops-main :is(.dir-table,.ops-table) thead th{background:var(--page-th-bg);color:var(--page-th-ink);font-size:var(--page-th-size);letter-spacing:var(--page-th-tracking);text-transform:uppercase;font-weight:500;padding:var(--page-th-pad);text-align:left;white-space:nowrap}
+  .ops-app .ops-body .ops-main :is(.dir-table,.ops-table) tbody :is(td,th){font-size:var(--page-td-size);padding:var(--page-td-pad);vertical-align:middle;border-top:0;border-bottom:1px solid var(--page-row-line);line-height:1.45}
+  .ops-app .ops-body .ops-main :is(.dir-table,.ops-table) tbody tr:last-child :is(td,th){border-bottom:0}
+  .ops-app .ops-body .ops-main :is(.dir-table,.ops-table) tbody tr:hover :is(td,th){background:var(--page-row-hover)}
+  .ops-app .ops-body .ops-main :is(.dir-table,.ops-table) :is(td,th) small{font-size:11px;color:var(--page-sub-color);margin-top:4px}
+  /* The older inquiry table drew each row as a separate rounded card; the standard is one table with row lines. */
+  .ops-app .ops-body .ops-main .ops-table{border-collapse:collapse;border-spacing:0;padding:0;background:var(--ops-surface)}
+  .ops-app .ops-body .ops-main .ops-table tbody :is(td,th):is(:first-child,:last-child){border-left:0;border-right:0;border-radius:0}
+  /* Monitoring's report tables stay compact, but their headings read the same. */
+  .ops-app .ops-body .ops-main .pd-table thead th{color:var(--page-th-ink);font-size:var(--page-th-size);letter-spacing:var(--page-th-tracking);text-transform:uppercase;font-weight:500}
+}
+
+/* ---------- Status tabs (underline, as on the staff list pages) ---------- */
+.ops-app .ops-body .ops-main :is(.dir-status-filters,.ops-oc-filters,.ops-tabs,.ops-report-tabs){display:flex;gap:24px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--page-row-line);margin-bottom:16px;padding:0}
+.ops-app .ops-body .ops-main :is(.dir-status-filters,.ops-oc-filters,.ops-tabs,.ops-report-tabs)::-webkit-scrollbar{display:none}
+.ops-app .ops-body .ops-main :is(.dir-status-filters,.ops-oc-filters,.ops-tabs,.ops-report-tabs)>button{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:10px 0;margin:0 0 -1px;background:none;border:0;border-bottom:2px solid transparent;border-radius:0;box-shadow:none;color:var(--page-tab-ink);font-size:13px;font-weight:500;white-space:nowrap;cursor:pointer}
+.ops-app .ops-body .ops-main :is(.dir-status-filters,.ops-oc-filters,.ops-tabs,.ops-report-tabs)>button:hover{color:var(--page-tab-active-ink)}
+.ops-app .ops-body .ops-main :is(.dir-status-filters,.ops-oc-filters,.ops-tabs,.ops-report-tabs)>button:is(.is-active,.active,[aria-pressed=true],[aria-selected=true]){color:var(--page-tab-active-ink);border-bottom-color:var(--page-tab-accent);font-weight:600}
+.ops-app .ops-body .ops-main :is(.dir-status-filters,.ops-oc-filters,.ops-tabs,.ops-report-tabs)>button b{background:transparent;color:inherit;padding:0;margin:0;font-weight:inherit;min-width:0;border:0}
+.ops-app .ops-body .ops-main :is(.dir-status-filters,.ops-oc-filters,.ops-tabs,.ops-report-tabs)>button:focus-visible{outline:3px solid var(--ops-orange);outline-offset:2px}
+
+/* Visually hidden controls stay 1px even where a page styles every input as full width (the portal's upload box
+   made Submit inquiry scroll sideways). */
+.ops-app .sr-only,.ops-app input.sr-only:not([type="checkbox"]){position:absolute;width:1px;height:1px;min-width:0;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);clip-path:inset(50%);white-space:nowrap;border:0}
+
+@media(max-width:760px){
+  .ops-app{--page-title-size:24px;--page-sub-size:13px;--page-head-gap:18px}
+  .ops-app .ops-body .ops-main :is(.dir-status-filters,.ops-oc-filters,.ops-tabs,.ops-report-tabs){gap:18px}
+}

@@ -37,6 +37,9 @@ Format: **Decision** — why — where it applies.
   - **Feature freeze at the end of 2026-11-12.** After that, only bug fixes.
   - Why: the client wants a reliable system they can use for dry runs, with problems found and fixed during them.
 
+- **2026-11-09, PO: one page standard, taken from the staff Dashboard.** Every page in the staff app and the Division Head / SOA portal uses the Dashboard's heading (28px title, 14px subtitle), cards (12px corners, no shadow), table style (11px uppercase headers, 14px rows with row lines) and underlined status tabs. The first column of inquiry tables is "Inquiry". Lives in `app/operations-page-standard.css`.
+- **2026-11-09, PO: phone push notifications are in.** Tested on an iPhone and working, so the VAPID keys are accepted for the test version.
+- **2026-11-09, PO: inquiry numbers do not restart each year.** The counter keeps running (`INQ-2027-00175` follows `INQ-2026-00174`).
 - **2026-11-09, PO: make Emerson the Head in the real local data (`.data`).** He was still a Supervisor there, with no Head account. Set to `Head` with approval rights, matching the online test version. Backed up first (`D:Codescoverdesk-data-backup-20261109-before-head`).
 - **2026-11-09, PO: the light/dark choice moves out of Settings to a toggle in the top bar** (also on the sign-in screen). With nothing chosen the app follows the device. This replaces "Settings and the login screen" in pilot plan item 8. Settings is split into Profile, Security, Notifications and Email templates tabs.
 

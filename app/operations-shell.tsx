@@ -3,6 +3,7 @@ import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {Users,Upload,UserRound,LayoutDashboard,Inbox,ClipboardCheck,BookUser,Archive,Activity,UsersRound,FileText,Plug,Bell,Menu,X,ChevronDown,Settings2,LogOut,PanelLeftClose,PanelLeftOpen,TriangleAlert,Mail,MapPin,LifeBuoy} from 'lucide-react';
 import type {Staff,MailStatus} from '@/lib/operations/types';import {canApproveProposal,canDecideProgressReport,canManageAccounts,canManageTemplates,canReviewInbound,canSeeProblemReports,canSeeProposalStats,isOwnerScoped} from '@/lib/operations/permissions';import {initials} from './operations-common';import {ReportProblemButton} from './operations-report-problem';import {ThemeToggle} from './operations-theme';
 import './operations-shell.css';
+import './operations-page-standard.css';
 // Environment badge text always spells out the mode; colour only reinforces it.
 export const mailBadge=(mail?:MailStatus)=>!mail||mail.mode==='local'?{pre:'',head:'LOCAL · TEST MAILBOX',detail:'',tone:'local'}:mail.dryRun?{pre:'EMAIL ',head:'DRY RUN',detail:'',tone:'dry'}:mail.env==='production'?{pre:'',head:'LIVE EMAIL',detail:'',tone:'live'}:{pre:'',head:'TEST EMAIL',detail:mail.redirectedTo?' · to '+mail.redirectedTo:'',tone:'test'};
 export const pageHash=(page:string)=>(({'My Inquiries':'inquiries/mine',Inquiries:'inquiries/all',History:'closed/sent',Archives:'closed/archived','Returned Proposals':'approval-queue/returned','Progress Reports':'approval-queue/progress-reports'} as Record<string,string>)[page]||page.toLowerCase().replaceAll(' ','-'));

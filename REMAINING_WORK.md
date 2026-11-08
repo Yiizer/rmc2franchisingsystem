@@ -574,7 +574,9 @@ Decisions are in `TEAM_DECISIONS.md` (Monitoring feedback round 2026-11-08b).
   - [x] A fresh online (Vercel) seed now gets random, unknown passwords, never the shared local one.
   - [x] Password removed from `README.md`, `LOCALHOST.md` and `PROJECT_GUIDE.md` (the local tests still use it locally).
 - [ ] Then create a Vercel Shareable Link (Deployment Protection) for testers' phones, and revoke it after testing.
-- [ ] Optional: tidy the dashboard and Inquiries layouts so they match (page width, table style, column names "Inquiry"/"Account" and "Received"/"Updated").
+- [x] Tidy the layouts so they match (2026-11-09, PO: "every page", with the staff Dashboard as the standard). `app/operations-page-standard.css` sets the heading, cards, tables and status tabs for every page, staff app and Division Head / SOA portal. "Account" is now "Inquiry" in the inquiry lists and on My Clients. Column choices (Received or Updated) stay each person's own.
+  - Also fixed: the portal's upload box made Submit inquiry scroll sideways (a hidden file input was full width).
+  - **Checked locally** (port 5196): 13 staff pages and 5 portal pages all measure the Dashboard values (title 28px/750, subtitle 14px, card corners 12px with no shadow, table headers 11px with 18px 20px padding, rows 14px with 22px 20px), no sideways scroll at 1024px or 375px, and dark mode uses the dark tokens. **Not seen with rows:** My Clients' table, as the local Division Head has no clients. Screenshots were not possible because the app window was hidden.
 
 ## 2. Final check before any real client data or real staff use. Never skip this.
 
