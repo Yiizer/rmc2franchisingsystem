@@ -8,6 +8,31 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## Monitoring round 2026-11-08b (commit `09d57e5`, not pushed; live on the test version)
+
+Decisions are in `TEAM_DECISIONS.md` (Monitoring feedback round 2026-11-08b).
+- **What changed:**
+  - calendar ranges Today / Weekly / Monthly / Yearly
+  - past periods via `?range=&period=`, with a 5-year lookback
+  - token-only colours (navy / orange)
+  - "Still new"
+  - PDF export
+  - the Time per employee drill-down
+- **Deployment:** `rmc2-preview-bphhw0y79-yiizer.vercel.app`, aliased to https://rmc2-test-yiizer.vercel.app. `next build` passed first. No migration was needed.
+- **Online read-only smoke check: 16/16 passed** (`vercel curl`, sign-ins and GETs only). It covered:
+  - all four ranges and a past week
+  - future, old-range and too-old periods rejected with 400
+  - the drill-down for the Head and a Supervisor
+  - 403 for an Employee and 404 for an unknown user
+  - the old `?period=` form unchanged
+- **Checked locally only:**
+  - the browser click-through: stepping, reload, Jump to, the drill-down by mouse and keyboard
+  - a PDF for a past period
+- **Not checked:**
+  - the multi-page PDF (more employees than fit on page 1)
+  - a click-through on the online version
+  - a real phone
+
 ## Feedback round 2026-11-08: `FEEDBACK_2026-11-08_PLAN.md` (commit `61ba764`, pushed; live on the test version)
 
 **Live on the test version since 2026-11-08** (PO asked):
