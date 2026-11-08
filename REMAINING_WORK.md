@@ -8,6 +8,31 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## Monitoring round 2026-11-08c (commit `784db4e`, not pushed; live on the test version)
+
+Decisions are in `TEAM_DECISIONS.md` (Monitoring feedback round 2026-11-08c).
+- **What changed:**
+  - "Still new" becomes "Not yet sent", the open backlog as of now (a past period: at its end); API field `notStarted` → `notSent`
+  - no empty-page takeover: every card shows zeros with its own hint
+  - Time per employee redesigned
+  - elevation tokens and a polish pass
+- **Deployment:** `rmc2-preview-g5ya0iqra-yiizer.vercel.app`, aliased to https://rmc2-test-yiizer.vercel.app. `npm run build` passed first. No migration was needed.
+- **Online read-only smoke check: 12/12 passed** (`vercel curl`, sign-ins and GETs only). It covered:
+  - `notSent` (and no `notStarted`) in the totals and buckets for all four ranges
+  - the KPI equals the last started bucket
+  - future buckets are 0, and a past month is counted at its end
+  - Supervisor 200, Employee 403, a future period 400
+  - the drill-down, and the old `?period=` form
+- **Checked locally only:**
+  - zero-data Today and Weekly
+  - every range at 1366×768 with no page scroll, and 375px
+  - the drill-down by mouse and keyboard
+  - the PDF text label
+- **Not checked:**
+  - a click-through on the online version
+  - the PDF layout visually
+  - a real phone
+
 ## Monitoring round 2026-11-08b (commit `09d57e5`, not pushed; live on the test version)
 
 Decisions are in `TEAM_DECISIONS.md` (Monitoring feedback round 2026-11-08b).
