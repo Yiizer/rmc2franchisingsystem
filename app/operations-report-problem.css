@@ -17,8 +17,19 @@
 .ops-report-item dl{margin:8px 0 0;display:grid;gap:4px}
 .ops-report-item dl div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px}
 .ops-report-item dt{color:var(--ops-muted)}
-.ops-report-item dd{margin:0;overflow-wrap:anywhere}
+.ops-report-item dd{margin:0;overflow-wrap:anywhere;text-align:left}
 .ops-report-status{font-size:12px}
 @media(max-width:640px){.ops-report-item{grid-template-columns:1fr}}
 /* The form is portalled to <body> (above the sidebar); this wrapper only restores the app's form styles. */
 .ops-app.ops-portal-root{min-height:0;background:none}
+/* Error tracking (item 6): the Errors tab and the screen shown when a page fails to draw (app/error.tsx). */
+.ops-report-count{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:var(--ops-radius-chip);background:var(--ops-error-tint);color:var(--ops-error);font-size:12px;font-weight:600}
+.ops-report-item.kind-error{border-left-color:var(--ops-error)}
+.ops-report-item.kind-error.status-fixed{border-left-color:var(--ops-done)}
+.ops-report-item.kind-error .ops-report-text{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px}
+.ops-report-stack{margin:8px 0 0;padding:10px;background:var(--ops-canvas);border-radius:var(--ops-radius);font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto}
+.ops-crash-screen{display:grid;place-items:center;padding:24px 16px}
+.ops-crash-screen section{max-width:480px}
+.ops-crash-screen h1{margin:0 0 8px;font-size:20px;color:var(--ops-navy)}
+.ops-crash-screen p{margin:0;color:var(--ops-muted)}
+.ops-crash-screen .ops-actions{margin-top:18px}

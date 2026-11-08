@@ -48,4 +48,35 @@ await reports.submitProblemReport(cryssa, { description: 'The thirtieth report t
 await reject(reports.submitProblemReport(cryssa, { description: 'One report too many today', page: 'Dashboard' }), 429);
 t.pass('Each person can file up to ' + reports.PROBLEM_REPORTS_PER_DAY + ' reports a day');
 
+// Item 6: app errors logged automatically into the same list.
+const stack = 'TypeError: x is undefined\n    at render (https://rmc2-test.example.test/_next/static/chunks/app.js?dpl=abc:1:200)\n    at commit (https://rmc2-test.example.test/_next/static/chunks/react.js:2:10)';
+const crash = { kind: 'error', source: 'error', message: 'TypeError: x is undefined', stack, page: 'Dashboard', viewport: '390x844' };
+const first = await reports.submitProblemReport(cryssa, crash, 'Mozilla/5.0 Phone');
+assert.equal(first.repeat, false); assert.match(first.id, /^err-[0-9a-f]{24}$/);
+const again = await reports.submitProblemReport(zeo, { ...crash, inquiryId: 'INQ-2026-00131' }, 'Mozilla/5.0 Phone');
+assert.equal(again.id, first.id); assert.equal(again.repeat, true);
+let logged = (await reports.listProblemReports(head)).reports.find(r => r.id === first.id);
+assert.deepEqual([logged.kind, logged.count, logged.userIds, logged.inquiryId, logged.status, logged.role], ['error', 2, ['cryssa', 'zeo'], 'INQ-2026-00131', 'new', 'Employee']);
+assert.ok(!/example\.test|dpl=/.test(logged.stack) && logged.stack.includes('/_next/static/chunks/app.js:1:200'));
+t.pass('The same crash from two people is one entry with a count of 2; the stack keeps paths without the site address or query strings');
+
+await reports.updateProblemReport(head, first.id, { status: 'fixed' });
+await reports.submitProblemReport(cryssa, crash, '');
+logged = (await reports.listProblemReports(head)).reports.find(r => r.id === first.id);
+assert.deepEqual([logged.status, logged.count, logged.reopened], ['new', 3, true]);
+t.pass('A crash marked fixed that happens again is reopened as new');
+
+await reject(reports.submitProblemReport(cryssa, { ...crash, formData: 'x' }));
+await reject(reports.submitProblemReport(cryssa, { ...crash, source: 'console' }));
+await reject(reports.submitProblemReport(cryssa, { ...crash, message: '' }));
+t.pass('Crash entries with unknown fields, unknown sources or no message are refused');
+
+const other = await reports.submitProblemReport(dh, { kind: 'error', source: 'render', message: 'Error: chart failed', page: 'My Clients' }, '');
+assert.equal(other.repeat, false);
+for (let i = 1; i < reports.CRASHES_PER_DAY; i++) await reports.submitProblemReport(dh, { kind: 'error', source: 'error', message: 'Error: distinct ' + i, page: 'My Clients' }, '');
+await reject(reports.submitProblemReport(dh, { kind: 'error', source: 'error', message: 'Error: one too many', page: 'My Clients' }), 429);
+assert.equal((await reports.submitProblemReport(dh, { kind: 'error', source: 'render', message: 'Error: chart failed', page: 'My Clients' }, '')).repeat, true);
+await reports.submitProblemReport(dh, { description: 'Typed reports still work after the crash cap.', page: 'My Clients' }, '');
+t.pass('Each browser opens up to ' + reports.CRASHES_PER_DAY + ' new error entries a day; repeats and typed reports are not blocked by that cap');
+
 console.log(t.checks.length + ' checks passed');

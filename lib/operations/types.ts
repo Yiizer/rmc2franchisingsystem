@@ -144,3 +144,6 @@ export const EMAIL_PLACEHOLDERS = ['{agentName}','{company}','{proposalName}','{
 export type ProblemReportStatus = 'new' | 'in-progress' | 'fixed';
 /** A "Report a problem" entry (pilot plan 2026-11-16). Context is captured by the app; the description is the only free text. */
 export type ProblemReport = { id: string; at: string; userId: string; status: ProblemReportStatus; description: string; page: string; role: StaffRole; inquiryId?: string; version: string; viewport?: string; browser: string; updatedAt?: string; updatedBy?: string; note?: string };
+/** An app crash logged automatically (pilot plan item 6). Same table and list as reports; repeats of one crash add to `count`. */
+export type CrashSource = 'error' | 'unhandledrejection' | 'render';
+export type CrashReport = ProblemReport & { kind: 'error'; source: CrashSource; stack?: string; count: number; lastAt: string; userIds: string[]; reopened?: boolean };
