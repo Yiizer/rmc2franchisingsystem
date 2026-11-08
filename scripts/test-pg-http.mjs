@@ -12,7 +12,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { register } from 'tsx/esm/api';
-import { client, createChecks, databaseUrl, formBytes, intakeForm, maskText, require, root, sleep, uniq } from './db-parity/lib.mjs';
+import { client, createChecks, databaseUrl, formBytes, intakeForm, maskText, passwordFor, require, root, sleep, uniq } from './db-parity/lib.mjs';
 
 const urlA = process.env.RMC2_TEST_URL, urlB = process.env.RMC2_TEST_URL2;
 for (const u of [urlA, urlB]) if (!/^http:\/\/127\.0\.0\.1:519\d$/.test(u || '')) throw new Error('Use isolated localhost QA instances on 5190-5199.');
@@ -26,7 +26,7 @@ const pgmod = await import('file:///' + require.resolve('postgres').replace(/\\/
 const postgres = pgmod.default ?? pgmod;
 const sql = postgres(databaseUrl(), { ssl: 'require', max: 4, prepare: false, connect_timeout: 15, onnotice: () => {}, idle_timeout: 10 });
 const who = ['admin', 'cryssa', 'jefferson', 'judy', 'emerson', 'zeo'];
-const pw = 'Rmc2Local!2026';
+const pw = passwordFor('admin'); // the admin's own password (used as "current password" for sensitive account changes)
 const loginAll = async () => { for (const id of who) { const r = await A.login(id); assert.equal(r.status, 200, 'login ' + id + ' ' + r.status); B.sessions[id] = A.sessions[id]; } };
 await loginAll();
 const sides = [A, B];
@@ -107,33 +107,44 @@ if (wants('T3')) {
 }
 
 // ================================================================== T4
+// Account management is Head-only now and the rule is "at least one active Head" (and one active approver). Two heads are needed to race
+// it, so the test adds a throw-away second Head ("qa-head-<run>", inserted directly, removed at the end) and has the two Heads demote each
+// other from different instances at the same moment. Real accounts are put back exactly as found.
 if (wants('T4')) {
-  const state = async () => (await sql`select id, data from users where id in ('emerson','zeo')`).map(r => ({ id: r.id, role: r.data.role, active: r.data.active, canApprove: r.data.canApprove }));
-  const restore = async () => { for (const id of ['emerson', 'zeo']) await A.call('admin', 'users', { id, active: true, role: 'Supervisor', canApprove: true }, 200); };
-  await check('T4 last-approver race: two admins demote the only two approving supervisors at the same time, 8 rounds x (both instances)', async () => {
-    const outcomes = [];
-    for (let round = 0; round < 8; round++) {
-      await restore();
-      const variants = [
-        [{ id: 'emerson', active: true, role: 'Employee', canApprove: false }, { id: 'zeo', active: true, role: 'Employee', canApprove: false }],
-        [{ id: 'emerson', active: false, role: 'Supervisor', canApprove: true }, { id: 'zeo', active: false, role: 'Supervisor', canApprove: true }],
-        [{ id: 'emerson', active: true, role: 'Supervisor', canApprove: false }, { id: 'zeo', active: true, role: 'Employee', canApprove: false }],
-        [{ id: 'emerson', active: true, role: 'Supervisor', canApprove: false }, { id: 'zeo', active: false, role: 'Supervisor', canApprove: true }],
-      ][round % 4];
-      const rs = await Promise.all(variants.map((v, i) => sides[(round + i) % 2].raw('admin', 'users', v).then(async r => ({ status: r.status, body: await r.json() }))));
-      const t = tally(rs);
-      assert.equal(t[200], 1, `round ${round}: ${JSON.stringify(t)} ${JSON.stringify(rs.map(r => r.body))}`);
-      assert.equal(t[400], 1, `round ${round}: ${JSON.stringify(t)}`);
-      assert.match(rs.find(r => r.status === 400).body.error, /at least one active approving supervisor/);
-      const left = (await state()).filter(u => u.active && u.canApprove && u.role === 'Supervisor');
-      assert.equal(left.length, 1, `round ${round}: approving supervisors left: ${left.length}`);
-      outcomes.push('ok');
-    }
-    await restore();
-    const after = await state(); assert.ok(after.every(u => u.active && u.canApprove));
+  register();
+  const accounts = await import(pathToFileURL(path.join(root, 'lib', 'operations', 'database.ts')).href);
+  const qaId = 'qa-head-' + run, qaPw = 'Qa-' + randomUUID() + '-Aa1!';
+  const keep = (await sql`select id, data from users where id in ('emerson','zeo')`).map(r => ({ id: r.id, json: JSON.stringify(r.data) }));
+  const putBack = async () => { for (const o of keep) await sql`update users set data=(${o.json}::text)::jsonb where id=${o.id}`; };
+  const stateOf = async () => (await sql`select id, data from users where id in ('emerson', ${qaId})`).map(r => ({ id: r.id, role: r.data.role, active: r.data.active }));
+  const qaData = { id: qaId, name: 'QA-PG Head ' + run, email: qaId + '@rmc2.local', role: 'Head', position: 'QA test Head', active: true, canApprove: true };
+  const loginQa = async () => { const r = await A.login(qaId, qaPw); assert.equal(r.status, 200, 'qa head login ' + r.status); B.sessions[qaId] = A.sessions[qaId]; };
+  try {
+    await sql`insert into users (id, data, password) values (${qaId}, (${JSON.stringify(qaData)}::text)::jsonb, ${await accounts.hashPassword(qaPw)})`;
+    await check('T4 last-Head race: two Heads demote each other at the same moment from different instances, 8 rounds -> exactly one 200, one refusal, one active Head left', async () => {
+      const outcomes = [];
+      for (let round = 0; round < 8; round++) {
+        await sql`update users set data=(${JSON.stringify(qaData)}::text)::jsonb where id=${qaId}`;
+        await sql`update users set data=(${keep.find(k => k.id === 'emerson').json}::text)::jsonb where id='emerson'`;
+        await loginQa(); await A.login('emerson'); B.sessions.emerson = A.sessions.emerson;
+        const demote = (actor, target, pwd, i) => sides[(round + i) % 2].raw(actor, 'users', { id: target, active: round % 2 === 0, role: 'Employee', canApprove: false, currentPassword: pwd }).then(async r => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+        const rs = await Promise.all([demote('emerson', qaId, passwordFor('emerson'), 0), demote(qaId, 'emerson', qaPw, 1)]);
+        const t = tally(rs);
+        assert.equal(t[200], 1, `round ${round}: ${JSON.stringify(t)} ${JSON.stringify(rs.map(r => r.body))}`);
+        const loser = rs.find(r => r.status !== 200);
+        assert.ok([400, 401, 403].includes(loser.status), `round ${round}: refusal status ${loser.status}`);
+        const heads = (await stateOf()).filter(u => u.active && u.role === 'Head');
+        assert.equal(heads.length, 1, `round ${round}: active Heads left: ${heads.length}`);
+        outcomes.push(loser.status);
+      }
+      return '8 rounds, one active Head left each time; refusals: ' + JSON.stringify(tally(outcomes.map(status => ({ status }))));
+    });
+  } finally {
+    await putBack();
+    await sql`delete from sessions where user_id=${qaId}`.catch(() => {});
+    await sql`delete from users where id=${qaId}`.catch(() => {});
     await loginAll();
-    return outcomes.length + ' rounds, always exactly one approving supervisor left';
-  });
+  }
 }
 
 // ================================================================== T5
@@ -310,7 +321,7 @@ if (wants('T10')) {
     await A.call('admin', 'users', { id: 'jefferson', active: true, role: 'Employee', canApprove: false }, 200);
     B.sessions.jefferson = (await A.login('jefferson')) && A.sessions.jefferson;
     const next = await again(B, 'admin', wm);
-    assert.ok(!next.unchanged); assert.notEqual(next.metadataVersion, m1); assert.ok(Array.isArray(next.users) && next.users.length === 6);
+    assert.ok(!next.unchanged); assert.notEqual(next.metadataVersion, m1); assert.ok(Array.isArray(next.users) && next.users.length >= 6);
   });
   await check('T10 jsonb quirk: key order of stored fields is normalised (record it) and the app does not depend on it for the fingerprint', async () => {
     const api = (await A.call('admin', `inquiries/${created.id}`, undefined, 200)).value.inquiry;

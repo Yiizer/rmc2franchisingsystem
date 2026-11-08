@@ -45,7 +45,7 @@ export async function authenticate(input:unknown,ip=''){
   await refuseIfBlocked(GLOBAL_KEY);
   if(ip)await checkRate('login-ip:'+tokenHash(ip),IP_MAX_ATTEMPTS);
   const typed=body.email.toLowerCase();
-  const row=(await db.all('SELECT data,password FROM users') as {data:string;password:string}[]).find(row=>{const user:Staff=JSON.parse(row.data);return [user.email,user.username||user.id].some(value=>value.toLowerCase()===typed);});
+  const row=(await db.all('SELECT data,password FROM users') as {data:string;password:string}[]).find(row=>{const user:Staff=JSON.parse(row.data);return [user?.email,user?.username||user?.id].some(value=>typeof value==='string'&&value.toLowerCase()===typed);/* a malformed row must not break every sign-in */});
   // Known accounts count on the account; unknown names on the typed text. Both answer the same way, so this tells nobody which names exist.
   const key=row?loginKey(JSON.parse(row.data).id):'login:'+tokenHash(typed);await checkRate(key);
   // Constant-cost password verification also applies to unknown usernames.

@@ -22,13 +22,26 @@ await check('T9 inventory: rmc2 has tables and every one has row level security 
   assert.deepEqual(noRls, []);
   return `${tables.length} tables, 0 without RLS, ${tables.filter(t => t.relforcerowsecurity).length} with FORCE RLS`;
 });
-await check('T9 policies: exactly one per table, only for rmc2_app', async () => {
+const AUDIT = ['ai_usage', 'file_access', 'historical_edits', 'historical_reviews', 'security_events']; // append-only since migration 500
+await check('T9 policies: one per table, only for rmc2_app; the 5 audit tables have exactly SELECT + INSERT (append-only)', async () => {
   const pol = await app`select tablename, policyname, roles::text as roles, cmd from pg_policies where schemaname='rmc2'`;
   const per = {}; for (const p of pol) (per[p.tablename] ??= []).push(p);
-  const bad = tables.filter(t => (per[t.relname] || []).length !== 1).map(t => `${t.relname}:${(per[t.relname] || []).length}`);
-  assert.deepEqual(bad, [], 'tables without exactly one policy');
+  const bad = tables.filter(t => AUDIT.includes(t.relname)
+    ? (per[t.relname] || []).map(p => p.cmd).sort().join() !== 'INSERT,SELECT'
+    : (per[t.relname] || []).length !== 1).map(t => `${t.relname}:${(per[t.relname] || []).map(p => p.cmd).join('+')}`);
+  assert.deepEqual(bad, [], 'tables with an unexpected policy set');
   for (const p of pol) assert.equal(p.roles, '{rmc2_app}', `${p.tablename} policy roles ${p.roles}`);
   return `${pol.length} policies, all to rmc2_app`;
+});
+await check('T9 append-only: rmc2_app holds SELECT+INSERT only on the audit tables (no UPDATE/DELETE/TRUNCATE) and full DML elsewhere', async () => {
+  const bad = [];
+  for (const t of tables) {
+    const dml = {}; for (const priv of ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) dml[priv] = (await app`select has_table_privilege('rmc2_app', ${'rmc2.' + t.relname}, ${priv}) as ok`)[0].ok;
+    if (AUDIT.includes(t.relname)) { if (!dml.SELECT || !dml.INSERT || dml.UPDATE || dml.DELETE || dml.TRUNCATE) bad.push(t.relname + ' ' + JSON.stringify(dml)); }
+    else if (!dml.SELECT || !dml.INSERT || !dml.UPDATE || !dml.DELETE) bad.push(t.relname + ' lacks DML ' + JSON.stringify(dml));
+  }
+  assert.deepEqual(bad, []);
+  return AUDIT.length + ' audit tables append-only';
 });
 await check('T9 anon, authenticated and PUBLIC hold no privilege on any rmc2 table, sequence or function, nor on the schema', async () => {
   const leaks = [];

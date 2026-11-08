@@ -9,6 +9,19 @@ import { parseEnv } from 'node:util';
 
 export const root = path.resolve(import.meta.dirname, '..', '..');
 export const LOCAL_PASSWORD = 'Rmc2Local!2026';
+/** After rotate-demo-passwords the shared password no longer works on the TEST database: take each account's password from the
+ *  git-ignored CREDENTIALS.txt (never printed). Falls back to the shared local password when the file or the account is missing. */
+let credentialMap;
+export function passwordFor(id) {
+  if (!credentialMap) {
+    credentialMap = {};
+    const file = path.join(root, 'test-results', 'online-credentials', 'CREDENTIALS.txt');
+    if (existsSync(file)) for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+      const m = line.match(/^(\S+)@\S+\s+username:.*password:\s*(\S+)\s*$/); if (m) credentialMap[m[1]] = m[2];
+    }
+  }
+  return credentialMap[id] ?? LOCAL_PASSWORD;
+}
 export const require = createRequire(path.join(root, 'package.json'));
 
 /** Reads .env.supabase.test (if present) without printing anything. */
@@ -50,7 +63,7 @@ export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 export function client(base) {
   const api = base.replace(/\/$/, '') + '/api/operations/';
   const sessions = {};
-  const login = async (who, password = LOCAL_PASSWORD) => {
+  const login = async (who, password = passwordFor(who)) => {
     const response = await fetch(api + 'login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: who + '@rmc2.local', password }) });
     if (response.ok) sessions[who] = response.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');
     return response;

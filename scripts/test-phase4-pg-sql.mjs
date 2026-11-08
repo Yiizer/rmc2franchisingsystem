@@ -91,19 +91,23 @@ await check('starting to handle an inquiry takes lease:<id> first, inside the tr
   assert.equal(lock.where, 'tx');
   assert.equal(log.findIndex(entry => entry === lock) < log.findIndex(entry => /^SELECT data FROM inquiries/.test(entry.query)), true, 'lock before the first read');
 });
-await check('synchronizeInquiryIndex: idx-sync lock, DELETE ... RETURNING claim, upsert + ON CONFLICT DO NOTHING keys, no savepoint', async () => {
+await check('synchronizeInquiryIndex: idx-sync lock, DELETE ... RETURNING claim, set-based upsert (ON CONFLICT DO UPDATE) + keys ON CONFLICT DO NOTHING, no savepoint', async () => {
   handler = query => /FROM inquiry_index_pending LIMIT 1/.test(query) ? rows([{ id: 'INQ-1' }])
     : /^DELETE FROM inquiry_index_pending RETURNING id/.test(query) ? rows([{ id: 'INQ-1' }, { id: 'INQ-2' }])
-    : /^SELECT data FROM inquiries WHERE id=/.test(query) ? rows([{ data: JSON.stringify(record('INQ-1')) }]) : rows();
+    : /^SELECT id,data FROM inquiries WHERE id IN/.test(query) ? rows([{ id: 'INQ-1', data: JSON.stringify(record('INQ-1')) }, { id: 'INQ-2', data: JSON.stringify(record('INQ-2')) }]) : rows();
   await index.synchronizeInquiryIndex();
   assertWellFormed();
   assert.deepEqual(log.find(entry => /pg_advisory_xact_lock/.test(entry.query)).params, ['idx-sync']);
   const order = log.map(entry => entry.query.slice(0, 22));
   assert.ok(order.findIndex(q => q.startsWith('SELECT pg_advisory')) < order.findIndex(q => q.startsWith('DELETE FROM inquiry_in')));
-  assert.equal(sqlOf(/^INSERT INTO inquiry_summaries \(id,data,summary\)/).length, 2);
+  const upserts = sqlOf(/^INSERT INTO inquiry_summaries \(id,data,summary\)/);
+  assert.equal(upserts.length, 1, 'one set-based upsert per batch');
+  assert.ok(/ON CONFLICT\(id\) DO UPDATE/.test(upserts[0].query));
+  assert.equal(upserts[0].params.length, 6, '2 inquiries x (id,data,summary)');
   assert.ok(sqlOf(/^INSERT INTO inquiry_keys/).every(entry => /ON CONFLICT DO NOTHING$/.test(entry.query)));
   assert.ok(!log.some(entry => /SAVEPOINT|SKIP LOCKED/i.test(entry.query)));
 });
+
 await check('registry locks: identity keys sorted and taken before the matching read; global fallback honoured', async () => {
   handler = query => /^SELECT data FROM inquiries WHERE id=/.test(query) ? rows([{ data: JSON.stringify(record('INQ-1')) }]) : rows();
   await db.transaction(() => index.lockedInquiry('INQ-1', current => ({ source: current.source, fields: { ...current.fields, company: 'Beta Inc' } })));

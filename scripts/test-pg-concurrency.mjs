@@ -175,7 +175,7 @@ if (wants('T2')) {
   });
   await check('T2 projection after the storm: every inquiry has a summary row once synced, nothing left queued', async () => {
     await index.synchronizeInquiryIndex();
-    const bad = await db.all("SELECT i.id FROM inquiries i LEFT JOIN inquiry_summaries s ON s.id=i.id WHERE s.id IS NULL OR (s.summary->>'revision')::int<>i.revision");
+    const bad = await db.all("SELECT i.id FROM inquiries i LEFT JOIN inquiry_summaries s ON s.id=i.id WHERE s.id IS NULL OR (s.summary->>'revision')::int<>(i.data->>'revision')::int");
     assert.deepEqual(bad.map(r => r.id), []);
     assert.equal((await db.get('SELECT COUNT(*)::int AS n FROM inquiry_index_pending')).n, 0);
   });
@@ -251,8 +251,10 @@ if (wants('T7')) {
     await index.synchronizeInquiryIndex();
     const pending = await db.get('SELECT COUNT(*)::int AS n FROM inquiry_index_pending');
     assert.equal(pending.n, 0, 'nothing left queued after a final sync');
-    const stale = await db.all("SELECT i.id, i.revision, (s.summary->>'revision')::int AS projected FROM inquiries i LEFT JOIN inquiry_summaries s ON s.id=i.id WHERE s.id IS NULL OR (s.summary->>'revision')::int<>i.revision");
+    const stale = await db.all("SELECT i.id, i.revision, (i.data->>'revision')::int AS json_rev, (s.summary->>'revision')::int AS projected FROM inquiries i LEFT JOIN inquiry_summaries s ON s.id=i.id WHERE s.id IS NULL OR (s.summary->>'revision')::int<>(i.data->>'revision')::int");
     assert.deepEqual(stale, [], 'a projection is older than its inquiry (lost enqueue)');
+    const drift = await db.all("SELECT id FROM inquiries WHERE data->'fields'->>'company' LIKE 'QA-PG%' AND revision<>(data->>'revision')::int");
+    assert.deepEqual(drift, [], 'revision column and JSON revision agree for QA rows');
     const noKeys = await db.all("SELECT i.id FROM inquiries i WHERE i.data->'source'->>'kind' IS DISTINCT FROM 'sample' AND NOT EXISTS (SELECT 1 FROM inquiry_keys k WHERE k.inquiry_id=i.id) AND i.id LIKE 'INQ-%' AND i.data->'fields'->>'company' LIKE 'QA-PG%'");
     assert.deepEqual(noKeys, [], 'identity keys exist for every QA inquiry');
     const delta = await db.get('SELECT COUNT(*)::int AS n FROM inquiries i WHERE (SELECT COUNT(*) FROM inquiry_summaries s WHERE s.id=i.id)<>1');
