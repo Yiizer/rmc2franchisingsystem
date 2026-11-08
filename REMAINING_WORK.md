@@ -8,6 +8,38 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## Pilot plan item 8: dark mode (commits `4e22f2b`, `891e214`; live on the test version since 2026-11-09)
+
+- **Choice:** Light, Dark or System (default System). It's on the login screen (icons, top right) and in
+  Settings → Appearance for staff and Division Heads / SOAs. It's saved per device in localStorage; in private mode
+  it holds for that visit only. System keeps following the device while the app is open.
+- **No flash:** an inline script in `<head>` (`app/theme-script.ts`) sets `data-theme` before the first paint.
+- **Colours:** `scripts/theme-tokenize.mjs` moved all 1,864 hardcoded colours in `app/*.css` to
+  `var(--dk-<role>-<hex>,<original>)`, so light mode keeps exactly its old colours. It generates
+  `app/operations-theme-dark.css`, whose dark values come from the role (text, background, line, shadow), plus a few
+  hand-written fixes (`FIXES` in the script). **New CSS:** write colours as usual, then run
+  `node scripts/theme-tokenize.mjs`; `npm run theme:check` fails while any raw colour is left.
+  - The dark file is imported from `globals.css`, not `layout.tsx`: Tailwind replaces `var(--x,fallback)` with the
+    fallback when `--x` isn't declared in its own bundle.
+- **Stays light:** proposal document pages, the template preview paper, submitted-form PDFs and sheets, email
+  previews. Saved-PDF pages are canvases, so they stay white while their frame follows the theme.
+- **Checked:**
+  - A contrast audit (every visible text element against its real background, WCAG AA 4.5:1, or 3:1 for large text)
+    passed with no failures on:
+    - 13 staff screens plus an inquiry, at desktop and 375 px;
+    - 5 Division Head screens at 375 px;
+    - 11 screens on the test version.
+  - The audit was confirmed to catch a planted failure.
+  - Light mode returns the original colours.
+  - The loading screen is already dark on reload, so there's no flash.
+  - The switch works by mouse and keyboard, and System follows a live device change.
+  - The real proposal PDF (`INQ-2026-00155`) shows white in dark mode on the test version.
+- **Not checked:**
+  - The template-preview paper with real pages, because the converter isn't running locally. A style check confirmed
+    the paper area is white with dark text in dark mode.
+  - Hover and focus states, and every dialog, one by one.
+  - Real phones (iPhone Safari, Android Chrome).
+
 ## Pilot plan item 6: error tracking (commit `0d9afe6`; live on the test version since 2026-11-09)
 
 PO decision 2026-11-09: use our own logging, not an outside service (no Sentry account, no cost).
