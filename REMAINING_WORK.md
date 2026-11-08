@@ -342,7 +342,11 @@ Decisions are in `TEAM_DECISIONS.md` (Monitoring feedback round 2026-11-08b).
   - [ ] **F2, minor:** Client Directory at 375px squeezes two filter dropdowns to bare arrows.
   - [ ] **F3, minor:** at about 960px wide (a tablet, or a narrow window), the "Sent" status card on the review step wraps into a tall narrow column. It is fine at 1366px.
   - [ ] **F4, noise:** every page load requests `GET my-clients` first (the owner check). Staff get a 404, which shows as a console error. Harmless, but it clutters error tracking (item 6).
-  - [ ] **F5, PO question:** the duplicate check held a different company with a different agent only because the client contact name matched ("Matched on: Same client / addressee name"). This is by design, but during real dry runs it may hold unrelated clients. Keep it as is, or require the account name too?
+  - [x] **F5, PO decided "Require company name" (2026-11-08).** A hold now needs the same company or the same file. A shared contact name alone no longer holds.
+    - Checks: `test-duplicate-company-rule` 4/4 (new), and `test-client-protection` 48/48 on a QA `next start` server on port 5190.
+    - Three test steps assumed the old rule and were updated: the name-only hold, the false-match clearance (now on a same-company record), and the PDF save step.
+    - A stale step where an Employee changed the owner of a protected client now uses the Head, as the owner rule from `f963db5` requires.
+    - Other harness tests pass. `test-roles-scoping` fails only at its known line 198.
   - Test records `INQ-2026-00155` to `00160` stay on the TEST database. They are wiped at cutover.
 - **Not run yet:**
   - BOR / agent transfer;

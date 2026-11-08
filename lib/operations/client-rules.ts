@@ -71,10 +71,14 @@ export function duplicateClients(record:InquiryRecord,records:InquiryRecord[],no
     // remaining invalid if either client's identifying details later change.
     return !(other.clientReview?.identity===clientIdentity(other)&&other.clientReview.exceptions?.some(item=>item.inquiryId===record.id&&item.identity===identity));
   }).sort((a,b)=>Number(!!protectionFor(b))-Number(!!protectionFor(a))||a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id)).flatMap(other=>{
+    // PO decision 2026-11-08 (F5): a hold needs the same company or the same submitted file. A shared contact /
+    // addressee name alone no longer holds a different company; it is only listed as an extra reason.
     const reasons:string[]=[];
-    if(ownCompanies.some(value=>companyKeys(other).includes(value)))reasons.push('Same account / company');
+    const sameCompany=ownCompanies.some(value=>companyKeys(other).includes(value)),sameFile=!!record.source.sourceHash&&record.source.sourceHash===other.source.sourceHash;
+    if(!sameCompany&&!sameFile)return [];
+    if(sameCompany)reasons.push('Same account / company');
     if(people.some(name=>personKeys(other).includes(name)))reasons.push('Same client / addressee name');
-    if(record.source.sourceHash&&record.source.sourceHash===other.source.sourceHash)reasons.push('Same submitted file');
+    if(sameFile)reasons.push('Same submitted file');
     const otherProtection=protectionFor(other),expired=otherProtection?protectionExpired(other,otherProtection,now):isClientArchived(other,now),agentMatches=sameRegisteredAgent(record,other),expiredSameAgent=expired&&agentMatches;
     if(reasons.length&&expired)reasons.push(expiredSameAgent?'Same agent’s previous registration expired':'Expired registration — supervisor approval required');
     return reasons.length?[{expired,expiredSameAgent,inquiryId:other.id,company:other.fields.company||'Client details pending',agentName:protectionFor(other)?.agentName||other.fields.agentName||'Agent',sameAgent:agentMatches,reasons}]:[];

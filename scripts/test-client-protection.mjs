@@ -119,15 +119,15 @@ try{
   pass('Changing agents does not bypass matching client details',otherAgent.clientReview.state==='duplicate'&&otherAgent.clientReview.matches.some(match=>!match.sameAgent&&match.inquiryId===original.id));
   const byPerson=await intake('Another Company '+suffix,'Dr. '+person,'gamma@example.test','Agent Gamma');
   const byAccount=await intake(company,'Different Client '+suffix,'delta@example.test','Agent Delta');
-  pass('Either the client name or account name triggers review',byPerson.clientReview.matches.some(match=>match.reasons.includes('Same client / addressee name'))&&byAccount.clientReview.matches.some(match=>match.reasons.includes('Same account / company')));
+  pass('The account name triggers review; a shared client name alone at another company does not (PO 2026-11-08, F5)',byPerson.clientReview.state!=='duplicate'&&byAccount.clientReview.matches.some(match=>match.reasons.includes('Same account / company')));
   for(const action of ['activity','save','generate','customize','submit','request-details']){
     const payload=action==='activity'?{tab:randomUUID(),action:'start'}:action==='save'?{fields:otherAgent.fields,templateId:'',notes:'',email:otherAgent.email,emailOverrides:[]}:action==='customize'?{templateId:'d023'}:action==='request-details'?{body:'This must not be sent.'}:{};
     await act('cryssa',otherAgent,action,payload,409);
   }
   await act('emerson',otherAgent,'decision',{version:1,action:'approve',note:'',flags:[]},409);
   pass('Server blocks duplicate pickup, saving, customization, generation, submission, outbound requests and approval');
-  await act('cryssa',byPerson,'review-client',{action:'distinct',matchId:byPerson.clientReview.matches[0].inquiryId,note:'These are unrelated accounts with matching names.'},403);
-  const distinct=await act('emerson',byPerson,'review-client',{action:'distinct',matchId:byPerson.clientReview.matches[0].inquiryId,note:'The source forms show unrelated clients with matching full names.'});
+  await act('cryssa',byAccount,'review-client',{action:'distinct',matchId:byAccount.clientReview.matches[0].inquiryId,note:'These are unrelated accounts with matching names.'},403);
+  const distinct=await act('emerson',byAccount,'review-client',{action:'distinct',matchId:byAccount.clientReview.matches[0].inquiryId,note:'The source forms show unrelated clients with matching full names.'});
   pass('A supervisor can clear a false match with an audited reason',distinct.clientReview.state==='clear'&&distinct.clientReview.reviewedBy==='emerson'&&distinct.history.at(-1).action.includes('DIFFERENT CLIENTS'));
   pass('A false-match decision does not block the existing legitimate registration',(await state('cryssa')).clientStates[original.id].state==='clear');
 
@@ -162,7 +162,7 @@ try{
   pass('An identical PDF is flagged even before its client fields are entered',copied.clientReview.state==='duplicate'&&copied.clientReview.matches.some(match=>match.inquiryId===pdfInquiry.id&&match.reasons.includes('Same submitted file')));
   await act('cryssa',pdfInquiry,'generate',{},409);
   await act('cryssa',pdfInquiry,'activity',{tab:randomUUID(),action:'start'});
-  pdfInquiry=await act('cryssa',pdfInquiry,'save',{fields:{...pdfInquiry.fields,company:'PDF Client '+suffix,contactName:person,addressee:person},templateId:'',notes:'',email:pdfInquiry.email,emailOverrides:[]});
+  pdfInquiry=await act('cryssa',pdfInquiry,'save',{fields:{...pdfInquiry.fields,company,contactName:person,addressee:person},templateId:'',notes:'',email:pdfInquiry.email,emailOverrides:[]});
   pass('Saving client details on a PDF runs duplicate checks before processing',pdfInquiry.clientReview.state==='duplicate');
 
   let expiring=await intake('Expired Account '+suffix,'Expiry Contact '+suffix,'old-agent@example.test','Old Agent');
@@ -194,7 +194,7 @@ try{
   const frozen=JSON.stringify(proposal.submissions);
   proposal=fixture(proposal,{protection:{...proposal.protection,startedAt:new Date(Date.now()-5*86400000).toISOString(),activityAt:new Date(Date.now()-5*86400000).toISOString(),expiresAt:new Date(Date.now()+25*86400000).toISOString()}});
   // Phase 2: the owning Division Head files through my-clients/:id/progress-report; the Head (Emerson) approves. Frozen submissions must not change.
-  await call('cryssa','inquiries/'+proposal.id+'/owner',{revision:proposal.revision,ownerId:'division-head'});
+  await call('emerson','inquiries/'+proposal.id+'/owner',{revision:proposal.revision,ownerId:'division-head'});
   await call('division-head','login',{email:'divisionhead@rmc2.local',password:'Rmc2Local!2026'});
   const filing=new FormData();filing.set('summary','The agent reports an ongoing client discussion.');filing.set('reference','Call log');
   const filed=await call('division-head','my-clients/'+proposal.id+'/progress-report',filing,201);

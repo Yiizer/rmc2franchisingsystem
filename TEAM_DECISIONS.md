@@ -8,6 +8,13 @@ Format: **Decision** — why — where it applies.
 
 ## Product decisions (approved by the Product Owner)
 
+- **Duplicate hold needs the same company or the same file (F5)** (approved by the PO 2026-11-08, "Require company name").
+  - A matching client contact or addressee name alone no longer holds an inquiry for a different company.
+  - A hold now needs the same account / company (normalized) or the identical submitted file.
+  - When the company also matches, a shared contact name is still listed as an extra reason.
+  - Why: in the online click-through, a different company with a different agent was held only because the contact name matched. Real dry runs would hold unrelated clients.
+  - Where: `duplicateClients` in `lib/operations/client-rules.ts`. Tests: `test-duplicate-company-rule` (new) and `test-client-protection` (updated).
+
 - **Full working system by Monday 2026-11-16** (approved by the PO 2026-11-08, in a grilling session; the full plan is `PLAN_2026-11-16_PROMPT.md`).
   - **What Monday means:** staff start dry runs of real work. Every user-facing flow has to work end to end, with only minor issues left.
     - Staff process real inquiries in parallel with the old process, which stays the official one.
