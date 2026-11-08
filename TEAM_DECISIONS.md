@@ -37,6 +37,9 @@ Format: **Decision** — why — where it applies.
   - **Feature freeze at the end of 2026-11-12.** After that, only bug fixes.
   - Why: the client wants a reliable system they can use for dry runs, with problems found and fixed during them.
 
+- **2026-11-09, PO: make Emerson the Head in the real local data (`.data`).** He was still a Supervisor there, with no Head account. Set to `Head` with approval rights, matching the online test version. Backed up first (`D:Codescoverdesk-data-backup-20261109-before-head`).
+- **2026-11-09, PO: the light/dark choice moves out of Settings to a toggle in the top bar** (also on the sign-in screen). With nothing chosen the app follows the device. This replaces "Settings and the login screen" in pilot plan item 8. Settings is split into Profile, Security, Notifications and Email templates tabs.
+
 - **Monitoring feedback round 2026-11-08c** (approved by the PO 2026-11-08, "approve as proposed"). Supersedes, for the Monitoring page only, the "Still new" bullet of round 2026-11-08b and its empty-page takeover.
   - **"Still new" becomes "Not yet sent", the open backlog.**
     - Definition: an inquiry received before moment T, with no delivered submission by T (manual confirmations count, dry runs don't) and no closure (declined or transferred) by T. The received date doesn't matter.
