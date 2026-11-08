@@ -347,6 +347,10 @@ Decisions are in `TEAM_DECISIONS.md` (Monitoring feedback round 2026-11-08b).
     - Three test steps assumed the old rule and were updated: the name-only hold, the false-match clearance (now on a same-company record), and the PDF save step.
     - A stale step where an Employee changed the owner of a protected client now uses the Head, as the owner rule from `f963db5` requires.
     - Other harness tests pass. `test-roles-scoping` fails only at its known line 198.
+    - **Online** (`rmc2-preview-iz4ayxpra-yiizer.vercel.app`, aliased to rmc2-test):
+      - `INQ-2026-00158` (same company) is still held.
+      - `INQ-2026-00157` (contact name only) stayed held until a Recheck. After the Recheck it is clear, with 0 matches.
+    - By design, old holds lift only on Recheck or a supervisor decision (`client-rules.ts:102`). Records held before 2026-11-08 under the name-only rule need one Recheck.
   - Test records `INQ-2026-00155` to `00160` stay on the TEST database. They are wiped at cutover.
 - **Not run yet:**
   - BOR / agent transfer;
