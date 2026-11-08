@@ -85,7 +85,7 @@ export default function ClientComparison({ record, match, onOpen, onRecheck, bus
 
 
 
-      <a className="ops-link" href="#inquiry-workspace" onClick={event => { event.preventDefault(); onOpen(match.inquiryId); }}>Open existing inquiry <ArrowUpRight size={14}/></a>
+      <a className="ops-link" href={'#inquiry/' + encodeURIComponent(match.inquiryId)} onClick={event => { event.preventDefault(); onOpen(match.inquiryId); }}>Open existing inquiry <ArrowUpRight size={14}/></a>
 
       {onRecheck&&<button className="ops-btn" disabled={busy} onClick={onRecheck}><RefreshCw size={14}/>Recheck availability</button>}
     </div>
