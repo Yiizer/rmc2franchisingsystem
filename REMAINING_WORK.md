@@ -8,6 +8,11 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## Online-check inquiries deleted from TEST (2026-11-09, PO: "Yes, delete them")
+
+- `INQ-2026-00155` to `00174`: all 20 were confirmed fictional by name ("Pilot Check", "Check …", "Large File Check"), and no other record referred to them. Deleted with 60 index keys, 20 summaries, 42 notifications and 3 outbox rows, in one transaction that checked every count before committing. **14 inquiries left on TEST.**
+- Online afterwards: `roles-check-online` 37/37; the Dashboard, inquiry lists and a directory search show none of them.
+
 ## Security follow-ups, tests and final pass (2026-11-09; commits `d43d495`, `2c3d2ba`; deployment `rmc2-preview-6fxew8is5`)
 
 - **Done:**
