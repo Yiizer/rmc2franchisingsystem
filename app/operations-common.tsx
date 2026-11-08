@@ -3,7 +3,23 @@ import { useEffect, useRef, useState } from 'react';
 import { Eye, EyeOff, Inbox, X } from 'lucide-react';
 import type { Staff, WorkflowStatus } from '@/lib/operations/types';
 export const endpoint='/api/operations';
+/** Files over this size skip the app's 4.5 MB request limit online: they go straight to private storage (see lib/operations/large-files.ts). */
+const DIRECT_UPLOAD_LIMIT=4*1024*1024;
+async function sendLargeFiles(form:FormData):Promise<FormData>{
+ if(![...form.values()].some(value=>value instanceof File&&value.size>DIRECT_UPLOAD_LIMIT))return form;
+ const out=new FormData();
+ for(const [name,value] of form.entries()){
+  if(!(value instanceof File)||value.size<=DIRECT_UPLOAD_LIMIT){out.append(name,value);continue;}
+  const start=await api<{mode:'form'}|{mode:'signed';id:string;url:string}>('uploads/start',{name:value.name,size:value.size,...(value.type?{type:value.type}:{})});
+  if(start.mode==='form'){out.append(name,value);continue;} // this computer: no request limit, so the file goes with the form
+  let put:Response;try{put=await fetch(start.url,{method:'PUT',body:value,headers:{'Content-Type':value.type||'application/octet-stream','x-upsert':'false'}});}catch{throw new Error('We could not upload the file. Check your connection and try again.');}
+  if(!put.ok)throw new Error('We could not upload the file. Please try again.');
+  out.append(name+'__upload',start.id);out.append(name+'__name',value.name);
+ }
+ return out;
+}
 export async function api<T>(path:string,body?:unknown):Promise<T>{
+ if(body instanceof FormData)body=await sendLargeFiles(body);
  let response:Response;try{response=await fetch(endpoint+'/'+path,{method:body===undefined?'GET':'POST',headers:body instanceof FormData?undefined:body===undefined?undefined:{'Content-Type':'application/json'},body:body===undefined?undefined:body instanceof FormData?body:JSON.stringify(body),cache:'no-store'});}catch{throw new Error('We could not connect. Check your connection and try again.');}
  let result:T & {error?:string};try{result=await response.json();}catch{throw Object.assign(new Error('We could not read the response. Please try again.'),{status:response.status});}
  if(!response.ok)throw Object.assign(new Error(result.error||'We could not complete this request. Please try again.'),{status:response.status});return result;
