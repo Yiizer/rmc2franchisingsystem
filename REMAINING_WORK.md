@@ -309,6 +309,34 @@ Decisions are in `TEAM_DECISIONS.md` (Monitoring feedback round 2026-11-08b).
 
 ## 0. Built but never tested (try these first)
 
+**Online check, 2026-11-08 (`scripts/pilot-check-online.mjs`): 9/9 passed through the API on the TEST version.**
+- Fictional data only, with 3 emails sent to the test inbox.
+- The checks fell over twice along the way, and both times the cause was the script, not the app:
+  - every form had the same client contact, so the app correctly held them as duplicates;
+  - the script called the wrong routes.
+- **Passed:**
+  - **return and resubmit:** `INQ-2026-00155` was prepared with D054, submitted, returned by Zeo, corrected, and v2 resubmitted;
+  - **approve and send:** the Head approved v2, the status became Sent, and the 30-day protection started;
+  - **request missing details:** `INQ-2026-00159` became Waiting for agent details, and the email was sent;
+  - **decline with email:** `INQ-2026-00160`, with the decline email sent through staging SMTP to the redirect;
+  - **duplicate hold:** a second agent for the same client (`INQ-2026-00158`) is held, and a recheck keeps the hold;
+  - **progress report:** the Division Head filed one with a PDF attachment, which was stored, and the Head approved it. A second report while one is pending is refused (409).
+  - **pages load:** bootstrap/users, workspace, Monitoring (Head 200, Employee 403), directory, divisions and email templates;
+  - **Requests:** the list loads, and "Check mail now" connects (0 new);
+  - **downloads:** the sent PDF (471 KB) and the .eml (646 KB).
+- **In a browser online:**
+  - the login shows "TEST VERSION" and the password toggle;
+  - at 375px there is no horizontal scroll and the toggle sits inside the field.
+- **Not run yet:**
+  - every click-through in a browser while signed in (the pane needs the app sign-in from the PO; passwords stay out of the chat);
+  - the duplicate decision "distinct" by a supervisor;
+  - BOR / agent transfer;
+  - template upload/publish;
+  - the auto-import of an emailed form (someone has to email the sample form to the test inbox);
+  - the send-failure, cap and inbox-down cases;
+  - files over 4.5 MB (phase 5);
+  - concurrent users and a cold start.
+
 **Online app in a real browser.** Online, everything so far was driven through the API only.
 - [ ] The Requests page: layout, "Check mail now", the error notes, "Imported automatically".
 - [ ] **Automatic import of an emailed Excel form, end to end.** Use the sample form in `test-results/Franchise-Form-Mabini-Integrated-School.xlsx`.
