@@ -8,6 +8,11 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## Portal Submit inquiry: fill-in form only (commit `0b61766`; live on deployment `rmc2-preview-6qn1943cf`, aliased to rmc2-test)
+
+- PO, 2026-11-09: Division Heads and SOAs no longer see "Upload form". The page opens straight on the fill-in form, with "Filed under: <division>" below it. Franchising staff keep upload and fill-in in "Import an agent's form".
+- **Checked locally** (port 5190, Division Head): no tabs or upload box, 23 fields, one "Submit inquiry" button, no sideways scroll. **Online:** the served code has the new page text and not the old.
+
 ## Final check, 2026-11-09 batch (commits `2549aca`, `fd17179`; live on deployment `rmc2-preview-ivdry14o7`, aliased to rmc2-test)
 
 - **Code-review minors, done:**
