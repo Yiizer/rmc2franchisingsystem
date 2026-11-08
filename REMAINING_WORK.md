@@ -8,6 +8,37 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## Pilot plan item 5: Report a problem (built, NOT deployed; needs migration `20261108000000` on TEST first)
+
+- **What it does:**
+  - A life-buoy button sits in the top bar of every staff and Division Head / SOA screen. It opens a short form; the description is the only typed text.
+  - The app adds the page, the inquiry (from `#inquiry/<id>` or `#my-clients/<id>`), the role, the app version (commit), the window size and the browser.
+  - No screenshots and no form contents are sent. Each person can send up to 30 reports a day.
+  - **Problem reports** (Head under Manage, Admin under Admin) lists them newest first. Tabs: New / In progress / Fixed / All. Changing a status records who and when.
+- **Storage:**
+  - table `problem_reports` (`lib/operations/database.ts` for local SQLite; `supabase/migrations/20261108000000_problem_reports.sql` for Postgres; a guarded rollback in `supabase/rollbacks/`);
+  - code in `lib/operations/problem-reports.ts` and `app/operations-report-problem.tsx`.
+- **API:**
+  - `POST problem-reports`: everyone signed in, owners included (added to the owner whitelist);
+  - `GET problem-reports` and `POST problem-reports/<id>/status`: Head and Admin only.
+- **Verified locally:**
+  - `tsc` passes; the new files are lint-clean, and the changed files have the same lint errors as HEAD;
+  - `test-problem-reports` 7/7 (new);
+  - `db-schema-parity --static` OK (the older `inquiries_owner` index is now listed as an expected Postgres-only index);
+  - the other harness tests pass; `test-roles-scoping` fails only at its known line 198.
+  - **Browser on port 5197** (a fresh QA data dir, `next start`):
+    - an Employee sends from an open inquiry and sees the confirmation;
+    - an Employee has no menu item and gets 403 on the list;
+    - the Head sees the report with its inquiry link, changes it to In progress, and the tabs update;
+    - a Division Head can send (201) but not read the list (403);
+    - 375px has no horizontal scroll.
+  - Found and fixed during the check:
+    - the form was hidden under the sidebar (it is now rendered on `<body>`);
+    - the inquiry was not captured (it is now read from the address).
+- **Next:**
+  - [ ] PO approval to apply migration `20261108000000` to TEST, then deploy and smoke check.
+  - [ ] Item 6: error tracking.
+
 ## Pilot plan for 2026-11-16, day 1 (commit `747c4eb`; live on the test version)
 
 The plan is `PLAN_2026-11-16_PROMPT.md`, and the decision is in `TEAM_DECISIONS.md`: §0 and §2 now run this week, with a feature freeze at the end of 2026-11-12. `phase-4-postgres` was pushed to origin as a backup and not merged.

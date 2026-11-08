@@ -141,3 +141,6 @@ export type EmailTemplateKind = 'proposal'|'details'|'decline';
 export type MyEmailTemplates = { proposal?: { subject: string; body: string }; details?: { body: string }; decline?: { body: string }; updatedAt?: string };
 export type EmailTemplatesResponse = { mine: MyEmailTemplates; defaults: Required<Omit<MyEmailTemplates,'updatedAt'>> };
 export const EMAIL_PLACEHOLDERS = ['{agentName}','{company}','{proposalName}','{myName}'] as const;
+export type ProblemReportStatus = 'new' | 'in-progress' | 'fixed';
+/** A "Report a problem" entry (pilot plan 2026-11-16). Context is captured by the app; the description is the only free text. */
+export type ProblemReport = { id: string; at: string; userId: string; status: ProblemReportStatus; description: string; page: string; role: StaffRole; inquiryId?: string; version: string; viewport?: string; browser: string; updatedAt?: string; updatedBy?: string; note?: string };

@@ -39,6 +39,9 @@ function openDatabase() {
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS push_subscriptions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, endpoint TEXT NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL, last_used_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS push_user ON push_subscriptions (user_id);
+    CREATE TABLE IF NOT EXISTS problem_reports (id TEXT PRIMARY KEY, at TEXT NOT NULL, user_id TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS problem_reports_at ON problem_reports (at);
+    CREATE INDEX IF NOT EXISTS problem_reports_user_at ON problem_reports (user_id, at);
     CREATE INDEX IF NOT EXISTS handover_inquiry ON inquiry_handover (inquiry_id, kind, at);
     CREATE TABLE IF NOT EXISTS file_access (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, inquiry_id TEXT NOT NULL, kind TEXT NOT NULL, at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, inquiry_id TEXT NOT NULL, version INTEGER NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL, UNIQUE(inquiry_id,version,kind));

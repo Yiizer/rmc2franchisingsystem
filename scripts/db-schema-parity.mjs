@@ -29,6 +29,7 @@ const EXPECTED = {
     mail_sends_at: 'mail caps count recent sends',
     historical_review_seq: 'ordered reads by seq',
     historical_edit_seq: 'ordered reads by seq',
+    inquiries_owner: 'expression index on data->>ownerId for owner-scoped reads (migration 20261106000100)',
   },
 };
 

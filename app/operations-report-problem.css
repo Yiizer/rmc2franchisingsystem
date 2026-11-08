@@ -1,0 +1,24 @@
+/* Report a problem: top-bar button, form, and the Head / Admin list. Tokens only (operations-tokens.css). */
+.ops-report-form textarea{min-height:120px;resize:vertical}
+.ops-report-context{margin:10px 0 0;font-size:12px;line-height:1.5;color:var(--ops-muted)}
+.ops-report-form .ops-actions{margin-top:16px}
+.ops-report-tabs{display:flex;gap:4px;border-bottom:1px solid var(--ops-rule);margin:4px 0 16px;overflow-x:auto}
+.ops-report-tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:9px 12px;font:inherit;font-size:14px;color:var(--ops-muted);white-space:nowrap}
+.ops-report-tabs button span{margin-left:4px}
+.ops-report-tabs button.active{color:var(--ops-navy);font-weight:600;border-bottom-color:var(--ops-action)}
+.ops-report-tabs button:focus-visible{outline:2px solid var(--ops-orange);outline-offset:2px}
+.ops-report-list{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.ops-report-item{display:grid;grid-template-columns:minmax(0,1fr) 170px;gap:16px;padding:16px 18px;border-left:4px solid var(--ops-new)}
+.ops-report-item.status-in-progress{border-left-color:var(--ops-hold)}
+.ops-report-item.status-fixed{border-left-color:var(--ops-done)}
+.ops-report-text{margin:0;color:var(--ops-navy);font-size:14px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.ops-report-meta{margin:8px 0 0;font-size:12px;color:var(--ops-muted);overflow-wrap:anywhere}
+.ops-report-item details{margin-top:8px;font-size:12px}
+.ops-report-item dl{margin:8px 0 0;display:grid;gap:4px}
+.ops-report-item dl div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px}
+.ops-report-item dt{color:var(--ops-muted)}
+.ops-report-item dd{margin:0;overflow-wrap:anywhere}
+.ops-report-status{font-size:12px}
+@media(max-width:640px){.ops-report-item{grid-template-columns:1fr}}
+/* The form is portalled to <body> (above the sidebar); this wrapper only restores the app's form styles. */
+.ops-app.ops-portal-root{min-height:0;background:none}

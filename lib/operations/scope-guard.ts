@@ -18,7 +18,7 @@ export function ownerRouteAllowed(method:'GET'|'POST',route:string[]):boolean{
     if(route.length===3)return c==='proposal';
     return route.length===4&&c==='report'&&segment(d);
   }
-  if(route.length===1)return ['logout','account-settings','notifications','intake','intake-fields'].includes(a);
+  if(route.length===1)return ['logout','account-settings','notifications','intake','intake-fields','problem-reports'].includes(a);
   if(route.length===2&&a==='push')return ['subscribe','unsubscribe','mute','test'].includes(b);
   if(route.length===2&&a==='my-team')return b==='create';
   if(route.length===3&&a==='my-team')return segment(b)&&['deactivate','reset-password'].includes(c);

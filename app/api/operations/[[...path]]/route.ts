@@ -40,6 +40,7 @@ import { inquiryDetails, workspaceView } from '@/lib/operations/workspace-query'
 import path from 'node:path';
 import type { Notice, Staff } from '@/lib/operations/types';
 import { readDivisionTable, saveDivisionTable } from '@/lib/operations/division-store';
+import { listProblemReports, submitProblemReport, updateProblemReport } from '@/lib/operations/problem-reports';
 import { pushSettings, queuePushForNotice, sendTestPush, removePushSubscription, savePushSubscription, sendPush, setPushMuted } from '@/lib/operations/push';
 import { setNoticeHook } from '@/lib/operations/database';
 import { setInboxHook } from '@/lib/operations/inbound';
@@ -88,6 +89,7 @@ export async function GET(request:NextRequest,context:Context){try{
 
   if(route[0]==='bootstrap'){await recoverStuckMail();const snap=await db.snapshot(async()=>{const notices=(await db.all('SELECT data FROM notifications') as {data:string}[]).map(r=>JSON.parse(r.data) as Notice).filter(n=>n.recipientIds.includes(user.id)).sort((a,b)=>b.at.localeCompare(a.at));return {notices,records:await inquiries(),users:await allUsers(),activity:await activeInquiryActivity(),templates:await catalog()};});const records=snap.records;return response({user,users:snap.users,inquiries:records,clientStates:clientStates(records),packageRenderers:await packageRenderers(records),activity:snap.activity,templates:snap.templates.map(({file,text,...t})=>({...t,text,file:''})),notifications:snap.notices,integrations:{database:databaseLabel(),gmail:'Local test mailbox · no real Gmail sends',ai:'Simulated · supplied proposal sources only',documents:conversionName()},mail:mailStatus()});}
   if(route[0]==='divisions')return response(await readDivisionTable(user));
+  if(route[0]==='problem-reports'&&route.length===1)return response(await listProblemReports(user));
   if(route[0]==='push'&&!route[1])return response(await pushSettings(user));
   if(route[0]==='directory')return response(route[1]==='client'&&route[2]?await directoryClient(route[2]):route[1]?{record:await directoryRecord(route[1])}:await clientDirectory(request.nextUrl.searchParams));
   if(route[0]==='inquiries'&&route[1]&&route[2]==='historical-matches')return response({matches:await historicalMatches(await inquiry(route[1]))});
@@ -143,6 +145,8 @@ export async function POST(request:NextRequest,context:Context){try{
   if(route[0]==='template-publish')return response({template:await publishTemplate(user,await request.json())});
   if(route[0]==='template-active')return response({template:await setTemplateActive(user,await request.json())});
   if(route[0]==='divisions')return response(await saveDivisionTable(user,await request.json()));
+  if(route[0]==='problem-reports'&&route.length===1)return response(await submitProblemReport(user,await request.json(),request.headers.get('user-agent')||''),201);
+  if(route[0]==='problem-reports'&&route[1]&&route[2]==='status'&&route.length===3)return response(await updateProblemReport(user,route[1],await request.json()));
   if(route[0]==='push'&&route[1]==='subscribe')return response(await savePushSubscription(user,await request.json()));
   if(route[0]==='push'&&route[1]==='unsubscribe')return response(await removePushSubscription(user,await request.json()));
   if(route[0]==='push'&&route[1]==='test')return response(await sendTestPush(user));
