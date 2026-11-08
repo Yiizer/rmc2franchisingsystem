@@ -8,6 +8,18 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## Security follow-ups, tests and final pass (2026-11-09; commits `d43d495`, `2c3d2ba`; deployment `rmc2-preview-6fxew8is5`)
+
+- **Done:**
+  - all 13 rollbacks are guarded, with no BOM, and listed newest first in `supabase/README.md`;
+  - migration `20261109000000_protect_environment` is applied to TEST: as `rmc2_app`, three attempts to change the label were refused (42501), and `projection_version` is still writable;
+  - inbox health warning and back-off, stuck imports released, attachment content checks, and the workbook safety check (`test-inbound-safety` 4/4).
+- **Outdated tests fixed (qa-engineer):** exclusive handling 10, workspace upgrade 17, mail service 9, roles scoping 31. No app bugs.
+- **Final pass (read-only, online):**
+  - 19 staff pages × light/dark × 1440/1366/phone (473 px in the pane): 114 loads, all clean;
+  - `scripts/roles-check-online.mjs` 37/37 across the 6 roles.
+- **Handover report:** `HANDOVER_2026-11-09.md`.
+
 ## Portal Submit inquiry: fill-in form only (commit `0b61766`; live on deployment `rmc2-preview-6qn1943cf`, aliased to rmc2-test)
 
 - PO, 2026-11-09: Division Heads and SOAs no longer see "Upload form". The page opens straight on the fill-in form, with "Filed under: <division>" below it. Franchising staff keep upload and fill-in in "Import an agent's form".
