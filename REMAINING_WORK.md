@@ -327,9 +327,21 @@ Decisions are in `TEAM_DECISIONS.md` (Monitoring feedback round 2026-11-08b).
 - **In a browser online:**
   - the login shows "TEST VERSION" and the password toggle;
   - at 375px there is no horizontal scroll and the toggle sits inside the field.
+- **Browser click-through, signed in as the Head (the PO signed in in the pane):**
+  - All 17 pages load with no error alert and no horizontal scroll at 964px: Dashboard, the Inquiries tabs, Requests, the Approval Queue and its tabs, Client Directory, Closed, Monitoring, Users & roles, Divisions & Branches, Proposal templates, Notifications, Settings and Integrations.
+  - At 375px, 12 key pages have no page scroll.
+  - **Duplicate decision:** "Confirm different clients" on `INQ-2026-00156`, with a reason and the checkbox. It shows "Client check cleared", the hold lifts, and Start handling is enabled.
+  - **The sent proposal (`INQ-2026-00155`)** at 1366×768 and at 375px: the status card, the PDF loads (200) and Download email is shown.
+- **Issues found (triage):**
+  - [ ] **F1, fix in day 2: reloading drops the open inquiry.**
+    - The hash is `#inquiry-workspace` with no id, so a reload, or a link someone shares, lands on the Dashboard.
+    - Fix: `#inquiry/<id>`. The workspace API already takes `selected=`.
+  - [ ] **F2, minor:** Client Directory at 375px squeezes two filter dropdowns to bare arrows.
+  - [ ] **F3, minor:** at about 960px wide (a tablet, or a narrow window), the "Sent" status card on the review step wraps into a tall narrow column. It is fine at 1366px.
+  - [ ] **F4, noise:** every page load requests `GET my-clients` first (the owner check). Staff get a 404, which shows as a console error. Harmless, but it clutters error tracking (item 6).
+  - [ ] **F5, PO question:** the duplicate check held a different company with a different agent only because the client contact name matched ("Matched on: Same client / addressee name"). This is by design, but during real dry runs it may hold unrelated clients. Keep it as is, or require the account name too?
+  - Test records `INQ-2026-00155` to `00160` stay on the TEST database. They are wiped at cutover.
 - **Not run yet:**
-  - every click-through in a browser while signed in (the pane needs the app sign-in from the PO; passwords stay out of the chat);
-  - the duplicate decision "distinct" by a supervisor;
   - BOR / agent transfer;
   - template upload/publish;
   - the auto-import of an emailed form (someone has to email the sample form to the test inbox);
