@@ -481,7 +481,7 @@ Decisions are in `TEAM_DECISIONS.md` (Monitoring feedback round 2026-11-08b).
   - **Phone (375px) and tablet (768px):** 17 pages at 375px and 15 at 768px, with no page scroll and no error alert. Wide parts (status tab strips, tables) scroll inside their own box.
 - **Real local data (`.data`):** backed up to `D:Codescoverdesk-data-backup-20261109` (outside the repo) first. Started once with `next start` on port 5173; mail stays on this computer. Sign-in, bootstrap (12 inquiries), workspace, directory, Monitoring, divisions, email templates, Requests and opening an inquiry all work. The upgrade wrote to `rmc2.sqlite-wal`.
 - **Issues found:**
-  - [x] **F6, fixed:** the footer said "Saved on the local server" on the online version. It now says "Saved online" there and "Saved on this computer" locally.
+  - [x] **F6, fixed:** the footer said "Saved on the local server" on the online version. It now says "Saved online" there and "Saved on this computer" locally. Live on deployment `rmc2-preview-izpy57yut` (aliased to rmc2-test), checked in the browser after a reload.
   - [ ] **F7, needs a PO decision:** in the real local data, Emerson is still a **Supervisor**, not the Head, and there is no Head account. So nobody there can manage accounts, divisions, templates or problem reports. The online test version was changed separately. Changing it is an edit to real account data, so it waits for approval. It matters only if this copy is used again, or imported at cutover.
 - **Left on the TEST database:** `INQ-2026-00162` to `00168` (fictional, wiped at cutover). Three deactivated accounts `check.11081953`, `check.11081955` and `check.11081957`: accounts are **kept** at cutover, so delete them with the demo accounts (item 4).
 
