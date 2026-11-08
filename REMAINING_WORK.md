@@ -333,9 +333,12 @@ Decisions are in `TEAM_DECISIONS.md` (Monitoring feedback round 2026-11-08b).
   - **Duplicate decision:** "Confirm different clients" on `INQ-2026-00156`, with a reason and the checkbox. It shows "Client check cleared", the hold lifts, and Start handling is enabled.
   - **The sent proposal (`INQ-2026-00155`)** at 1366×768 and at 375px: the status card, the PDF loads (200) and Download email is shown.
 - **Issues found (triage):**
-  - [ ] **F1, fix in day 2: reloading drops the open inquiry.**
-    - The hash is `#inquiry-workspace` with no id, so a reload, or a link someone shares, lands on the Dashboard.
-    - Fix: `#inquiry/<id>`. The workspace API already takes `selected=`.
+  - [x] **F1, fixed in commit `a16824e`: reloading dropped the open inquiry.**
+    - Opening an inquiry now writes `#inquiry/<id>`. A reload, a pasted link, or a link opened while signed out (after sign-in) reopens it.
+    - An unknown id shows "Inquiry not found" and keeps the current page. "Open existing inquiry" on the duplicate card links there too.
+    - **Checked locally on port 5197** (a fresh QA data dir with `next start`): open, reload, a hash link while signed in, an unknown id, the sidebar, and a link while signed out.
+    - **Checked online** on `rmc2-preview-i345ttcjq-yiizer.vercel.app` (aliased to rmc2-test): `#inquiry/INQ-2026-00155` opens and survives a reload.
+    - **Not checked:** a supervisor opening an Awaiting-approval inquiry from a link. There was no such record, and the routing rule is unchanged.
   - [ ] **F2, minor:** Client Directory at 375px squeezes two filter dropdowns to bare arrows.
   - [ ] **F3, minor:** at about 960px wide (a tablet, or a narrow window), the "Sent" status card on the review step wraps into a tall narrow column. It is fine at 1366px.
   - [ ] **F4, noise:** every page load requests `GET my-clients` first (the owner check). Staff get a 404, which shows as a console error. Harmless, but it clutters error tracking (item 6).
