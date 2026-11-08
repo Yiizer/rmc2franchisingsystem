@@ -393,3 +393,10 @@ Format: **Decision** — why — where it applies.
   tell specialist agents to query it first.
 - Plan → Product Owner approval → implement with file ownership → QA + code review → report.
 - Specialists' "done" is not verification; the lead checks evidence (diffs, test output, screenshots).
+
+
+## 2026-11-09: Storage bucket file size limit 25 MB (PO)
+
+- The test bucket `rmc2-test-files` now refuses objects over 25 MB (it was unlimited, so the project default of 50 MB applied).
+- **Why 25, not 15:** the app allows 15 MB of attachments per email, and the saved .eml copy is about a third larger. The app's own upload limit stays 15 MB.
+- **Production:** set the same limit on the production bucket at cutover (`scripts/set-bucket-limit-test.mjs` is the TEST-only version).

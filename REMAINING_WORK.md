@@ -39,8 +39,14 @@ Vercel caps a function's request and response at 4.5 MB. Files over 4 MB now ski
     redirect (6.1 MB), so storage allows the cross-site calls both ways.
   - A security-engineer review found no critical or high issues. The medium findings are fixed: issued-link cap,
     size re-check, scheduled sweep, type not taken from the browser.
+- **Bucket limit (PO decision 2026-11-09: 25 MB, not 15 MB):** `rmc2-test-files` had no limit of its own (project default 50 MB). A
+  saved email can reach about 21 MB (15 MB of attachments, about a third larger once encoded), so 15 MB would have silently
+  dropped those copies. `scripts/set-bucket-limit-test.mjs` set it on the TEST project only. After the change:
+  - 26 MB is refused, both directly and through a signed upload link (HTTP 400);
+  - 15 MB and 1 KB are accepted;
+  - the bucket is still private.
+  **Production needs the same setting at cutover.**
 - **Known, not fixed:**
-  - Set the Supabase bucket's file size limit to 15 MB. It's a storage setting, **left for PO approval**.
   - Two parallel requests with the same upload id could both use it (the person's own file, low risk).
   - The upload is consumed before the route's own permission and validation checks, so a refused file has to be
     chosen again.
