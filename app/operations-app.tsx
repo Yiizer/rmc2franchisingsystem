@@ -38,7 +38,7 @@ export default function OperationsApp({environment='local'}:{environment?:AppEnv
   // Division Heads and SOAs use a separate, whitelisted API: find out which app this session needs.
   const detect=useCallback(async():Promise<'staff'|'owner'>=>{
     let owner=false;
-    try{await api('my-clients');owner=true;}catch(error){owner=(error as {status?:number}).status===403;}
+    try{owner=(await api<{scoped:boolean}>('session')).scoped;}catch{owner=false;}
     if(owner){try{const next=await api<OwnerBoot|{scoped?:undefined}>('bootstrap');if(next.scoped){setBoot(next as OwnerBoot);setMode('owner');return 'owner';}}catch{/* not signed in */}}
     setMode('staff');return 'staff';
   },[]);

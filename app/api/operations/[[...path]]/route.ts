@@ -75,6 +75,8 @@ export async function GET(request:NextRequest,context:Context){try{
   if(route[0]==='login-options')return response({users:[]});
   if(route[0]==='inbound'&&route[1]==='cron'){if(!cronAllowed(request.headers.get('authorization')))throw new AppError('Not allowed.',401);const inbox=await checkInbox();const reminders=await staffProtectionReminders().catch(()=>-1);return response({...inbox,reminders});}
   const user=await staff(request);
+  // Which app this session needs (staff or Division Head / SOA). Reads nothing else, so it sits before the owner whitelist.
+  if(route[0]==='session'&&route.length===1)return response({scoped:isOwnerScoped(user)});
   // Division Heads / SOAs: whitelist first, before any lookup.
   if(isOwnerScoped(user)){assertOwnerScopedRoute(user,'GET',route);const scoped=await ownerGet(request,route,user);if(scoped)return scoped;}
   // A temporary-password session only needs its own Settings page; the workspace still loads (the app reads the user from it).
