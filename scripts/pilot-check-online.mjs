@@ -124,6 +124,16 @@ try {
     vc('cryssa', 'directory?q=pilot'); vc('emerson', 'divisions'); vc('emerson', 'email-templates'); const inbound = vc('cryssa', 'inbound');
     return (users.users?.length ?? '?') + ' users · ' + (n.notifications?.length ?? JSON.stringify(n).slice(0, 40)) + ' notices · inbound ' + (inbound.messages?.length ?? '?');
   });
+  // 8. Report a problem (pilot item 5): who can file, read and update.
+  await check('Problem reports: Division Head files, Employee and Supervisor refused, Head and Admin read', () => {
+    const filed = vc('division-head', 'problem-reports', { json: { description: 'Online check from the Division Head account (test only).', page: 'My Clients' }, expected: 201 });
+    vc('division-head', 'problem-reports', { expected: 403 }); vc('cryssa', 'problem-reports', { expected: 403 }); vc('zeo', 'problem-reports', { expected: 403 });
+    vc('cryssa', 'problem-reports/' + filed.id + '/status', { json: { status: 'fixed' }, expected: 403 });
+    const seen = vc('admin', 'problem-reports').reports.find(r => r.id === filed.id);
+    assert.ok(seen && seen.role === 'DivisionHead' && seen.status === 'new', 'Admin does not see the new report');
+    vc('emerson', 'problem-reports/' + filed.id + '/status', { json: { status: 'fixed' } });
+    return 'filed ' + filed.id.slice(0, 8) + ' · version ' + seen.version + ' · marked fixed by the Head';
+  });
   await check('Check mail now runs', () => JSON.stringify(vc('cryssa', 'inbound/check', { json: {} })).slice(0, 200));
   await check('Sent proposal PDF and .eml download', async () => {
     const pdf = path.join(tmp, 'sent.pdf'); const head = vc('cryssa', 'file/' + main.id + '/pdf', { binary: pdf });

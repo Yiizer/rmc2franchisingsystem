@@ -8,7 +8,21 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
-## Pilot plan item 5: Report a problem (built, NOT deployed; needs migration `20261108000000` on TEST first)
+## Pilot plan item 5: Report a problem (live on the test version since 2026-11-08)
+
+- **Migration `20261108000000` applied to TEST** (PO approved 2026-11-08) with the new `scripts/apply-migration-test.mjs`: one file, in a transaction, test project only. Afterwards:
+  - the columns are `id`, `at`, `user_id`, `status` and `data`, with indexes `problem_reports_at` and `problem_reports_user_at`, and row level security is on;
+  - `rmc2_app` also has DELETE, from the schema's default privileges, not from this file. The app never deletes reports.
+- **Deployment:** `rmc2-preview-7vzybmfm2-yiizer.vercel.app` (commit `c31078e`), aliased to https://rmc2-test-yiizer.vercel.app. `npm run build` passed first.
+- **Online checks:**
+  - **In the browser as the Head:**
+    - a report sent from `INQ-2026-00155` stored page, role, inquiry, version `c31078e` and window `964x846`;
+    - it shows in Problem reports, and changing it to Fixed records who made the change.
+  - **`pilot-check-online` "Problem reports" check, 1/1:**
+    - a Division Head files (201);
+    - the Division Head, an Employee and a Supervisor are refused the list (403), and an Employee can't change a status;
+    - the Admin sees the new report, and the Head marks it fixed.
+- **Not checked online:** the form on a real phone; the 30-a-day cap (checked locally only).
 
 - **What it does:**
   - A life-buoy button sits in the top bar of every staff and Division Head / SOA screen. It opens a short form; the description is the only typed text.
@@ -36,7 +50,7 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
     - the form was hidden under the sidebar (it is now rendered on `<body>`);
     - the inquiry was not captured (it is now read from the address).
 - **Next:**
-  - [ ] PO approval to apply migration `20261108000000` to TEST, then deploy and smoke check.
+  - [x] Migration applied to TEST, deployed and smoke checked (see above).
   - [ ] Item 6: error tracking.
 
 ## Pilot plan for 2026-11-16, day 1 (commit `747c4eb`; live on the test version)
