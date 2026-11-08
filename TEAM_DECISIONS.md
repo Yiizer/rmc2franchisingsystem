@@ -8,6 +8,29 @@ Format: **Decision** — why — where it applies.
 
 ## Product decisions (approved by the Product Owner)
 
+- **Monitoring feedback round 2026-11-08c** (approved by the PO 2026-11-08, "approve as proposed"). Supersedes, for the Monitoring page only, the "Still new" bullet of round 2026-11-08b and its empty-page takeover.
+  - **"Still new" becomes "Not yet sent", the open backlog.**
+    - Definition: an inquiry received before moment T, with no delivered submission by T (manual confirmations count, dry runs don't) and no closure (declined or transferred) by T. The received date doesn't matter.
+    - T is now for the current period, and the end of the period for a past one. The backlog is rebuilt from `createdAt`, `delivery.at` and `closure.at`.
+    - The delta compares the backlog at the end of the existing comparison window: like for like for the current period ("vs. 36 by this time yesterday"), the whole previous period for a past one. A rise is red.
+    - The API field `notStarted` is renamed `notSent` (`ProposalWindowTotals` and the buckets). Each bucket carries the backlog at its end, so the Numbers column reads "Not yet sent (at end)" and its footer is the period-end figure, not a sum.
+    - Why: the PO wants the inquiries still waiting to be sent. Option (b), "received in this period and still unsent", was rejected because it hides the old backlog (Today: 1 against a real 37).
+  - **No empty-page takeover.** Every card always renders with zeros and its own hint:
+    - the trend draws the 0–1 axis;
+    - the pipeline shows 0 and "—";
+    - Busiest day shows 0 rows on Weekly and longer, and keeps "Pick Weekly or longer to compare days" on Today;
+    - Time per employee shows its header row with "No employee activity in this period".
+  - **Time per employee redesign:**
+    - initials disc, name and chevron as one button;
+    - fixed columns, so bars start on one edge and figures end on one;
+    - each average has its value over a 4px bar track;
+    - no row rules, a hover tint;
+    - the card shows first and last name ("Cryssa Aban"), while the dialog, tooltip and accessible name keep the full name.
+  - **Elevation tokens** in `operations-tokens.css`: `--ops-shadow-card` (resting cards and KPI tiles), `--ops-shadow-raised` (tooltip), `--ops-shadow-control` (toolbar controls), `--ops-radius-chip`.
+    - The KPI tiles get tinted icon chips: an 11% tint of the series colour, icon contrast ≥ 4.3:1.
+    - The PO asked for chips and layered shadows explicitly. This overrides the design-taste skill's app-screen rule against icon chips and resting shadows.
+  - **Layout budget:** the two card rows are now equal (`1fr 1fr`, was `1.1fr 1fr`), so Time per employee fits 3 rows at 1366×768 with no page scroll.
+
 - **Monitoring feedback round 2026-11-08b** (approved by the PO 2026-11-08, "approve as proposed"). Supersedes, for the Monitoring page only:
   the 7/30/90-day and 12-month ranges, the CSV export (`FEEDBACK_2026-11-08_PLAN.md` §2.4) and "no new date-picker beyond the 4 ranges" (§5).
   - **Ranges are calendar periods in Manila time:** Today (24 hourly buckets) · Weekly, Monday–Sunday (7 days) · Monthly (28–31 days) · Yearly (12 months). Monthly is the default.

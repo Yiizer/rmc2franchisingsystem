@@ -1,7 +1,8 @@
 /* Monitoring (Head and Supervisors). Redesign 2026-11-08: on desktop the page is a fixed-height grid that fits the screen (no page scroll).
    Colours: operations tokens only (operations-tokens.css), no hex/rgb in this file. Tints and borders are color-mix() of tokens.
    Series (PO 2026-11-08b, the company theme): Received = navy, Sent = burnt orange (--ops-action, 5.2:1 on white; navy vs orange 3:1),
-   Declined = --ops-error, Still new = --ops-muted. Light theme only: the app has no dark theme. */
+   Declined = --ops-error, Not yet sent = --ops-muted. Light theme only: the app has no dark theme.
+   Elevation (2026-11-08c): --ops-shadow-card on resting cards, --ops-shadow-raised on hover/tooltips, --ops-shadow-control on toolbar controls. */
 .pd-page{--pd-received:var(--ops-navy);--pd-sent:var(--ops-action);--pd-declined:var(--ops-error);--pd-idle:var(--ops-muted);
  --pd-create:var(--ops-navy);--pd-handling:var(--ops-action);--pd-track:var(--ops-info-tint);
  --pd-neutral-bar:color-mix(in srgb,var(--ops-navy) 55%,var(--ops-surface));--pd-border:color-mix(in srgb,var(--ops-muted) 42%,var(--ops-surface));
@@ -12,26 +13,29 @@
 /* ---------- Header ---------- */
 .pd-head{display:flex;align-items:center;justify-content:space-between;gap:10px 20px;flex-wrap:wrap;min-width:0}
 .pd-title{min-width:0;flex:1 1 260px}
-.pd-title h1{margin:0;font-size:var(--ops-title-sm);line-height:1.2;color:var(--pd-heading)}
+.pd-title h1{margin:0;font-size:var(--ops-title-sm);line-height:1.2;color:var(--pd-heading);font-weight:700;letter-spacing:-.01em}
 .pd-title p{margin:3px 0 0;font-size:var(--ops-text-xs);color:var(--ops-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pd-title p b{color:var(--ops-ink);font-weight:600}
 .pd-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;position:relative}
-.pd-segment{display:inline-flex;border:1px solid var(--pd-border);border-radius:var(--ops-radius);overflow:hidden;background:var(--ops-surface)}
-.pd-segment button{border:0;border-right:1px solid var(--pd-border);background:var(--ops-surface);color:var(--ops-secondary);font-size:var(--ops-text-sm);font-weight:600;min-height:36px;padding:0 12px;cursor:pointer;white-space:nowrap}
+.pd-segment{display:inline-flex;border:1px solid var(--pd-border);border-radius:var(--ops-radius);overflow:hidden;background:var(--ops-surface);box-shadow:var(--ops-shadow-control)}
+.pd-segment button{border:0;border-right:1px solid var(--pd-border);background:var(--ops-surface);color:var(--ops-secondary);font-size:var(--ops-text-sm);font-weight:600;min-height:36px;padding:0 12px;cursor:pointer;white-space:nowrap;transition:background-color .15s ease-out,color .15s ease-out,transform .12s ease-out}
 .pd-segment button:last-child{border-right:0}
 .pd-segment button:hover{background:var(--ops-secondary-hover)}
 .pd-segment button.is-active{background:var(--ops-secondary);color:var(--ops-action-ink)}
 .pd-segment button:focus-visible{outline-offset:-3px}
-.pd-export,.pd-refresh{min-height:36px}
+.ops-app.ops-app .pd-page .ops-btn{transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out,transform .12s ease-out}
+.pd-export,.pd-refresh{min-height:36px;box-shadow:var(--ops-shadow-control)}
+/* Press feedback on every control (transform only; reduced motion drops it, see the end of the file). */
+.pd-page :is(.pd-segment button,.pd-step,.pd-period-label,.ops-btn,.pd-current,.pd-all):active:not(:disabled){transform:scale(.97)}
 .pd-refresh{padding:0 10px}
 .pd-export-error{flex-basis:100%;text-align:right;font-size:var(--ops-text-xs);color:var(--ops-error)}
 
 /* Period stepper: ‹ label (opens Jump to) › · Back to current */
 .pd-period{display:inline-flex;align-items:center;gap:4px}
-.pd-step,.pd-period-label{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;border:1px solid var(--pd-border);border-radius:var(--ops-radius);background:var(--ops-surface);color:var(--ops-secondary);cursor:pointer;font-size:var(--ops-text-sm);font-weight:600}
+.pd-step,.pd-period-label{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;border:1px solid var(--pd-border);border-radius:var(--ops-radius);background:var(--ops-surface);color:var(--ops-secondary);cursor:pointer;font-size:var(--ops-text-sm);font-weight:600;box-shadow:var(--ops-shadow-control);transition:background-color .15s ease-out,border-color .15s ease-out,transform .12s ease-out}
 .pd-step{width:36px;padding:0}
 .pd-step:hover:not(:disabled),.pd-period-label:hover{background:var(--ops-secondary-hover);border-color:var(--ops-secondary)}
-.pd-step:disabled{color:var(--pd-border);cursor:not-allowed;background:var(--ops-canvas)}
+.pd-step:disabled{color:var(--pd-border);cursor:not-allowed;background:var(--ops-canvas);box-shadow:none}
 .pd-period-label{padding:0 10px;min-width:11.5rem;white-space:nowrap}
 .pd-period-label span{overflow:hidden;text-overflow:ellipsis}
 .pd-current{border:0;background:none;padding:4px 2px;color:var(--ops-avail-ink);font-size:var(--ops-text-xs);font-weight:600;text-decoration:underline;text-underline-offset:2px;cursor:pointer;white-space:nowrap}
@@ -46,13 +50,15 @@
 
 /* ---------- KPI tiles ---------- */
 .pd-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--pd-gap);min-width:0}
-.pd-kpi{margin:0;padding:12px 16px;display:grid;gap:4px;min-width:0}
-.pd-kpi-head{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:var(--ops-text-xs);font-weight:600;color:var(--ops-muted)}
-.pd-kpi-head svg{flex:none;color:var(--pd-kpi,var(--ops-muted))}
+.ops-card.pd-kpi{margin:0;padding:12px 16px;display:grid;gap:6px;min-width:0;border-radius:var(--ops-card-radius);box-shadow:var(--ops-shadow-card)}
+.pd-kpi-head{display:flex;align-items:center;gap:8px;font-size:var(--ops-text-xs);font-weight:600;color:var(--ops-muted);min-width:0}
+.pd-kpi-head>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Tinted icon chip: the series colour on an 11% tint of itself (icon contrast >= 3:1 on every tone). */
+.pd-chip{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:var(--ops-radius-chip);background:color-mix(in srgb,var(--pd-kpi,var(--ops-muted)) 11%,var(--ops-surface));color:var(--pd-kpi,var(--ops-muted))}
 .pd-kpi.tone-received{--pd-kpi:var(--pd-received)}.pd-kpi.tone-sent{--pd-kpi:var(--pd-sent)}.pd-kpi.tone-declined{--pd-kpi:var(--pd-declined)}.pd-kpi.tone-idle{--pd-kpi:var(--pd-idle)}
 .pd-kpi-rate{--pd-kpi:var(--pd-sent)}
 .pd-kpi-main{display:flex;align-items:center;gap:8px;min-width:0}
-.pd-kpi-main strong{font-size:26px;line-height:1.1;color:var(--pd-heading);font-weight:700}
+.pd-kpi-main strong{font-size:26px;line-height:1.1;color:var(--pd-heading);font-weight:700;letter-spacing:-.01em}
 .pd-kpi small{color:var(--ops-muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pd-delta{display:inline-flex;align-items:center;gap:2px;font-size:11px;font-weight:700;padding:2px 6px;border-radius:999px;border:1px solid transparent}
 .pd-delta.is-good{color:var(--ops-done);background:var(--ops-done-tint);border-color:var(--ops-mine-line)}
@@ -69,19 +75,19 @@
 .pd-row{display:grid;gap:var(--pd-gap);min-width:0;min-height:0}
 .pd-row-main{grid-template-columns:minmax(0,8fr) minmax(0,4fr)}
 .pd-row-low{grid-template-columns:minmax(0,7fr) minmax(0,5fr)}
-.pd-card{margin:0;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.ops-card.pd-card{margin:0;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;border-radius:var(--ops-card-radius);box-shadow:var(--ops-shadow-card)}
 .pd-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px 16px 8px}
-.pd-card-head h2{margin:0;font-size:var(--ops-text);line-height:1.3;color:var(--pd-heading)}
+.pd-card-head h2{margin:0;font-size:var(--ops-text);line-height:1.3;color:var(--pd-heading);font-weight:700}
 .pd-card-head p{margin:2px 0 0;color:var(--ops-muted);font-size:var(--ops-text-xs)}
 .pd-card-head p b{color:var(--ops-ink);font-weight:600}
 .pd-card-body{flex:1;min-height:0;display:flex;flex-direction:column;padding:0 16px 8px}
 .pd-fill{flex:1;min-height:0}
 .pd-chart{min-height:0}
-.pd-legend{display:flex;gap:14px;list-style:none;margin:2px 0 0;padding:0;font-size:var(--ops-text-xs);color:var(--ops-muted);white-space:nowrap}
-.pd-legend li{display:flex;align-items:center;gap:6px}
-.pd-legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.pd-legend{display:flex;gap:6px;list-style:none;margin:0;padding:0;font-size:var(--ops-text-xs);color:var(--ops-ink);white-space:nowrap}
+.pd-legend li{display:flex;align-items:center;gap:6px;padding:3px 10px 3px 8px;border-radius:999px;background:var(--ops-canvas);border:1px solid var(--ops-line);font-weight:500}
+.pd-legend i{width:8px;height:8px;border-radius:2px;display:inline-block}
 .pd-legend i.received{background:var(--pd-received)}.pd-legend i.sent{background:var(--pd-sent)}
-.pd-tip{background:var(--ops-surface);border:1px solid var(--ops-line);border-radius:8px;box-shadow:var(--ops-popover-shadow);padding:8px 10px;font-size:12px;display:grid;gap:4px;min-width:130px}
+.pd-tip{background:var(--ops-surface);border:1px solid var(--ops-line);border-radius:8px;box-shadow:var(--ops-shadow-raised);padding:8px 10px;font-size:12px;display:grid;gap:4px;min-width:130px}
 .pd-tip b{color:var(--pd-heading)}
 .pd-tip span{display:flex;align-items:center;gap:6px;color:var(--ops-muted)}
 .pd-tip i{width:8px;height:8px;border-radius:2px;display:inline-block}
@@ -90,14 +96,14 @@
 p.pd-hint.pd-fill{display:flex;align-items:center;justify-content:center;text-align:center}
 
 /* Shared horizontal bar (busiest day, pipeline): anchored to the left, rounded data end */
-.pd-bar-track{display:block;height:10px;background:var(--pd-track);border-radius:4px;overflow:hidden;min-width:0}
+.pd-bar-track{display:block;height:12px;background:var(--pd-track);border-radius:4px;overflow:hidden;min-width:0}
 .pd-bar{display:block;height:100%;border-radius:4px;background:var(--pd-neutral-bar)}
 
 /* ---------- Busiest day ---------- */
 .pd-days-wrap{display:flex;flex-direction:column}
 .pd-days{list-style:none;margin:0;padding:0;flex:1;min-height:0;display:grid;grid-template-rows:repeat(7,minmax(0,1fr));align-items:center}
 .pd-days li{display:grid;grid-template-columns:36px minmax(0,1fr) 28px;align-items:center;gap:10px;font-size:var(--ops-text-xs);color:var(--ops-muted)}
-.pd-day-value{text-align:right;color:var(--ops-ink)}
+.pd-day-value{text-align:right;color:var(--ops-ink);font-weight:600}
 .pd-days li.is-top{color:var(--pd-heading);font-weight:700}
 .pd-days li.is-top .pd-bar{background:var(--pd-sent)}
 
@@ -106,7 +112,7 @@ p.pd-hint.pd-fill{display:flex;align-items:center;justify-content:center;text-al
 .pd-steps li{display:grid;grid-template-columns:78px minmax(0,1fr) 40px 76px 92px 40px;align-items:center;gap:10px;font-size:var(--ops-text-xs)}
 .pd-steps li>:nth-child(n+3){text-align:right}
 .pd-steps .pd-steps-head{font-size:11px;font-weight:600;color:var(--pd-head-ink);padding-bottom:2px}
-.pd-steps .pd-bar-track{height:14px}
+.pd-steps .pd-bar-track{height:12px}
 .pd-steps .pd-bar{background:var(--pd-received)}
 .pd-steps li.is-last .pd-bar{background:var(--pd-sent)}
 .pd-step-name{font-weight:600;color:var(--ops-ink)}
@@ -117,19 +123,42 @@ p.pd-hint.pd-fill{display:flex;align-items:center;justify-content:center;text-al
 /* ---------- Time per employee ---------- */
 .pd-timing-wrap{display:flex;flex-direction:column;justify-content:flex-start;gap:2px;overflow:hidden}
 .pd-all{align-self:flex-start;font-size:var(--ops-text-xs);font-weight:600;background:none;border:0;padding:4px 0;cursor:pointer;color:var(--ops-avail-ink);text-decoration:underline;text-underline-offset:2px}
-.pd-avg{position:relative;display:inline-block;min-width:64px;padding-bottom:4px}
-.pd-mini{position:absolute;left:0;bottom:0;display:block;height:3px;border-radius:2px}
+/* Redesign 2026-11-08c: fixed columns so every bar starts on one edge and every figure ends on one edge; no row rules, a hover tint;
+   the name is the button (initials disc, name, chevron), so the whole row reads as "open the details". */
+.pd-table.pd-timing{table-layout:fixed}
+.pd-table.pd-timing thead th{padding:6px 6px;background:var(--ops-surface);border-bottom:1px solid var(--ops-line);color:var(--pd-head-ink);font-weight:500}
+.pd-table.pd-timing thead th:first-child{padding-left:4px}
+.pd-table.pd-timing thead th:nth-child(2){width:54px}.pd-table.pd-timing thead th:nth-child(4){width:40px}
+.pd-table.pd-timing thead th.pd-avg-h{width:84px}
+.pd-table.pd-timing tbody th,.pd-table.pd-timing tbody td{padding:0 6px;height:32px;border-bottom:0;line-height:1.3}
+.pd-table.pd-timing tbody th{max-width:none;padding-left:4px}
+.pd-table.pd-timing tbody td{color:var(--ops-ink)}
+.pd-table.pd-timing tbody tr>*:first-child{border-radius:var(--ops-radius) 0 0 var(--ops-radius)}
+.pd-table.pd-timing tbody tr>*:last-child{border-radius:0 var(--ops-radius) var(--ops-radius) 0}
+.pd-avg{display:grid;gap:3px;justify-items:end}
+.pd-avg-value{font-weight:600}
+.pd-avg-track{order:2;display:block;width:100%;height:4px;border-radius:2px;background:var(--pd-track);overflow:hidden}
+.pd-mini{display:block;height:100%;border-radius:2px}
 .pd-mini.create{background:var(--pd-create)}.pd-mini.handling{background:var(--pd-handling)}
-.pd-table.pd-timing thead th{padding:5px 10px}
-.pd-table.pd-timing tbody th,.pd-table.pd-timing tbody td{padding:4px 10px;line-height:1.3}
 .pd-table tbody tr.is-clickable{cursor:pointer}
-.pd-person{border:0;background:none;padding:0;margin:0;font:inherit;font-weight:600;color:var(--ops-avail-ink);text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--ops-avail-ink) 35%,transparent);text-underline-offset:2px;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
-.pd-table tbody tr.is-clickable:hover .pd-person{text-decoration-color:currentColor}
-.pd-dialog .pd-table.pd-timing tbody th,.pd-dialog .pd-table.pd-timing tbody td{padding:8px 12px}
-.pd-dialog{margin:auto;border:1px solid var(--ops-line);border-radius:var(--ops-card-radius);padding:0;max-width:min(760px,calc(100vw - 32px));width:100%;max-height:min(86dvh,760px);box-shadow:var(--ops-popover-shadow);color:var(--ops-ink);background:var(--ops-surface)}
+.pd-person{display:flex;align-items:center;gap:6px;width:100%;min-width:0;border:0;background:none;padding:4px 0;margin:0;font:inherit;font-weight:600;color:var(--ops-ink);cursor:pointer;text-align:left;border-radius:var(--ops-radius)}
+.pd-person:focus-visible{outline-offset:-1px}
+.pd-initials{flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:color-mix(in srgb,var(--ops-navy) 10%,var(--ops-surface));color:var(--ops-navy);font-size:10px;font-weight:700;letter-spacing:.02em}
+.pd-person-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:transparent;text-underline-offset:3px;transition:text-decoration-color .15s ease-out}
+.pd-chev{flex:none;color:var(--ops-muted);transition:color .15s ease-out,transform .15s ease-out}
+.pd-table tbody tr.is-clickable:focus-within>*{background:var(--pd-hover)}
+@media(hover:hover) and (pointer:fine){
+ .pd-table tbody tr.is-clickable:hover .pd-person-name{text-decoration-color:currentColor}
+ .pd-table tbody tr.is-clickable:hover .pd-chev{color:var(--ops-action);transform:translateX(2px)}
+}
+.pd-table.pd-timing tr.pd-empty-row td{height:auto;padding:20px 8px;text-align:center;color:var(--ops-muted);white-space:normal}
+.pd-table.pd-timing tr.pd-empty-row:hover>*{background:transparent}
+.pd-dialog .pd-table.pd-timing tbody th,.pd-dialog .pd-table.pd-timing tbody td{height:42px}
+.pd-dialog .pd-table.pd-timing thead th.pd-avg-h{width:132px}
+.pd-dialog{margin:auto;border:0;border-radius:var(--ops-card-radius);padding:0;max-width:min(760px,calc(100vw - 32px));width:100%;max-height:min(86dvh,760px);box-shadow:var(--ops-popover-shadow);color:var(--ops-ink);background:var(--ops-surface)}
 .pd-dialog[open]{display:flex;flex-direction:column}
 .pd-dialog::backdrop{background:color-mix(in srgb,var(--ops-navy) 40%,transparent)}
-.pd-dialog-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:14px 16px;border-bottom:1px solid var(--ops-line)}
+.pd-dialog-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:14px 16px;background:var(--ops-canvas)}
 .pd-dialog-head h2{margin:0;font-size:var(--ops-text-lg);color:var(--pd-heading)}
 .pd-dialog-head p{margin:2px 0 0;font-size:var(--ops-text-xs);color:var(--ops-muted)}
 .pd-dialog .pd-scroll{flex:1;max-height:none;overflow:auto;padding:0 4px 8px}
@@ -191,7 +220,6 @@ p.pd-hint.pd-fill{display:flex;align-items:center;justify-content:center;text-al
 .pd-state p{margin:0;color:var(--ops-muted)}
 .pd-state>div{flex:1;min-width:200px}
 .pd-error{border-color:color-mix(in srgb,var(--ops-error) 32%,var(--ops-surface));background:var(--ops-error-tint)}
-.pd-empty{margin:0;display:flex;align-items:center;justify-content:center}
 .pd-sk{min-height:96px;border-radius:var(--ops-card-radius)}
 .pd-row .pd-sk{min-height:200px;height:100%}
 
@@ -200,13 +228,12 @@ p.pd-hint.pd-fill{display:flex;align-items:center;justify-content:center;text-al
  .ops-main:has(.pd-page){padding-top:20px;padding-bottom:12px}
  .ops-main:has(.pd-page) .ops-footer{margin-top:12px}
  /* 64 top bar + 20 + 12 main padding + 12 + 36 footer = 144 */
- .pd-page{height:calc(100dvh - 144px);grid-template-rows:auto auto minmax(0,1.1fr) minmax(0,1fr)}
+ .pd-page{height:calc(100dvh - 144px);grid-template-rows:auto auto minmax(0,1fr) minmax(0,1fr)}
  .pd-page.is-state{grid-template-rows:auto 1fr}
  .pd-kpis-wrap{min-width:0}
- .pd-empty{grid-row:3 / span 2}
 }
 /* Short desktop screens: the header wraps to two lines, so trim the KPI tiles a little. */
-@media(min-width:1024px) and (max-width:1500px){.pd-kpi{padding:9px 14px;gap:2px}.pd-kpi-main strong{font-size:24px}}
+@media(min-width:1024px) and (max-width:1500px){.ops-card.pd-kpi{padding:9px 14px;gap:3px}.pd-kpi-main strong{font-size:24px}}
 @media(max-width:1180px){.pd-steps li{grid-template-columns:70px minmax(0,1fr) 32px 70px 84px 36px;gap:8px}}
 
 /* ---------- Tablet and phone: cards stack, page scroll allowed ---------- */
@@ -242,7 +269,8 @@ p.pd-hint.pd-fill{display:flex;align-items:center;justify-content:center;text-al
  .pd-steps .pd-steps-head{font-size:10px}
  .pd-card-head{flex-wrap:wrap}
  .pd-detail-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .pd-table.pd-timing{min-width:400px}
  .pd-tl-events li{grid-template-columns:14px minmax(0,1fr);row-gap:0}
  .pd-tl-events li>:nth-child(n+3){grid-column:2}
 }
-@media(prefers-reduced-motion:reduce){.pd-page [data-busy]{transition:none}}
+@media(prefers-reduced-motion:reduce){.pd-page [data-busy]{transition:none}.pd-page :is(.pd-segment button,.pd-step,.pd-period-label,.ops-btn,.pd-current,.pd-all):active:not(:disabled){transform:none}.pd-chev{transition:none}}

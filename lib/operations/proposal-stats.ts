@@ -76,6 +76,16 @@ function createDuration(record: InquiryRecord, i: number): number {
   const start = firstStart(record, submission.submittedBy, anchor);
   return Number.isFinite(start) && start <= submittedAt ? submittedAt - start : NaN;
 }
+/** "Not yet sent" (PO 2026-11-08c): when an inquiry left the backlog, i.e. its first real delivery (manual confirmations count, dry runs don't)
+ * or its closure (declined / transferred), whichever came first. Infinity while it is still waiting. */
+function leftBacklogAt(record: InquiryRecord): number {
+  let at = Infinity;
+  for (const item of deliveredSubmissions(record)) { const ms = time(item.delivery!.at); if (ms < at) at = ms; }
+  const closed = time(record.closure?.at);
+  return closed < at ? closed : at;
+}
+/** Waiting to be sent at moment `at`: received before it and not yet sent or closed by then, whatever the received date. */
+const waitingAt = (record: InquiryRecord, at: number) => time(record.createdAt) < at && leftBacklogAt(record) >= at;
 /** (b) Handling time: first start by anyone -> delivery of the sent version, credited to that version's submitter. Manual confirmations count. */
 function handling(record: InquiryRecord): { userId: string; at: number; ms: number } | null {
   const sentVersion = deliveredSubmissions(record).at(-1);
@@ -95,7 +105,7 @@ export function computeProposalStats(records: InquiryRecord[], users: Pick<Staff
   }
   const from = range?.exact ? range.from : starts[0], to = range?.exact ? range.to : nextStart(period, starts[starts.length - 1]);
   const where = (ms: number) => { if (!Number.isFinite(ms) || ms < from || ms >= to) return -1; let lo = 0, hi = starts.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] <= ms) lo = mid; else hi = mid - 1; } return lo; };
-  const buckets = starts.map(start => ({ label: labelOf(period, start), start: new Date(start).toISOString(), received: 0, sent: 0, declined: 0, notStarted: 0 }));
+  const buckets = starts.map(start => ({ label: labelOf(period, start), start: new Date(start).toISOString(), received: 0, sent: 0, declined: 0, notSent: 0 }));
   const funnel = { Received: 0, Started: 0, Submitted: 0, Approved: 0, Sent: 0 };
   const created = new Map<string, number[]>(), handled = new Map<string, number[]>();
   const add = (map: Map<string, number[]>, id: string, ms: number) => { const list = map.get(id) || []; list.push(ms); map.set(id, list); };
@@ -107,7 +117,6 @@ export function computeProposalStats(records: InquiryRecord[], users: Pick<Staff
     if (record.closure?.kind === 'declined') { const i = where(time(record.closure.at)); if (i >= 0) buckets[i].declined++; }
     const createdIndex = where(time(record.createdAt));
     if (createdIndex >= 0) buckets[createdIndex].received++;
-    if (createdIndex >= 0 && record.status === 'New inquiry' && !record.closure) buckets[createdIndex].notStarted++;
 
     // Funnel over inquiries received in the range. Each step implies the one before it, so the steps are always nested.
     if (createdIndex >= 0) {
@@ -127,6 +136,14 @@ export function computeProposalStats(records: InquiryRecord[], users: Pick<Staff
     const handled1 = handling(record);
     if (handled1 && where(handled1.at) >= 0) add(handled, handled1.userId, handled1.ms);
   }
+
+  // Not yet sent per bucket: the backlog (a level, not a count of events) at the bucket's end, or now for the current bucket.
+  // O(records x buckets): fine at hundreds of rows and at most MAX_BUCKETS buckets.
+  buckets.forEach((bucket, i) => {
+    if (starts[i] > now) return;
+    const end = Math.min(i + 1 < starts.length ? starts[i + 1] : to, to, now);
+    for (const record of records) if (waitingAt(record, end)) bucket.notSent++;
+  });
 
   const names = new Map(users.map(person => [person.id, person.name]));
   const mean = (values: number[] | undefined) => values?.length ? Math.round(values.reduce((sum, v) => sum + v, 0) / values.length) : null;
@@ -150,16 +167,18 @@ export function periodWindows(range: ProposalStatsRange, now: number, key?: stri
   const to = periodEnd(range, from), previousFrom = shiftPeriod(range, from, -1), toDate = from === periodStart(range, now);
   return { bucket: BUCKET_OF[range], from, to, previousFrom, previousTo: toDate ? Math.min(from, sameMomentEarlier(range, now)) : from, toDate };
 }
-/** The four KPI counts over [from, to). Same definitions as the buckets; "sent" counts an inquiry once however often it was delivered. */
-export function windowTotals(records: InquiryRecord[], from: number, to: number): Omit<ProposalWindowTotals, 'from' | 'to'> {
-  const inside = (value: string | undefined) => { const ms = time(value); return ms >= from && ms < to; };
-  let received = 0, sent = 0, declined = 0, notStarted = 0;
+/** The KPI counts over [from, to). Same definitions as the buckets; "sent" counts an inquiry once however often it was delivered.
+ * notSent is not a count over the window: it is the backlog at the window's end, or at `now` while the window is still running. */
+export function windowTotals(records: InquiryRecord[], from: number, to: number, now: number): Omit<ProposalWindowTotals, 'from' | 'to'> {
+  const inside = (value: string | undefined) => { const ms = time(value); return ms >= from && ms < to; }, asOf = Math.min(to, now);
+  let received = 0, sent = 0, declined = 0, notSent = 0;
   for (const record of records) {
-    if (inside(record.createdAt)) { received++; if (record.status === 'New inquiry' && !record.closure) notStarted++; }
+    if (inside(record.createdAt)) received++;
+    if (waitingAt(record, asOf)) notSent++;
     if (record.submissions.some(item => item.delivery && !item.delivery.dryRun && inside(item.delivery.at))) sent++;
     if (record.closure?.kind === 'declined' && inside(record.closure.at)) declined++;
   }
-  return { received, sent, declined, notStarted };
+  return { received, sent, declined, notSent };
 }
 /** Proposals sent per Manila weekday in [from, to) (PO Q3): an inquiry counts once per day it was delivered, the same as the day buckets. */
 export function sendsByWeekday(records: InquiryRecord[], from: number, to: number) {
@@ -176,8 +195,8 @@ export function computeRangeStats(records: InquiryRecord[], users: Pick<Staff, '
   return { ...result, buckets: result.buckets.map(b => Date.parse(b.start) > now ? { ...b, future: true } : b), summary: {
     range, period: periodKey(range, w.from), label: periodLabel(range, w.from), previousLabel: periodLabel(range, w.previousFrom), toDate: w.toDate,
     currentPeriod: periodKey(range, periodStart(range, now)), earliestPeriod: periodKey(range, earliestStart(range, now)),
-    current: { from: iso(w.from), to: iso(w.to), ...windowTotals(records, w.from, w.to) },
-    previous: { from: iso(w.previousFrom), to: iso(w.previousTo), ...windowTotals(records, w.previousFrom, w.previousTo) },
+    current: { from: iso(w.from), to: iso(w.to), ...windowTotals(records, w.from, w.to, now) },
+    previous: { from: iso(w.previousFrom), to: iso(w.previousTo), ...windowTotals(records, w.previousFrom, w.previousTo, now) },
     weekdays: sendsByWeekday(records, w.from, w.to),
     sentRate: received ? Math.round(sent / received * 100) : null,
   } };

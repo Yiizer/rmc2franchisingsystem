@@ -18,6 +18,12 @@
  --ops-text-xs:12px; --ops-text-sm:13px; --ops-text:14px; --ops-text-lg:16px; --ops-title-sm:20px; --ops-title:28px;
  --ops-space-1:4px; --ops-space-2:8px; --ops-space-3:12px; --ops-space-4:16px; --ops-space-6:24px; --ops-space-8:32px; --ops-space-12:48px;
  --ops-radius:6px; --ops-card-radius:10px; --ops-shadow:0 2px 8px #0a204708; --ops-popover-shadow:0 12px 36px #0a204726;
+ /* Elevation (Monitoring polish, PO 2026-11-08c). Navy-tinted, layered: a hairline, a contact shadow and a soft ambient one.
+    card = resting cards; raised = hover on something clickable, tooltips, dialogs; control = toolbar buttons and segments. */
+ --ops-shadow-card:0 0 0 1px #0a20470a,0 1px 2px #0a20470f,0 4px 12px -4px #0a204714;
+ --ops-shadow-raised:0 0 0 1px #0a20470d,0 2px 4px #0a204714,0 12px 24px -8px #0a20471f;
+ --ops-shadow-control:0 1px 2px #0a20470f;
+ --ops-radius-chip:8px;
  --ops-z-sticky:30; --ops-z-sidebar:40; --ops-z-backdrop:70; --ops-z-drawer:80; --ops-z-modal:100; --ops-z-toast:120;
  --ops-sidebar-width:224px; --ops-sidebar-rail:72px;
 }

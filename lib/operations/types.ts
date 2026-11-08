@@ -103,13 +103,14 @@ export function kpiDelta(current:number,previous:number,upIsGood:boolean):{text:
   const up=change>0;
   return {text:Math.abs(change)+'%',tone:up===upIsGood?'good':'bad',direction:up?'up':'down'};
 }
-/** Counts over [from, to). notStarted ("Still new" on screen) = received in the window and still "New inquiry" with no closure, as of now. */
-export type ProposalWindowTotals = { from: string; to: string; received: number; sent: number; declined: number; notStarted: number };
+/** Counts over [from, to), except notSent ("Not yet sent" on screen, PO 2026-11-08c): the backlog of open inquiries with no delivered submission
+ * and no closure (declined / transferred), whatever their received date, at the window's end (or now, while the window is still running). */
+export type ProposalWindowTotals = { from: string; to: string; received: number; sent: number; declined: number; notSent: number };
 export type ProposalStats = {
   period: ProposalStatsPeriod; from: string; to: string; asOf: string;
   /** received = inquiries created in the bucket (added 2026-11-08 for the Monitoring trend). */
   /** future: the bucket starts after asOf (the current period's later hours/days/months), drawn empty. Only with ?range=. */
-  buckets: { label: string; start: string; received: number; sent: number; declined: number; notStarted: number; future?: boolean }[];
+  buckets: { label: string; start: string; received: number; sent: number; declined: number; /** Backlog at the bucket's end (or now). */ notSent: number; future?: boolean }[];
   funnel: { step: 'Received'|'Started'|'Submitted'|'Approved'|'Sent'; count: number }[];
   /** Milliseconds. avg* are null when the matching count is 0. */
   timing: { userId: string; name: string; created: number; avgCreateMs: number|null; sent: number; avgHandlingMs: number|null }[];

@@ -59,8 +59,9 @@ const min = 60000;
   // sent: Nov 1 R8 | Nov 2 R5,R9 (R9 at exactly Manila midnight) | Nov 4 R4 | Nov 5 R6.  R10 is outside.
   assert.deepEqual(column(r, 'sent'), { 'Nov 1': 1, 'Nov 2': 2, 'Nov 4': 1, 'Nov 5': 1 });
   assert.deepEqual(column(r, 'declined'), { 'Nov 1': 1 });
-  // not started: Nov 1 R1 and R3 (1 ms before midnight) | Nov 2 R2 (exactly midnight)
-  assert.deepEqual(column(r, 'notStarted'), { 'Nov 1': 2, 'Nov 2': 1 });
+  // not yet sent = the backlog at each day's end (now for Nov 8): Oct 30 R7 | Oct 31 R7 R8 R9 | Nov 1 R1 R3 R9 (R7 declined 12:00, R8 sent 23:59:59,
+  // R9 sent exactly at the next midnight, R2 received exactly at it) | Nov 2 R1 R2 R3 | Nov 3 + R4 | Nov 4 onward R1 R2 R3.
+  assert.deepEqual(column(r, 'notSent'), { 'Oct 30': 1, 'Oct 31': 3, 'Nov 1': 3, 'Nov 2': 3, 'Nov 3': 4, 'Nov 4': 3, 'Nov 5': 3, 'Nov 6': 3, 'Nov 7': 3, 'Nov 8': 3 });
   // received R1-R9 (R10 is older); started R4,R5,R6,R8,R9 (R6 implied by its submission); the rest nest with the same 5.
   assert.deepEqual(funnel(r), { Received: 9, Started: 5, Submitted: 5, Approved: 5, Sent: 5 });
   // created: cryssa R4 v1 2h + v2 2.5h (anchor = the return at 14:00, first save 15:00 -> 17:30) | jefferson R5 1h, R9 1h | judy R8 1h; R6 has no start.
@@ -71,7 +72,7 @@ const min = 60000;
     judy: [1, 3600000, 1, 38 * H + 59 * min + 59000],
   });
   assert.deepEqual(r.timing.map(row => row.name), ['Cryssa Kate Aban', 'Jefferson Silot', 'Judy Villaruel']);
-  t.pass('DAY: sent / declined / not-started per day, Manila midnight and Sunday-Monday edges, funnel 9/5/5/5/5, timing per employee (hand-computed)');
+  t.pass('DAY: sent / declined / not-yet-sent backlog per day, Manila midnight and Sunday-Monday edges, funnel 9/5/5/5/5, timing per employee (hand-computed)');
 }
 
 // ---------- WEEK: 12 weeks ending with Mon Nov 2 - Sun Nov 8 ----------
@@ -84,7 +85,7 @@ const min = 60000;
   assert.equal(r.buckets[0].label, 'Aug 17–23');
   assert.deepEqual(column(r, 'sent'), { 'Sep 28–Oct 4': 1, 'Oct 26–Nov 1': 1, 'Nov 2–8': 4 }); // R10 | R8 (Sunday 23:59:59) | R4,R5,R6,R9 (R9 Monday 00:00)
   assert.deepEqual(column(r, 'declined'), { 'Oct 26–Nov 1': 1 });
-  assert.deepEqual(column(r, 'notStarted'), { 'Oct 26–Nov 1': 2, 'Nov 2–8': 1 });
+  assert.deepEqual(column(r, 'notSent'), { 'Oct 26–Nov 1': 3, 'Nov 2–8': 3 }, 'R1 R3 R9 at Mon 00:00 | R1 R2 R3 now');
   assert.deepEqual(funnel(r), { Received: 10, Started: 6, Submitted: 6, Approved: 6, Sent: 6 });
   // R10 adds cryssa: created 2h (start = first saved preparation) and handling 24h. cryssa created (2h+2.5h+2h)/3 = 2h20m, handling (22h05m + 24h)/2.
   assert.deepEqual(timing(r), {
@@ -104,7 +105,7 @@ const min = 60000;
   assert.equal(r.buckets[11].start, M('2026-11-01T00:00:00'));
   assert.deepEqual(column(r, 'sent'), { 'Oct 2026': 1, 'Nov 2026': 5 });
   assert.deepEqual(column(r, 'declined'), { 'Nov 2026': 1 });
-  assert.deepEqual(column(r, 'notStarted'), { 'Nov 2026': 3 });
+  assert.deepEqual(column(r, 'notSent'), { 'Oct 2026': 3, 'Nov 2026': 3 }, 'R7 R8 R9 at Nov 1 00:00 | R1 R2 R3 now');
   assert.deepEqual(funnel(r), { Received: 10, Started: 6, Submitted: 6, Approved: 6, Sent: 6 });
   t.pass('MONTH: Dec 2025 .. Nov 2026, October and November counts, funnel 10/6/6/6/6');
 }
@@ -191,8 +192,8 @@ const min = 60000;
 // ========== Feedback round 2026-11-08b: calendar periods (range=day|week|month|year), past periods (&period=), like-for-like deltas, drill-down ==========
 const types = await t.load('types');
 const periods = await t.load('proposal-periods');
-const totals = w => ({ received: w.received, sent: w.sent, declined: w.declined, notStarted: w.notStarted });
-const kpis = s => Object.fromEntries(['received', 'sent', 'declined', 'notStarted'].map(k => [k, types.kpiDelta(s.current[k], s.previous[k], k === 'received' || k === 'sent')]));
+const totals = w => ({ received: w.received, sent: w.sent, declined: w.declined, notSent: w.notSent });
+const kpis = s => Object.fromEntries(['received', 'sent', 'declined', 'notSent'].map(k => [k, types.kpiDelta(s.current[k], s.previous[k], k === 'received' || k === 'sent')]));
 const weekdays = s => Object.fromEntries(s.weekdays.filter(d => d.sent).map(d => [d.day, d.sent]));
 const ms = text => Date.parse(M(text));
 
@@ -243,9 +244,9 @@ const ms = text => Date.parse(M(text));
 }
 
 // ---------- Weekly, current week (Mon Nov 2 .. Sun Nov 8), compared like for like with Mon Oct 26 .. Sun Nov 1 10:00 ----------
-//            received                 sent                          declined                not started
-// current    R2 R4 R5 R6         = 4  R5 R9(00:00 Nov 2) R4 R6 = 4  —                   = 0  R2     = 1
-// previous   R7 R8 R9            = 3  (R8 Nov 1 23:59 is later) = 0 (R7 Nov 1 12:00 later) 0  (R1 R3 are Nov 1 evening) = 0
+//            received                 sent                          declined                not yet sent (backlog at the window's end)
+// current    R2 R4 R5 R6         = 4  R5 R9(00:00 Nov 2) R4 R6 = 4  —                   = 0  R1 R2 R3 now                      = 3
+// previous   R7 R8 R9            = 3  (R8 Nov 1 23:59 is later) = 0 (R7 Nov 1 12:00 later) 0  R7 R8 R9 at Sun Nov 1 10:00     = 3
 {
   const r = stats.computeRangeStats(records, people, 'week', NOW), s = r.summary;
   assert.equal(r.period, 'day');
@@ -255,8 +256,9 @@ const ms = text => Date.parse(M(text));
   assert.equal(s.toDate, true); assert.equal(s.previousLabel, 'Week of 26 Oct – 1 Nov 2026');
   assert.equal(s.current.from, M('2026-11-02T00:00:00')); assert.equal(s.current.to, M('2026-11-09T00:00:00'));
   assert.equal(s.previous.from, M('2026-10-26T00:00:00')); assert.equal(s.previous.to, M('2026-11-01T10:00:00'), 'previous week up to the same moment');
-  assert.deepEqual(totals(s.current), { received: 4, sent: 4, declined: 0, notStarted: 1 });
-  assert.deepEqual(totals(s.previous), { received: 3, sent: 0, declined: 0, notStarted: 0 });
+  assert.deepEqual(totals(s.current), { received: 4, sent: 4, declined: 0, notSent: 3 });
+  assert.deepEqual(totals(s.previous), { received: 3, sent: 0, declined: 0, notSent: 3 });
+  assert.deepEqual(kpis(s).notSent, { text: '0%', tone: 'neutral', direction: 'flat' }, '3 now vs 3 by this point last week');
   assert.deepEqual(kpis(s).received, { text: '33%', tone: 'good', direction: 'up' });
   assert.deepEqual(kpis(s).sent, { text: '—', tone: 'neutral', direction: 'flat' }, 'no sends by that point last week');
   assert.deepEqual(weekdays(s), { Mon: 2, Wed: 1, Thu: 1 });
@@ -270,8 +272,8 @@ const ms = text => Date.parse(M(text));
   const r = stats.computeRangeStats(records, people, 'week', NOW, '2026-10-26'), s = r.summary;
   assert.equal(s.toDate, false); assert.equal(s.label, 'Week of 26 Oct – 1 Nov 2026'); assert.equal(s.currentPeriod, '2026-11-02');
   assert.equal(s.previous.from, M('2026-10-19T00:00:00')); assert.equal(s.previous.to, M('2026-10-26T00:00:00'), 'a whole week');
-  assert.deepEqual(totals(s.current), { received: 5, sent: 1, declined: 1, notStarted: 2 }, 'R1 R3 R7 R8 R9 received; R8 sent; R7 declined');
-  assert.deepEqual(totals(s.previous), { received: 0, sent: 0, declined: 0, notStarted: 0 });
+  assert.deepEqual(totals(s.current), { received: 5, sent: 1, declined: 1, notSent: 3 }, 'R1 R3 R7 R8 R9 received; R8 sent; R7 declined; R1 R3 R9 waiting at Mon Nov 2 00:00');
+  assert.deepEqual(totals(s.previous), { received: 0, sent: 0, declined: 0, notSent: 0 });
   assert.deepEqual(timing(r), { judy: [1, H, 1, 38 * H + 59 * min + 59000], jefferson: [1, H, 0, null] }, 'time per employee follows the period');
   t.pass('Weekly (past): ?period=2026-10-26, whole previous week, the timing table follows the selected period');
 }
@@ -282,11 +284,11 @@ const ms = text => Date.parse(M(text));
   assert.equal(r.buckets.length, 30); assert.equal(r.buckets[0].label, 'Nov 1'); assert.equal(r.buckets[29].label, 'Nov 30');
   assert.equal(r.buckets.filter(b => b.future).length, 22, 'Nov 9-30 are still to come');
   assert.equal(s.previous.to, M('2026-10-08T10:00:00'));
-  assert.deepEqual(totals(s.current), { received: 6, sent: 5, declined: 1, notStarted: 3 });
-  assert.deepEqual(totals(s.previous), { received: 1, sent: 1, declined: 0, notStarted: 0 }, 'R10 (Oct 3 / sent Oct 4) is before Oct 8 10:00');
+  assert.deepEqual(totals(s.current), { received: 6, sent: 5, declined: 1, notSent: 3 });
+  assert.deepEqual(totals(s.previous), { received: 1, sent: 1, declined: 0, notSent: 0 }, 'R10 (Oct 3 / sent Oct 4) is before Oct 8 10:00');
   const october = stats.computeRangeStats(records, people, 'month', NOW, '2026-10').summary;
   assert.equal(october.label, 'October 2026'); assert.equal(october.toDate, false); assert.equal(october.previousLabel, 'September 2026');
-  assert.deepEqual(totals(october.current), { received: 4, sent: 1, declined: 0, notStarted: 0 });
+  assert.deepEqual(totals(october.current), { received: 4, sent: 1, declined: 0, notSent: 3 }, 'R7 R8 R9 were still waiting at Nov 1 00:00 (closed / sent later)');
   assert.equal(october.previous.from, M('2026-09-01T00:00:00')); assert.equal(october.previous.to, M('2026-10-01T00:00:00'));
   assert.equal(stats.computeRangeStats(records, people, 'month', NOW, '2026-10').buckets.length, 31);
   assert.equal(stats.computeRangeStats([], people, 'month', NOW, '2026-02').buckets.length, 28);
@@ -309,15 +311,45 @@ const ms = text => Date.parse(M(text));
   assert.deepEqual(column(day, 'received'), { '12 AM': 1, '8 AM': 1 }, 'R2 at midnight, R5 at 08:00');
   assert.deepEqual(column(day, 'sent'), { '12 AM': 1, '11 AM': 1 }, 'R9 at midnight, R5 at 11:30');
   assert.equal(day.summary.label, 'Mon 2 Nov 2026'); assert.equal(day.summary.previousLabel, 'Sun 1 Nov 2026');
-  assert.deepEqual(totals(day.summary.previous), { received: 2, sent: 1, declined: 1, notStarted: 2 }, 'the whole of Sunday Nov 1');
+  assert.deepEqual(totals(day.summary.previous), { received: 2, sent: 1, declined: 1, notSent: 3 }, 'the whole of Sunday Nov 1; R1 R3 R9 waiting at its end');
   const today = stats.computeRangeStats(records, people, 'day', NOW);
   assert.equal(today.buckets.filter(b => b.future).length, 13, 'after 10 AM');
   assert.equal(today.summary.previous.to, M('2026-11-07T10:00:00'), 'yesterday up to the same time');
   const none = stats.computeRangeStats([], people, 'week', NOW).summary;
-  assert.equal(none.sentRate, null); assert.deepEqual(totals(none.current), { received: 0, sent: 0, declined: 0, notStarted: 0 });
+  assert.equal(none.sentRate, null); assert.deepEqual(totals(none.current), { received: 0, sent: 0, declined: 0, notSent: 0 });
   assert.throws(() => stats.computeRangeStats(records, people, 'year', NOW, '2027'), e => e.status === 400, 'a future year is rejected');
   assert.throws(() => stats.computeRangeStats(records, people, 'month', NOW, '2020-12'), e => e.status === 400, 'older than the lookback is rejected');
   t.pass('Yearly: months, to-date comparison, a past year; Today: 24 hourly buckets, yesterday to the same time; future and too-old periods throw 400');
+}
+
+// ---------- Not yet sent (PO 2026-11-08c): every open inquiry with no delivered submission and no closure, whatever its received date ----------
+{
+  const backlog = [
+    rec('OLD', M('2026-06-01T09:00:00'), 'Preparing proposal'),                  // received months before the period, never sent: counts
+    rec('APR', M('2026-11-03T09:00:00'), 'Approved', { submissions: [sub(1, M('2026-11-03T10:00:00'), 'judy', { decision: approve(M('2026-11-03T11:00:00')) })] }), // approved, not delivered: counts
+    rec('DRY', M('2026-11-03T09:00:00'), 'Sent', { submissions: [sub(1, M('2026-11-03T10:00:00'), 'judy', { delivery: { ...delivery(M('2026-11-03T12:00:00')), dryRun: true } })] }), // a dry run is not a send: counts
+    rec('DEC', M('2026-10-20T09:00:00'), 'Declined', { closure: { kind: 'declined', at: M('2026-11-04T09:00:00'), by: 'cryssa', reason: 'x' } }),
+    rec('TRF', M('2026-10-20T09:00:00'), 'New inquiry', { closure: { kind: 'transferred', at: M('2026-11-05T09:00:00'), by: 'cryssa', reason: 'x', relatedId: 'OTHER' } }),
+    rec('SNT', M('2026-10-25T09:00:00'), 'Sent', { submissions: [sub(1, M('2026-10-26T10:00:00'), 'judy', { decision: approve(M('2026-10-26T11:00:00')), delivery: delivery(M('2026-11-06T09:00:00')) })] }),
+  ];
+  // Now (Sun Nov 8 10:00): OLD APR DRY wait; DEC and TRF are closed, SNT is sent. Monthly November is compared with Oct 8 10:00, when only OLD waited.
+  const month = stats.computeRangeStats(backlog, people, 'month', NOW).summary;
+  assert.equal(month.current.notSent, 3, 'an unsent inquiry from before the period counts; declined, transferred and sent ones do not');
+  assert.equal(month.previous.notSent, 1);
+  assert.deepEqual(types.kpiDelta(month.current.notSent, month.previous.notSent, false), { text: '200%', tone: 'bad', direction: 'up' }, 'a rise is red');
+  // A past period is counted at its end: at Nov 1 00:00 OLD DEC TRF SNT were all still waiting (closed / sent later); APR and DRY were not received yet.
+  const october = stats.computeRangeStats(backlog, people, 'month', NOW, '2026-10').summary;
+  assert.equal(october.current.notSent, 4);
+  assert.equal(october.current.received, 3, 'received still counts only the period (DEC TRF SNT)');
+  // The current week, day by day: Nov 2 OLD DEC TRF SNT | Nov 3 + APR DRY | Nov 4 DEC declined | Nov 5 TRF transferred | Nov 6 SNT sent | Nov 8 now.
+  const week = stats.computeRangeStats(backlog, people, 'week', NOW);
+  assert.deepEqual(week.buckets.map(b => b.notSent), [4, 6, 5, 4, 3, 3, 3]);
+  assert.equal(week.summary.current.notSent, week.buckets.at(-1).notSent, 'the KPI is the last bucket\'s backlog, not a sum');
+  // Today: the future hours carry no backlog value; the past ones do.
+  const today = stats.computeRangeStats(backlog, people, 'day', NOW);
+  assert.ok(today.buckets.filter(b => b.future).every(b => b.notSent === 0));
+  assert.equal(today.buckets[9].notSent, 3, '9 AM bucket, counted at 10:00 = now');
+  t.pass('Not yet sent: the backlog as of now (current) or the period end (past), whatever the received date; declined, transferred and sent excluded; dry runs are not sends');
 }
 
 // ---------- The route: roles and validation ----------

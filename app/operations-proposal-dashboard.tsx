@@ -1,21 +1,22 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { ArrowDown, ArrowLeft, ArrowUp, CalendarDays, ChevronLeft, ChevronRight, CircleX, Download, Hourglass, Inbox, RefreshCw, Send, ShieldAlert, TriangleAlert, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, CalendarDays, ChevronLeft, ChevronRight, CircleX, Download, Hourglass, Inbox, Percent, RefreshCw, Send, ShieldAlert, TriangleAlert, X } from 'lucide-react';
 import { kpiDelta, manilaTime } from '@/lib/operations/types';
 import type { ProposalEmployeeDetail, ProposalStats, ProposalStatsRange, ProposalTimelineEvent, Staff } from '@/lib/operations/types';
 import { MONTH_NAMES, earliestStart, manilaDay, manilaDayStart, parsePeriod, periodKey, periodLabel, periodStart, shiftPeriod } from '@/lib/operations/proposal-periods';
-import { api, Empty } from './operations-common';
+import { api } from './operations-common';
 import type { PdfModel } from './operations-proposal-dashboard-pdf';
 import './operations-proposal-dashboard.css';
 
 // Monitoring (Head and Supervisors). Redesign 2026-11-08 (PO): the whole page fits one desktop screen, no page scroll.
 // Header (range, period stepper, view, export) · 5 KPI tiles · trend + busiest day · pipeline + time per employee (rows open a drill-down).
 // Feedback round 2026-11-08b: calendar periods Today / Weekly / Monthly / Yearly, past periods (?range=&period= in the URL), PDF export.
+// Round 2026-11-08c: "Not yet sent" (the open backlog), no empty-page takeover (every card renders its own zero state), Time per employee redesign.
 // Colours come from the operations tokens only (see the .css).
 type View = 'charts' | 'numbers';
 type Summary = NonNullable<ProposalStats['summary']>;
-type Kpi = 'received' | 'sent' | 'declined' | 'notStarted';
+type Kpi = 'received' | 'sent' | 'declined' | 'notSent';
 type Selection = { range: ProposalStatsRange; key: string | null }; // key null = the current period
 type TimingRow = ProposalStats['timing'][number];
 const RANGES: [ProposalStatsRange, string][] = [['day', 'Today'], ['week', 'Weekly'], ['month', 'Monthly'], ['year', 'Yearly']];
@@ -26,7 +27,7 @@ const BEFORE: Record<ProposalStatsRange, string> = { day: 'the day before', week
 const VIEWS: [View, string][] = [['charts', 'Charts'], ['numbers', 'Numbers']];
 const BUCKET_NOUN: Record<ProposalStats['period'], string> = { hour: 'Hour', day: 'Day', week: 'Week', month: 'Month' };
 const TIMING_ROWS = 4, FEW_SENDS = 5, DEFAULT_RANGE: ProposalStatsRange = 'month';
-const STILL_NEW_HELP = 'Received in this period and still at New inquiry: no draft saved yet and not closed (counted as of now).';
+const NOT_SENT_HELP = 'Open inquiries with no proposal sent and not declined or transferred, whatever their received date. As of now (a past period: at its end).';
 const viewKey = (userId: string) => 'rmc2.monitoringView.' + userId;
 /** "both" was removed (PO 2026-11-08: no page scroll); a stored "both" opens Charts. */
 function readView(userId: string): View {
@@ -66,7 +67,7 @@ const KPIS: { key: Kpi; label: string; upIsGood: boolean; Icon: typeof Inbox; to
   { key: 'received', label: 'Inquiries received', upIsGood: true, Icon: Inbox, tone: 'received' },
   { key: 'sent', label: 'Proposals sent', upIsGood: true, Icon: Send, tone: 'sent' },
   { key: 'declined', label: 'Declined', upIsGood: false, Icon: CircleX, tone: 'declined' },
-  { key: 'notStarted', label: 'Still new', upIsGood: false, Icon: Hourglass, tone: 'idle', help: STILL_NEW_HELP },
+  { key: 'notSent', label: 'Not yet sent', upIsGood: false, Icon: Hourglass, tone: 'idle', help: NOT_SENT_HELP },
 ];
 const KPI_TOKEN: Record<string, string> = { received: '--pd-received', sent: '--pd-sent', declined: '--pd-declined', idle: '--pd-idle' };
 const delta = kpiDelta;
@@ -224,7 +225,7 @@ function KpiTiles({ stats }: { stats: ProposalStats }) {
       const value = summary.current[key], previous = summary.previous[key], d = delta(value, previous, upIsGood), compare = previous > 0;
       const said = !compare ? 'no earlier data to compare' : d.direction === 'flat' ? 'no change' : `${d.direction} ${d.text}`;
       return <section key={key} className={'ops-card pd-kpi tone-' + tone} title={help} aria-label={`${label}: ${value}, ${said}${compare ? `, ${vsText(summary, previous)}` : ''}${help ? '. ' + help : ''}`}>
-        <div className="pd-kpi-head"><span>{label}</span><Icon size={16} aria-hidden="true" /></div>
+        <div className="pd-kpi-head"><span className="pd-chip" aria-hidden="true"><Icon size={15} /></span><span>{label}</span></div>
         <div className="pd-kpi-main" aria-hidden="true"><strong>{value}</strong>
           {compare && <span className={'pd-delta is-' + d.tone}>{d.direction === 'up' ? <ArrowUp size={12} /> : d.direction === 'down' ? <ArrowDown size={12} /> : null}{d.text}</span>}
           <Sparkline values={past.map(b => b[key])} /></div>
@@ -232,7 +233,7 @@ function KpiTiles({ stats }: { stats: ProposalStats }) {
       </section>;
     })}
     <section className="ops-card pd-kpi pd-kpi-rate" aria-label={rate === null ? 'Sent rate: no inquiries received in this period' : `Sent rate ${rate}%: ${sent} of ${received} inquiries received in this period have been sent`}>
-      <div className="pd-kpi-head"><span>Sent rate</span></div>
+      <div className="pd-kpi-head"><span className="pd-chip" aria-hidden="true"><Percent size={15} /></span><span>Sent rate</span></div>
       <div className="pd-kpi-main" aria-hidden="true"><strong>{rate === null ? '—' : rate + '%'}</strong>
         <svg className="pd-ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" pathLength={100} className="pd-ring-track" />{rate ? <circle cx="18" cy="18" r="15" pathLength={100} className="pd-ring-fill" strokeDasharray={`${Math.min(100, rate)} 100`} /> : null}</svg></div>
       <small aria-hidden="true">{rate === null ? 'No inquiries received' : `${sent} of ${received} inquiries sent`}</small>
@@ -256,15 +257,15 @@ function TrendTip({ active, label, payload }: TipProps) {
 function Trend({ stats, view }: { stats: ProposalStats; view: View }) {
   const c = stats.summary!.current, noun = BUCKET_NOUN[stats.period];
   const data = useMemo(() => stats.buckets.map(b => b.future ? { ...b, received: null, sent: null } : b), [stats.buckets]);
-  if (view === 'numbers') return <div className="pd-scroll pd-fill" tabIndex={0} role="region" aria-label={`Proposals per ${noun.toLowerCase()}`}><table className="pd-table"><thead><tr><th scope="col">{noun}</th><th scope="col" className="num">Received</th><th scope="col" className="num">Sent</th><th scope="col" className="num">Declined</th><th scope="col" className="num" title={STILL_NEW_HELP}>Still new</th></tr></thead>
-    <tbody>{stats.buckets.filter(b => !b.future).map(b => <tr key={b.start}><th scope="row">{b.label}</th><td className="num">{b.received}</td><td className="num">{b.sent}</td><td className="num">{b.declined}</td><td className="num">{b.notStarted}</td></tr>)}</tbody>
-    <tfoot><tr><th scope="row">Total</th><td className="num">{c.received}</td><td className="num">{c.sent}</td><td className="num">{c.declined}</td><td className="num">{c.notStarted}</td></tr></tfoot></table></div>;
+  if (view === 'numbers') return <div className="pd-scroll pd-fill" tabIndex={0} role="region" aria-label={`Proposals per ${noun.toLowerCase()}`}><table className="pd-table"><thead><tr><th scope="col">{noun}</th><th scope="col" className="num">Received</th><th scope="col" className="num">Sent</th><th scope="col" className="num">Declined</th><th scope="col" className="num" title={NOT_SENT_HELP}>Not yet sent (at end)</th></tr></thead>
+    <tbody>{stats.buckets.filter(b => !b.future).map(b => <tr key={b.start}><th scope="row">{b.label}</th><td className="num">{b.received}</td><td className="num">{b.sent}</td><td className="num">{b.declined}</td><td className="num">{b.notSent}</td></tr>)}</tbody>
+    <tfoot><tr><th scope="row">Total</th><td className="num">{c.received}</td><td className="num">{c.sent}</td><td className="num">{c.declined}</td><td className="num" title={Date.parse(c.to) > Date.parse(stats.asOf) ? 'Not yet sent as of now' : 'Not yet sent at the end of the period'}>{c.notSent}</td></tr></tfoot></table></div>;
   return <div className="pd-fill pd-chart" role="img" aria-label={`Column chart per ${noun.toLowerCase()}: ${c.received} inquiries received and ${c.sent} proposals sent in this period. Hover a column for the exact counts, or switch to Numbers.`}>
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={data} margin={{ top: 6, right: 4, bottom: 0, left: -18 }} barGap={2} barCategoryGap="14%" accessibilityLayer={false}>
         <CartesianGrid vertical={false} stroke="var(--ops-line)" />
         <XAxis dataKey="label" tick={{ fill: 'var(--ops-muted)', fontSize: 11 }} tickLine={false} axisLine={{ stroke: 'var(--ops-line)' }} interval="preserveStartEnd" minTickGap={18} />
-        <YAxis allowDecimals={false} tick={{ fill: 'var(--ops-muted)', fontSize: 11 }} tickLine={false} axisLine={false} width={44} />
+        <YAxis allowDecimals={false} domain={[0, (max: number) => Math.max(1, max)]} tick={{ fill: 'var(--ops-muted)', fontSize: 11 }} tickLine={false} axisLine={false} width={44} />
         <Tooltip content={<TrendTip />} cursor={{ fill: 'var(--ops-info-tint)' }} />
         <Bar dataKey="received" name="Received" fill="var(--pd-received)" radius={[4, 4, 0, 0]} maxBarSize={16} isAnimationActive={false} />
         <Bar dataKey="sent" name="Sent" fill="var(--pd-sent)" radius={[4, 4, 0, 0]} maxBarSize={16} isAnimationActive={false} />
@@ -308,18 +309,27 @@ function Pipeline({ stats, view }: { stats: ProposalStats; view: View }) {
   </ol>;
 }
 
-/** Each row opens that employee's drill-down: the name is a button (keyboard), and a click anywhere on the row does the same. */
-function TimingTable({ rows, onOpen }: { rows: TimingRow[]; onOpen: (row: TimingRow) => void }) {
+/** "Cryssa Kate Aban" -> "CK", "judy" -> "J". */
+const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map(word => word[0] || '').join('').toUpperCase() || '?';
+/** The card's narrow column shows first and last name ("Cryssa Kate Aban" -> "Cryssa Aban"); the dialog and the accessible name keep the full name. */
+const shortName = (name: string) => { const words = name.trim().split(/\s+/); return words.length > 2 ? words[0] + ' ' + words[words.length - 1] : name; };
+const TIMING_HEAD = <thead><tr><th scope="col">Employee</th><th scope="col" className="num">Created</th><th scope="col" className="num pd-avg-h">Avg to create</th><th scope="col" className="num">Sent</th><th scope="col" className="num pd-avg-h">Avg handling</th></tr></thead>;
+/** Each row opens that employee's drill-down: the name is a button (keyboard), and a click anywhere on the row does the same.
+ * Redesign 2026-11-08c: initials disc + name + chevron; each average is a bar on a fixed track with the value on one right edge. */
+function TimingTable({ rows, onOpen, compact = false }: { rows: TimingRow[]; onOpen: (row: TimingRow) => void; compact?: boolean }) {
   const maxCreate = Math.max(1, ...rows.map(r => r.avgCreateMs || 0)), maxHandling = Math.max(1, ...rows.map(r => r.avgHandlingMs || 0));
-  const bar = (ms: number | null, max: number, kind: string) => ms === null ? null : <span className={'pd-mini ' + kind} style={{ width: Math.max(4, ms / max * 100) + '%' }} aria-hidden="true" />;
-  return <table className="pd-table pd-timing pd-compact"><thead><tr><th scope="col">Employee</th><th scope="col" className="num">Created</th><th scope="col" className="num">Avg create</th><th scope="col" className="num">Sent</th><th scope="col" className="num">Avg handling</th></tr></thead>
-    <tbody>{rows.map(row => <tr key={row.userId} className="is-clickable" onClick={() => onOpen(row)}><th scope="row"><button type="button" className="pd-person" onClick={event => { event.stopPropagation(); onOpen(row); }} aria-label={`${row.name}: open the details for this period`}>{row.name}</button></th><td className="num">{row.created}</td>
-      <td className="num"><span className="pd-avg">{formatDuration(row.avgCreateMs)}{bar(row.avgCreateMs, maxCreate, 'create')}</span></td>
+  const avg = (ms: number | null, max: number, kind: string) => <span className="pd-avg"><span className="pd-avg-track" aria-hidden="true">{ms !== null && <span className={'pd-mini ' + kind} style={{ width: Math.max(4, ms / max * 100) + '%' }} />}</span><span className="pd-avg-value">{formatDuration(ms)}</span></span>;
+  return <table className="pd-table pd-timing">{TIMING_HEAD}
+    <tbody>{rows.map(row => <tr key={row.userId} className="is-clickable" onClick={() => onOpen(row)}>
+      <th scope="row"><button type="button" className="pd-person" onClick={event => { event.stopPropagation(); onOpen(row); }} aria-label={`${row.name}: open the details for this period`} title={row.name + ': open the details'}>
+        <span className="pd-initials" aria-hidden="true">{initials(row.name)}</span><span className="pd-person-name">{compact ? shortName(row.name) : row.name}</span><ChevronRight size={14} className="pd-chev" aria-hidden="true" /></button></th>
+      <td className="num">{row.created}</td>
+      <td className="num">{avg(row.avgCreateMs, maxCreate, 'create')}</td>
       <td className="num">{row.sent}</td>
-      <td className="num"><span className="pd-avg">{formatDuration(row.avgHandlingMs)}{bar(row.avgHandlingMs, maxHandling, 'handling')}</span></td></tr>)}</tbody></table>;
+      <td className="num">{avg(row.avgHandlingMs, maxHandling, 'handling')}</td></tr>)}</tbody></table>;
 }
 
-const ROW_PX = 31, HEAD_PX = 28, LINK_PX = 26;
+const ROW_PX = 32, HEAD_PX = 28, LINK_PX = 26;
 function Timing({ stats }: { stats: ProposalStats }) {
   const dialog = useRef<HTMLDialogElement>(null), wrap = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(0), [person, setPerson] = useState<TimingRow | null>(null);
@@ -336,13 +346,13 @@ function Timing({ stats }: { stats: ProposalStats }) {
   const shownRows = rows.length <= Math.min(TIMING_ROWS, fitAll) ? rows.length : Math.max(1, Math.min(TIMING_ROWS, height ? Math.floor((height - HEAD_PX - LINK_PX) / ROW_PX) : TIMING_ROWS));
   const openPerson = (row: TimingRow) => { setPerson(row); if (!dialog.current?.open) dialog.current?.showModal(); };
   const openAll = () => { setPerson(null); dialog.current?.showModal(); };
-  if (!rows.length) return <p className="pd-hint pd-fill">No employee activity in this period.</p>;
+  if (!rows.length) return <div className="pd-fill pd-timing-wrap"><table className="pd-table pd-timing">{TIMING_HEAD}<tbody><tr className="pd-empty-row"><td colSpan={5}>No employee activity in this period.</td></tr></tbody></table></div>;
   return <div className="pd-fill pd-timing-wrap" ref={wrap}>
-    <div className="pd-scroll"><TimingTable rows={rows.slice(0, shownRows)} onOpen={openPerson} /></div>
+    <div className="pd-scroll"><TimingTable rows={rows.slice(0, shownRows)} onOpen={openPerson} compact /></div>
     {rows.length > shownRows && <button className="ops-link pd-all" onClick={openAll}>View all ({rows.length})</button>}
     <dialog ref={dialog} className="pd-dialog" aria-labelledby="pd-all-h" onClose={() => setPerson(null)}>
       {person ? <EmployeeDetail key={person.userId + stats.summary!.period} person={person} summary={stats.summary!} onBack={() => setPerson(null)} onClose={() => dialog.current?.close()} />
-        : <><div className="pd-dialog-head"><div><h2 id="pd-all-h">Time per employee</h2><p>{RANGE_LABEL[stats.summary!.range]} · {stats.summary!.label} · choose a name for the details</p></div><button className="ops-btn secondary pd-close" onClick={() => dialog.current?.close()} aria-label="Close"><X size={16} aria-hidden="true" /></button></div>
+        : <><div className="pd-dialog-head"><div><h2 id="pd-all-h">Time per employee</h2><p>{RANGE_LABEL[stats.summary!.range]} · {stats.summary!.label} · click a name for details</p></div><button className="ops-btn secondary pd-close" onClick={() => dialog.current?.close()} aria-label="Close"><X size={16} aria-hidden="true" /></button></div>
           <div className="pd-scroll"><TimingTable rows={rows} onOpen={openPerson} /></div></>}
     </dialog>
   </div>;
@@ -396,25 +406,24 @@ function EmployeeDetail({ person, summary, onBack, onClose }: { person: TimingRo
 }
 
 function Body({ stats, view, busy }: { stats: ProposalStats; view: View; busy: boolean }) {
-  const summary = stats.summary!, c = summary.current, p = summary.previous, noun = BUCKET_NOUN[stats.period].toLowerCase();
-  const empty = [c.received, c.sent, c.declined, c.notStarted, p.received, p.sent, p.declined, p.notStarted].every(n => n === 0) && stats.timing.length === 0;
+  const summary = stats.summary!, c = summary.current, noun = BUCKET_NOUN[stats.period].toLowerCase();
+  // No empty-page takeover (PO 2026-11-08c): every card always renders, with its own zero state.
+  const quiet = c.received === 0 && c.sent === 0;
   const steps = stats.funnel;
   let drop = -1, lost = 0;
   steps.forEach((step, i) => { if (i && steps[i - 1].count - step.count > lost) { lost = steps[i - 1].count - step.count; drop = i; } });
   return <>
     <div className="pd-kpis-wrap" data-busy={busy || undefined} aria-busy={busy}><KpiTiles stats={stats} /></div>
-    {empty ? <div className="ops-card pd-empty"><Empty text="No inquiries or proposals in this period" hint="Try an earlier period or a longer range." /></div> : <>
-      <div className="pd-row pd-row-main" data-busy={busy || undefined}>
-        <Card id="pd-trend-h" title="Proposals over time" note={`Inquiries received and proposals sent, per ${noun}`}
-          legend={view === 'charts' ? <ul className="pd-legend" aria-label="Legend"><li><i className="received" />Received</li><li><i className="sent" />Sent</li></ul> : undefined}>
-          <Trend stats={stats} view={view} />
-        </Card>
-        <Card id="pd-days-h" title="Busiest day" note="Proposals sent by weekday"><BusiestDay summary={summary} /></Card>
-      </div>
-      <div className="pd-row pd-row-low" data-busy={busy || undefined}>
-        <Card id="pd-funnel-h" title="Pipeline" note={drop > 0 ? <>Biggest drop: <b>{steps[drop - 1].step} → {steps[drop].step}</b> ({lost})</> : 'Inquiries received in this period, step by step'}><Pipeline stats={stats} view={view} /></Card>
-        <Card id="pd-time-h" title="Time per employee" note="Wall-clock averages for this period · choose a name for details"><Timing stats={stats} /></Card>
-      </div>
-    </>}
+    <div className="pd-row pd-row-main" data-busy={busy || undefined}>
+      <Card id="pd-trend-h" title="Proposals over time" note={quiet ? 'No inquiries received or proposals sent in this period' : `Inquiries received and proposals sent, per ${noun}`}
+        legend={view === 'charts' ? <ul className="pd-legend" aria-label="Legend"><li><i className="received" />Received</li><li><i className="sent" />Sent</li></ul> : undefined}>
+        <Trend stats={stats} view={view} />
+      </Card>
+      <Card id="pd-days-h" title="Busiest day" note="Proposals sent by weekday"><BusiestDay summary={summary} /></Card>
+    </div>
+    <div className="pd-row pd-row-low" data-busy={busy || undefined}>
+      <Card id="pd-funnel-h" title="Pipeline" note={drop > 0 ? <>Biggest drop: <b>{steps[drop - 1].step} → {steps[drop].step}</b> ({lost})</> : steps[0].count ? 'Inquiries received in this period, step by step' : 'No inquiries received in this period'}><Pipeline stats={stats} view={view} /></Card>
+      <Card id="pd-time-h" title="Time per employee" note="Wall-clock averages · click a name for details"><Timing stats={stats} /></Card>
+    </div>
   </>;
 }
