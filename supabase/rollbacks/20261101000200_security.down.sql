@@ -1,4 +1,4 @@
-﻿-- MANUAL rollback of 20261101000200_security.sql. Roll back 500 first.
+-- MANUAL rollback of 20261101000200_security.sql. Roll back 500 first.
 -- TEST project only, Product Owner approval. Run as the owner in ONE psql session.
 -- Effect: rmc2_app loses all access and is dropped; RLS and every policy are removed. Data is untouched.
 \set ON_ERROR_STOP on

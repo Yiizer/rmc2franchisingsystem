@@ -65,9 +65,19 @@ function rangeBounds(range: string) {
   return match ? { left: colNumber(match[1]), top: Number(match[2]), right: colNumber(match[3]), bottom: Number(match[4]) } : undefined;
 }
 
+/** Security review 2026-11-09: before ExcelJS unpacks a workbook, check it really is a zip (.xlsx) and that its unpacked
+ *  size and entry count are sane, so a "zip bomb" cannot eat the server's memory. Reads only the zip directory. */
+export function assertSafeWorkbook(bytes: Buffer) {
+  if(bytes.length<4||bytes[0]!==0x50||bytes[1]!==0x4b||bytes[2]!==0x03||bytes[3]!==0x04)throw new Error('This file is not an .xlsx workbook.');
+  let zip:PizZip;try{zip=new PizZip(bytes);}catch{throw new Error('This file could not be read as an .xlsx workbook.');}
+  const entries=Object.values(zip.files);let total=0;
+  if(entries.length>1000)throw new Error('This workbook has too many parts for a franchise form.');
+  for(const entry of entries){const size=(entry as unknown as {_data?:{uncompressedSize?:number}})._data?.uncompressedSize||0;total+=size;if(size>40*1024*1024||total>60*1024*1024)throw new Error('This workbook is too large to read.');}
+}
 /** Read the original bytes only. No working fields are used and no workbook is written. */
 export async function previewWorkbook(bytes: Buffer): Promise<WorkbookPreview> {
   if (bytes.length > 7 * 1024 * 1024) throw new Error('The attachment is too large to preview. Download the original Excel file.');
+  try { assertSafeWorkbook(bytes); } catch { throw new Error('This attachment cannot be previewed. Download the original Excel file.'); }
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(bytes as unknown as ExcelJS.Buffer);
   if (workbook.worksheets.length > 20) throw new Error('Too many sheets to preview. Download the original Excel file.');

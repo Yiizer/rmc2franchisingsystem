@@ -1,4 +1,4 @@
-﻿-- MANUAL rollback of 20261101000300_historical_scope.sql: removes the 'historical' version scope and its triggers.
+-- MANUAL rollback of 20261101000300_historical_scope.sql: removes the 'historical' version scope and its triggers.
 -- The app falls back to its time-based directory cache stamp. TEST project only, PO approval.
 \set ON_ERROR_STOP on
 begin;

@@ -15,3 +15,4 @@ end
 $guard$;
 drop table if exists rmc2.problem_reports;
 commit;
+-- Afterwards: supabase migration repair 20261108000000 --status reverted

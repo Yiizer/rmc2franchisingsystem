@@ -16,3 +16,4 @@ $guard$;
 drop table if exists rmc2.inbound_cursor;
 drop table if exists rmc2.inbound_messages;
 commit;
+-- Afterwards: supabase migration repair 20261101000600 --status reverted

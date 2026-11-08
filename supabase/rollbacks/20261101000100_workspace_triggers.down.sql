@@ -1,4 +1,4 @@
-﻿-- MANUAL rollback of 20261101000100_workspace_triggers.sql. Roll back 400 and 300 first.
+-- MANUAL rollback of 20261101000100_workspace_triggers.sql. Roll back 400 and 300 first.
 -- TEST project only, Product Owner approval. Run as the owner in ONE psql session.
 -- Effect: triggers and functions removed; data untouched, but workspace_versions stops advancing and
 -- notice_recipients stops following notifications until re-applied.

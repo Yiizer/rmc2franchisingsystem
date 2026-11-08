@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { assertSafeWorkbook as checkWorkbook } from './form-preview';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { AppError } from './errors';
@@ -15,6 +16,7 @@ function text(value:ExcelJS.CellValue):string {
 }
 export async function parseForm(bytes:Buffer, filename:string, sender:string):Promise<SourceForm> {
   if(bytes.length>7*1024*1024)throw new AppError('The Excel form must be smaller than 7 MB.');
+  try { checkWorkbook(bytes); } catch (error) { throw new AppError((error as Error).message); }
   const workbook=new ExcelJS.Workbook();
   try{await workbook.xlsx.load(bytes as unknown as ExcelJS.Buffer);}catch{throw new AppError('This file could not be read as an .xlsx workbook.');}
   if(workbook.worksheets.length>20)throw new AppError('The workbook has too many sheets for a franchise form.');

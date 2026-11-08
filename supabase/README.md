@@ -59,16 +59,26 @@ AND `rmc2.app_meta.environment = 'test'`. Run newest first, each in an owner psq
 ```
 psql "$RMC2_DATABASE_ADMIN_URL"
 SET rmc2.allow_rollback = 'yes';
-\i supabase/rollbacks/20261101000500_security_hardening.down.sql   -- keeps the environment marker
+\i supabase/rollbacks/20261109000000_protect_environment.down.sql             -- removes the marker protection
+\i supabase/rollbacks/20261108000000_problem_reports.down.sql
+\i supabase/rollbacks/20261106000100_owner_index.down.sql
+\i supabase/rollbacks/20261106000000_push_subscriptions.down.sql
+\i supabase/rollbacks/20261105000100_settings.down.sql
+\i supabase/rollbacks/20261105000000_inquiry_handover.down.sql
+\i supabase/rollbacks/20261101000600_inbound_email.down.sql                   -- inbound/ files in storage stay; delete them by hand
+\i supabase/rollbacks/20261101000500_security_hardening.down.sql              -- keeps the environment marker
 \i supabase/rollbacks/20261101000400_index_and_bump_fixes.down.sql
 \i supabase/rollbacks/20261101000300_historical_scope.down.sql
-\i supabase/rollbacks/20261101000200_security.down.sql             -- drops rmc2_app, RLS, policies
+\i supabase/rollbacks/20261101000200_security.down.sql                        -- drops rmc2_app, RLS, policies
 \i supabase/rollbacks/20261101000100_workspace_triggers.down.sql
-\i supabase/rollbacks/20261101000000_init.down.sql                 -- DROPS SCHEMA rmc2 AND ALL ITS DATA
+\i supabase/rollbacks/20261101000000_init.down.sql                            -- DROPS SCHEMA rmc2 AND ALL ITS DATA
+RESET rmc2.allow_rollback;   -- disarm the session afterwards
 ```
 
-Roll back only as far as needed (e.g. only 500 and 400). Afterwards mark each reverted so `db push` can
+Roll back only as far as needed, always newest first (e.g. only 20261109000000 and 20261108000000). Afterwards mark each reverted so `db push` can
 re-run it: `supabase migration repair <version> --status reverted`.
+
+**Production:** set `app_meta.environment = 'production'` (as the owner) BEFORE applying 20261101000500, which otherwise inserts `test` when the marker is missing. From 20261109000000 on, the app role cannot change the marker.
 
 ## Schema parity check
 

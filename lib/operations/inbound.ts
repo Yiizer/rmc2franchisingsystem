@@ -17,6 +17,28 @@ import type { InquiryRecord, Staff } from './types';
 // The inbox is checked every 30 seconds while anyone has the app open, plus the daily cron (production).
 // Mail I/O always happens outside transactions (TEAM_DECISIONS file and data rules).
 
+/** Inbox health, kept in the settings table: shown on Requests and used to slow down automatic retries. */
+export type InboxHealth = { failures: number; lastError?: string; lastFailureAt?: string; lastOkAt?: string };
+const HEALTH_KEY = 'inbound-health', STUCK_IMPORT_MS = 10 * 60 * 1000;
+async function readHealth(): Promise<InboxHealth> {
+  try { const row = await db.get<{ data: string }>('SELECT data FROM settings WHERE key=?', HEALTH_KEY); return row ? JSON.parse(row.data) : { failures: 0 }; } catch { return { failures: 0 }; }
+}
+async function writeHealth(health: InboxHealth) {
+  try { await db.run('INSERT INTO settings(key,data) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data', HEALTH_KEY, JSON.stringify(health)); } catch { /* health is advisory */ }
+}
+/** After 3 failed checks in a row, automatic checks wait 5, 10, 20, then at most 60 minutes. "Check mail now" always tries. */
+export function backoffMs(failures: number) { return failures < 3 ? 0 : Math.min(60, 5 * 2 ** (failures - 3)) * 60000; }
+const looksLike = (ext: string, bytes: Buffer) => ext === 'pdf' ? bytes.subarray(0, 5).toString('latin1') === '%PDF-' : ext === 'xlsx' ? bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04 : false;
+/** Emails left "importing" by a request that stopped part-way go back to "new" after 10 minutes. */
+async function releaseStuckImports() {
+  const rows = await db.all<{ id: string; data: string }>("SELECT id,data FROM inbound_messages WHERE state='importing'");
+  for (const row of rows) {
+    const record = JSON.parse(row.data) as InboundMessage & { importingAt?: string };
+    if (record.importingAt && Date.now() - Date.parse(record.importingAt) < STUCK_IMPORT_MS) continue;
+    const rest = { ...record }; delete rest.importingAt;
+    await db.run("UPDATE inbound_messages SET state='new',data=? WHERE id=? AND state='importing'", jsonParam({ ...rest, state: 'new' }), row.id);
+  }
+}
 export type InboundAttachment = { name: string; type: string; size: number; key: string };
 export type InboundMessage = {
   id: string; messageId: string; receivedAt: string; from: string; fromName: string; replyTo: string; subject: string;
@@ -71,6 +93,7 @@ export const setInboxHook = (hook: (waiting: number) => Promise<void> | void) =>
 export async function checkInbox(): Promise<{ added: number; imported: number; checkedAt: string; connected: boolean }> {
   const settings = imapSettings(), checkedAt = new Date().toISOString();
   if (!settings) return { added: 0, imported: 0, checkedAt, connected: false };
+  await releaseStuckImports().catch(() => { /* retried next check */ });
   const cursor = await db.get<{ uidvalidity: string; last_uid: number }>('SELECT uidvalidity,last_uid FROM inbound_cursor WHERE mailbox=?', MAILBOX);
   const client = new ImapFlow({ host: settings.host, port: settings.port, secure: true, auth: { user: settings.user, pass: settings.pass }, logger: false });
   const fetched: { uid: number; source: Buffer }[] = [], oversize: { uid: number; size: number; subject: string; from: string; messageId: string }[] = [];
@@ -91,7 +114,12 @@ export async function checkInbox(): Promise<{ added: number; imported: number; c
     if (small.length) for await (const message of client.fetch(small.join(','), { uid: true, source: true }, { uid: true })) if (message.source) fetched.push({ uid: message.uid, source: message.source });
   } catch (error) {
     console.error('[inbound] mailbox check failed:', (error as { code?: string })?.code || (error instanceof Error ? error.name : 'error'));
-    throw new AppError('The test inbox could not be checked right now. Try again shortly.', 503);
+    const e = error as { authenticationFailed?: boolean; code?: string; serverResponseCode?: string };
+    const auth = e?.authenticationFailed || e?.serverResponseCode === 'AUTHENTICATIONFAILED' || e?.code === 'AUTHENTICATIONFAILED';
+    const reason = auth ? 'The inbox refused the sign-in. The app password may have been revoked or changed.' : 'The inbox could not be reached.';
+    const health = await readHealth();
+    await writeHealth({ ...health, failures: (health.failures || 0) + 1, lastError: reason, lastFailureAt: new Date().toISOString() });
+    throw new AppError(reason + ' Try again shortly.', 503);
   } finally { await client.logout().catch(() => client.close()); }
 
   let added = 0, imported = 0, lastUid = cursor && cursor.uidvalidity === uidValidity ? Number(cursor.last_uid) : 0;
@@ -120,7 +148,7 @@ export async function checkInbox(): Promise<{ added: number; imported: number; c
       const id = randomUUID(), attachments: InboundAttachment[] = [];
       for (const [index, part] of parsed.attachments.entries()) {
         const ext = (part.filename || '').toLowerCase().split('.').pop() || '';
-        if (!FORM_TYPES[ext] || part.size > MAX_ATTACHMENT || attachments.length >= MAX_ATTACHMENTS) continue;
+        if (!FORM_TYPES[ext] || part.size > MAX_ATTACHMENT || attachments.length >= MAX_ATTACHMENTS || !looksLike(ext, part.content)) continue; // the name says Excel/PDF and so must the bytes
         const key = `inbound/${id}/${index}-${safeName(part.filename || 'form.' + ext)}`;
         await files().put(key, part.content, { contentType: FORM_TYPES[ext], mode: 'replace' });
         attachments.push({ name: part.filename || 'form.' + ext, type: ext, size: part.size, key });
@@ -164,6 +192,7 @@ export async function checkInbox(): Promise<{ added: number; imported: number; c
     // Saved even when a database error stops the loop, so the emails already handled are not read again.
   await db.run('INSERT INTO inbound_cursor (mailbox,uidvalidity,last_uid,checked_at) VALUES (?,?,?,?) ON CONFLICT (mailbox) DO UPDATE SET uidvalidity=excluded.uidvalidity,last_uid=excluded.last_uid,checked_at=excluded.checked_at', MAILBOX, uidValidity, lastUid, checkedAt);
   }
+  await writeHealth({ failures: 0, lastOkAt: checkedAt });
   if (added > imported) { try { await inboxHook?.(added - imported); } catch { /* phone notifications never fail a check */ } }
   return { added, imported, checkedAt, connected: true };
 }
@@ -178,6 +207,8 @@ export async function claimInboxCheck(): Promise<boolean> {
     // Most polls find the slot still fresh: a read, no write, on the response path.
     const cursor = await db.get<{ checked_at: string }>('SELECT checked_at FROM inbound_cursor WHERE mailbox=?', MAILBOX);
     if (cursor && cursor.checked_at >= due) return false;
+    const health = await readHealth(), wait = backoffMs(health.failures || 0);
+    if (wait && health.lastFailureAt && now - Date.parse(health.lastFailureAt) < wait) return false; // the inbox keeps failing: retry less often
     // Claim the slot atomically: only the request that moves checked_at forward runs the check.
     if (!cursor) await db.run("INSERT INTO inbound_cursor (mailbox,uidvalidity,last_uid,checked_at) VALUES (?,'',0,?) ON CONFLICT (mailbox) DO NOTHING", MAILBOX, new Date(0).toISOString());
     const claimed = await db.run('UPDATE inbound_cursor SET checked_at=? WHERE mailbox=? AND checked_at<?', at, MAILBOX, due);
@@ -195,7 +226,7 @@ export async function listInbound(user: Staff) {
   requireStaff(user);
   const rows = await db.all<{ data: string }>('SELECT data FROM inbound_messages ORDER BY received_at DESC LIMIT 200');
   const cursor = await db.get<{ checked_at: string }>('SELECT checked_at FROM inbound_cursor WHERE mailbox=?', MAILBOX);
-  return { messages: rows.map(r => JSON.parse(r.data) as InboundMessage), checkedAt: cursor?.checked_at || '', connected: inboundConnected() };
+  return { messages: rows.map(r => JSON.parse(r.data) as InboundMessage), checkedAt: cursor?.checked_at || '', connected: inboundConnected(), health: await readHealth() };
 }
 
 async function claim(id: string, from: string, to: string) {
@@ -203,8 +234,10 @@ async function claim(id: string, from: string, to: string) {
     const row = await db.get<{ data: string; state: string }>('SELECT data,state FROM inbound_messages WHERE id=?' + (db.dialect === 'postgres' ? ' FOR UPDATE' : ''), id);
     if (!row) throw new AppError('This email no longer exists.', 404);
     if (row.state !== from) throw new AppError('A colleague already handled this email. Refresh the list.', 409);
-    await db.run('UPDATE inbound_messages SET state=? WHERE id=?', to, id);
-    return JSON.parse(row.data) as InboundMessage;
+    const record = JSON.parse(row.data) as InboundMessage;
+    if (to === 'importing') await db.run('UPDATE inbound_messages SET state=?,data=? WHERE id=?', to, jsonParam({ ...record, importingAt: new Date().toISOString() }), id);
+    else await db.run('UPDATE inbound_messages SET state=? WHERE id=?', to, id);
+    return record;
   });
 }
 async function finish(id: string, record: InboundMessage) {

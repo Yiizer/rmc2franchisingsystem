@@ -1,4 +1,4 @@
-﻿-- MANUAL rollback of 20261101000500_security_hardening.sql. Never applied automatically.
+-- MANUAL rollback of 20261101000500_security_hardening.sql. Never applied automatically.
 -- TEST project only, Product Owner approval. Run as the owner in ONE psql session (psql -f).
 -- Effect: audit tables get app_all back and rmc2_app gets UPDATE/DELETE again, connection limit removed,
 -- the environment marker is kept (later rollbacks need it). Revokes from service_role are NOT undone (they should stay).

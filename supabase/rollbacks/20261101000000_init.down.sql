@@ -1,4 +1,4 @@
-﻿-- MANUAL rollback of 20261101000000_init.sql. DESTRUCTIVE: drops schema rmc2 and EVERY table and row in it.
+-- MANUAL rollback of 20261101000000_init.sql. DESTRUCTIVE: drops schema rmc2 and EVERY table and row in it.
 -- TEST project only, Product Owner approval, backup first if the data matters. Roll back 500..100 first.
 -- App-level rollback needs no SQL: set RMC2_DB=sqlite.
 \set ON_ERROR_STOP on

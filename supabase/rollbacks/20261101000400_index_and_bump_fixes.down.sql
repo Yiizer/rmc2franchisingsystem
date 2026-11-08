@@ -1,4 +1,4 @@
-﻿-- MANUAL rollback of 20261101000400_index_and_bump_fixes.sql: restores the two trigger functions to the
+-- MANUAL rollback of 20261101000400_index_and_bump_fixes.sql: restores the two trigger functions to the
 -- versions from 20261101000100 (including the lost-enqueue race and the commit-time deadlock risk).
 -- TEST project only, Product Owner approval. Run as the owner in ONE psql session.
 \set ON_ERROR_STOP on

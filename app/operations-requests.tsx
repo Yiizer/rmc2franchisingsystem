@@ -4,16 +4,16 @@ import { Download, FileSpreadsheet, FileText, MailCheck, RefreshCw, ShieldAlert,
 import { toast } from 'sonner';
 import { ageLabel, manilaTime } from '@/lib/operations/types';
 import type { InquiryRecord } from '@/lib/operations/types';
-import type { InboundMessage } from '@/lib/operations/inbound';
+import type { InboundMessage, InboxHealth } from '@/lib/operations/inbound';
 import { api, endpoint } from './operations-common';
 
 // Requests: emails read from the test inbox. Staff decide; nothing becomes an inquiry on its own.
 export default function RequestsPage({ now, onOpen }: { now: number; onOpen: (record: InquiryRecord) => void }) {
-  const [data, setData] = useState<{ messages: InboundMessage[]; checkedAt: string; connected: boolean } | null>(null);
+  const [data, setData] = useState<{ messages: InboundMessage[]; checkedAt: string; connected: boolean; health?: InboxHealth } | null>(null);
   const [busy, setBusy] = useState(''), [show, setShow] = useState<'new' | 'all'>('new'), [error, setError] = useState('');
   // Polls can overlap on a slow connection: only the newest answer is shown, so an older list never replaces a newer one.
   const latest = useRef(0);
-  const load = useCallback(async () => { const mine = ++latest.current; try { const result = await api<{ messages: InboundMessage[]; checkedAt: string; connected: boolean }>('inbound'); if (mine === latest.current) { setData(result); setError(''); } } catch (e) { if (mine === latest.current) setError((e as Error).message); } }, []);
+  const load = useCallback(async () => { const mine = ++latest.current; try { const result = await api<{ messages: InboundMessage[]; checkedAt: string; connected: boolean; health?: InboxHealth }>('inbound'); if (mine === latest.current) { setData(result); setError(''); } } catch (e) { if (mine === latest.current) setError((e as Error).message); } }, []);
   useEffect(() => {
     void load();
     // Keep the list current while the page is visible: the server checks the inbox every 30 seconds.
@@ -45,6 +45,7 @@ export default function RequestsPage({ now, onOpen }: { now: number; onOpen: (re
       <button className="ops-btn primary" onClick={check} disabled={!!busy}><RefreshCw size={16} className={busy === 'check' ? 'ops-spin' : ''} />{busy === 'check' ? 'Checking…' : 'Check mail now'}</button></div>
     <div className="ops-tabs" role="tablist">{(['new', 'all'] as const).map(t => <button key={t} role="tab" aria-selected={show === t} className={show === t ? 'active' : ''} onClick={() => setShow(t)}>{t === 'new' ? 'To review' : 'All'} <span>{t === 'new' ? waiting : data?.messages.length ?? 0}</span></button>)}</div>
     {error && <p className="ops-message amber" role="alert">{error}</p>}
+    {!!data?.health?.failures && <p className="ops-message amber" role="alert"><ShieldAlert size={18} aria-hidden="true" /> <span><b>The inbox could not be checked {data.health.failures === 1 ? 'on the last try' : data.health.failures + ' times in a row'}{data.health.lastFailureAt ? ' (last at ' + manilaTime(data.health.lastFailureAt) + ')' : ''}.</b> {data.health.lastError}{data.health.failures >= 3 ? ' Automatic checks now run less often; “Check mail now” still tries straight away.' : ''} If it keeps failing, ask the administrator to check the mailbox settings.</span></p>}
     <section className="ops-card">{!data ? <div className="ops-list-loading" role="status"><RefreshCw className="ops-spin" />Loading…</div>
       : !list.length ? <div className="dir-empty"><h3>{show === 'new' ? 'Nothing to review' : 'No emails yet'}</h3><p>Use “Check mail now” to read new emails from the test inbox.</p></div>
       : <div className="ops-request-list" role="list">{list.map(m => <article role="listitem" key={m.id} className="ops-request">
