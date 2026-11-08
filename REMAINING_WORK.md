@@ -41,7 +41,11 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
   - **Passed:** T1 (7/7; once, a postgres.js socket error after an idle-in-transaction test, not reproduced), T2, T6, T7 (239 writes, 0 stale), T8 (no torn reads), T9 (11/11, audit tables append-only), `test-phase4-pg-sql` and `test-store-postgres` (41).
   - **Not valid yet:** T3, T4, T5 and T10. Reasons: runner setup; T4 assumed the old roles; T5 ignores the new per-IP limit. T4, T5 and T10 change accounts on the database the dry runs will use, so they wait for the PO, or for a throwaway database.
   - **Incident:** a script bug in the agent's T4 clean-up wrote Emerson's and Zeo's account data as a JSON string for a few minutes, so online sign-in returned 500. The agent restored both from its snapshot. Sign-in now also survives a malformed account row (`fd17179`).
-  - **Left on TEST:** about 89 `QA-PG` test inquiries (they show in staff lists) plus 49 security events and 50 file-access rows (append-only now). Cleaning up the inquiries needs PO approval.
+  - **QA-PG test data deleted from TEST** (PO: "Yes, delete them", 2026-11-09), in one transaction that checked every count before committing:
+    - 106 inquiries (`INQ-2026-00175` to `00280`, all named "QA-PG ..."), plus 316 index keys, 105 summaries, 1 pending index row, 190 notifications, 4 activity rows and 1 outbox row;
+    - 34 real test inquiries left, and none of them referred to a QA-PG id;
+    - online afterwards: bootstrap, workspace and the directory load for Emerson and Cryssa with no QA-PG records.
+    - **Kept:** 49 security events and 50 file-access rows (audit tables are append-only), and those inquiries' stored files (the bucket is wiped at cutover).
 
 ## Settings tabs and the top-bar theme toggle (commit `da3d7ca`; live on the test version since 2026-11-09)
 
