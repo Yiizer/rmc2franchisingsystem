@@ -4,7 +4,7 @@ import { CheckCircle2, KeyRound, LockOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Staff } from '@/lib/operations/types';
 import { canManageAccounts, canResetPassword, DIVISIONS, isOwnerScoped } from '@/lib/operations/permissions';
-import { api, initials, Modal } from './operations-common';
+import { api, initials, Modal, PasswordInput } from './operations-common';
 import { CreateAccount } from './operations-administration';
 import './operations-report-queue.css';
 
@@ -21,7 +21,7 @@ function ResetPassword({ target, onClose }: { target: Staff; onClose: () => void
   }
   return <Modal title={'Reset password for ' + target.name + '?'} onClose={() => { if (!busy) onClose(); }}>{done
     ? <div className="ops-pad"><div className="ops-message green"><CheckCircle2 size={25} /><div><b>Password reset for {done.user.name}</b><p>They must set a new password at next sign-in.</p></div></div><label>Username<input readOnly value={done.user.username || done.user.id} /></label><label>Temporary password<input readOnly value={done.temporaryPassword} /></label><p>Shown once. Share these credentials privately.</p><button className="ops-btn primary" onClick={onClose}>Done</button></div>
-    : <form className="ops-pad" onSubmit={submit}><p>A temporary password is shown once. They must set a new one at next sign-in.</p><label>Your password<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required maxLength={200} /></label>{error && <p role="alert" className="ops-client-error">{error}</p>}<div className="ops-actions"><button type="button" className="ops-btn" disabled={busy} onClick={onClose}>Cancel</button><button className="ops-btn primary" disabled={busy || !password}>{busy ? 'Resetting…' : 'Reset password'}</button></div></form>}</Modal>;
+    : <form className="ops-pad" onSubmit={submit}><p>A temporary password is shown once. They must set a new one at next sign-in.</p><label>Your password<PasswordInput autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required maxLength={200} /></label>{error && <p role="alert" className="ops-client-error">{error}</p>}<div className="ops-actions"><button type="button" className="ops-btn" disabled={busy} onClick={onClose}>Cancel</button><button className="ops-btn primary" disabled={busy || !password}>{busy ? 'Resetting…' : 'Reset password'}</button></div></form>}</Modal>;
 }
 
 function useUnlock() {
@@ -53,7 +53,7 @@ function UserEditor({ person, me, onRefresh, onReset }: { person: Staff; me: Sta
     <label className="ops-check"><input type="checkbox" checked={active} disabled={self} onChange={e => setActive(e.target.checked)} />Active</label>
     {self && <span className="ops-user-locked">You can’t change your own role.</span>}
     {needDivision && <span className="ops-user-hint" role="alert">Choose a division.</span>}
-    <div className="ops-user-extra">{sensitive && <input type="password" aria-label={'Your password to confirm the change for ' + person.name} placeholder="Your password to confirm" autoComplete="current-password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />}<button className="ops-btn" disabled={busy || !changed || needDivision || (sensitive && !confirmPassword)} onClick={() => void save()}>Save</button>
+    <div className="ops-user-extra">{sensitive && <PasswordInput aria-label={'Your password to confirm the change for ' + person.name} placeholder="Your password to confirm" autoComplete="current-password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />}<button className="ops-btn" disabled={busy || !changed || needDivision || (sensitive && !confirmPassword)} onClick={() => void save()}>Save</button>
       {!self && canResetPassword(me) && <button className="ops-btn" onClick={() => onReset(person)}><KeyRound size={14} aria-hidden="true" />Reset password</button>}
       {!self && canResetPassword(me) && <button className="ops-btn" disabled={unlocking === person.id} onClick={() => void unlock(person)}><LockOpen size={14} aria-hidden="true" />Unlock</button>}</div>
   </div>;

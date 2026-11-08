@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, KeyRound, Plus, RefreshCw, ShieldAlert, UserX, UsersRound } from 'lucide-react';
 import { toast } from 'sonner';
 import type { TeamMember } from '@/lib/operations/types';
-import { api, initials, Modal } from './operations-common';
+import { api, initials, Modal, PasswordInput } from './operations-common';
 import './operations-report-queue.css';
 import './operations-administration.css';
 
@@ -67,7 +67,7 @@ function AddSoa({ division, onClose, onDone }: { division: string; onClose: () =
       <label>Email<input aria-label="Email" name="email" type="email" required maxLength={254} /></label>
       <label>Position<input aria-label="Position" name="position" maxLength={200} defaultValue="SOA" /></label>
       <label>Phone (optional)<input aria-label="Phone (optional)" name="phone" type="tel" maxLength={40} autoComplete="off" /></label>
-      <label>Your password<input aria-label="Your password" name="password" type="password" autoComplete="current-password" required maxLength={200} /><small>We ask for your password to confirm it’s you.</small></label>
+      <label>Your password<PasswordInput aria-label="Your password" name="password" autoComplete="current-password" required maxLength={200} /><small>We ask for your password to confirm it’s you.</small></label>
       {error && <p role="alert" className="ops-client-error">{error}</p>}
       <div className="ops-actions"><button type="button" className="ops-btn" disabled={busy} onClick={onClose}>Cancel</button><button className="ops-btn primary" disabled={busy}>{busy ? 'Adding…' : 'Add SOA'}</button></div>
     </form>}</Modal>;
@@ -82,7 +82,7 @@ function ResetSoa({ member, onClose }: { member: TeamMember; onClose: () => void
   }
   return <Modal title={'Reset password for ' + member.name + '?'} onClose={() => { if (!busy) onClose(); }}>{done
     ? <Credentials lead="Password reset for" name={member.name} username={member.username} temporaryPassword={done.temporaryPassword} onDone={onClose} />
-    : <form className="ops-pad" onSubmit={submit}><p>A temporary password is shown once. {member.name} must set a new one at next sign-in.</p><label>Your password<input aria-label="Your password" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required maxLength={200} /></label>{error && <p role="alert" className="ops-client-error">{error}</p>}<div className="ops-actions"><button type="button" className="ops-btn" disabled={busy} onClick={onClose}>Cancel</button><button className="ops-btn primary" disabled={busy || !password}>{busy ? 'Resetting…' : 'Reset password'}</button></div></form>}</Modal>;
+    : <form className="ops-pad" onSubmit={submit}><p>A temporary password is shown once. {member.name} must set a new one at next sign-in.</p><label>Your password<PasswordInput aria-label="Your password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required maxLength={200} /></label>{error && <p role="alert" className="ops-client-error">{error}</p>}<div className="ops-actions"><button type="button" className="ops-btn" disabled={busy} onClick={onClose}>Cancel</button><button className="ops-btn primary" disabled={busy || !password}>{busy ? 'Resetting…' : 'Reset password'}</button></div></form>}</Modal>;
 }
 
 function DeactivateSoa({ member, onClose, onDone }: { member: TeamMember; onClose: () => void; onDone: () => void }) {
@@ -93,5 +93,5 @@ function DeactivateSoa({ member, onClose, onDone }: { member: TeamMember; onClos
     catch (e) { setError((e as Error).message); setBusy(false); }
   }
   return <Modal title={'Deactivate ' + member.name + '?'} onClose={() => { if (!busy) onClose(); }}>
-    <form className="ops-pad" onSubmit={submit}><p>{member.name} will be signed out and won’t be able to sign in. Their clients and history stay. Only the Head can turn the account back on.</p><label>Your password<input aria-label="Your password" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required maxLength={200} /></label>{error && <p role="alert" className="ops-client-error">{error}</p>}<div className="ops-actions"><button type="button" className="ops-btn" disabled={busy} onClick={onClose}>Cancel</button><button className="ops-btn danger" disabled={busy || !password}>{busy ? 'Deactivating…' : 'Deactivate'}</button></div></form></Modal>;
+    <form className="ops-pad" onSubmit={submit}><p>{member.name} will be signed out and won’t be able to sign in. Their clients and history stay. Only the Head can turn the account back on.</p><label>Your password<PasswordInput aria-label="Your password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required maxLength={200} /></label>{error && <p role="alert" className="ops-client-error">{error}</p>}<div className="ops-actions"><button type="button" className="ops-btn" disabled={busy} onClick={onClose}>Cancel</button><button className="ops-btn danger" disabled={busy || !password}>{busy ? 'Deactivating…' : 'Deactivate'}</button></div></form></Modal>;
 }

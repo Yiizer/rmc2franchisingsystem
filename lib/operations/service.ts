@@ -339,7 +339,7 @@ export async function requestDetails(id:string,user:Staff,input:unknown) {
 /** Inquiries a Division Head / SOA may submit in 24 hours. */
 const OWNER_DAILY_INTAKE=20;
 /** `origin` says how the form arrived (stored on the source; item 9). `idempotencyKey` is a settings key: a repeat within 24 h returns the first inquiry (item 7). */
-export async function intake(user:Staff,file:File,sender:string,options:{ownerId?:string|null;origin?:'email'|'upload'|'manual';idempotencyKey?:string}={}) {
+export async function intake(user:Staff,file:File,sender:string,options:{ownerId?:string|null;origin?:'email'|'upload'|'manual';idempotencyKey?:string;fromAddress?:string}={}) {
   // A Division Head / SOA submits their own client: it goes through the same intake and duplicate checks and is owned by them.
   const scoped=isOwnerScoped(user);
   if(!scoped&&!canImportInquiry(user))throw new AppError('Use an employee or admin account to import an inquiry.',403);
@@ -361,6 +361,7 @@ export async function intake(user:Staff,file:File,sender:string,options:{ownerId
   const source=filename.endsWith('.pdf')?await preservePdfForm(bytes,file.name,sender):await parseForm(bytes,file.name,sender);
   source.sourceHash=createHash('sha256').update(bytes).digest('hex');
   source.sender=sender.trim();source.origin=options.origin||'upload';
+  {const from=(options.fromAddress||'').trim().toLowerCase();if(!scoped&&from&&from!==source.sender.toLowerCase())source.replyToFrom=from;}
   const divisionTable=await getDivisionTable();
   // The original is already stored under a fresh key; if the row cannot be committed, remove it again.
   let reused:InquiryRecord|undefined;

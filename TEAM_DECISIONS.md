@@ -8,6 +8,28 @@ Format: **Decision** — why — where it applies.
 
 ## Product decisions (approved by the Product Owner)
 
+- **Full working system by Monday 2026-11-16** (approved by the PO 2026-11-08, in a grilling session; the full plan is `PLAN_2026-11-16_PROMPT.md`).
+  - **What Monday means:** staff start dry runs of real work. Every user-facing flow has to work end to end, with only minor issues left.
+    - Staff process real inquiries in parallel with the old process, which stays the official one.
+    - All outgoing mail goes to the staging redirect, so nothing reaches an agent. Inbound import stays on.
+    - Live sending is switched on later, as a separate step with PO approval.
+    - Dry-run data is wiped at cutover. Only the client directory and the accounts are kept.
+  - **Reverses the 2026-11-07 deferral:** all of `REMAINING_WORK.md` §0 and §2 (the full final check) runs this week, not just before production.
+  - **In scope:**
+    - phase 5 large files
+    - the Head's division editor
+    - real per-person accounts, with the demo accounts disabled
+    - a "Report a problem" button
+    - free-tier error tracking
+    - the Reply-To warning
+    - a show/hide password toggle
+    - dark mode (Light / Dark / System; documents and PDFs stay light)
+    - phone push only if the PO approves the VAPID keys this week
+    - the email signature and branch answers only if the client sends them by 2026-11-11
+  - **Out of scope:** Supabase Auth (phase 6), live AI or OCR, an agent portal, production cutover, and new paid services.
+  - **Feature freeze at the end of 2026-11-12.** After that, only bug fixes.
+  - Why: the client wants a reliable system they can use for dry runs, with problems found and fixed during them.
+
 - **Monitoring feedback round 2026-11-08c** (approved by the PO 2026-11-08, "approve as proposed"). Supersedes, for the Monitoring page only, the "Still new" bullet of round 2026-11-08b and its empty-page takeover.
   - **"Still new" becomes "Not yet sent", the open backlog.**
     - Definition: an inquiry received before moment T, with no delivered submission by T (manual confirmations count, dry runs don't) and no closure (declined or transferred) by T. The received date doesn't matter.

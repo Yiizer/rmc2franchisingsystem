@@ -5,7 +5,7 @@ import { Toaster, toast } from 'sonner';
 import { ageLabel, canPrepareProposal, manilaTime } from '@/lib/operations/types';
 import { canApproveProposal, canDecideProgressReport, canImportInquiry, canManageAccounts, canManageTemplates, canReviewInbound, canResetPassword, canSeeAiUsage, canSeeIntegrations, canSeeProposalStats } from '@/lib/operations/permissions';
 import type { InquiryRecord, InquirySummary, Staff, WorkspaceData } from '@/lib/operations/types';
-import { api, endpoint, Modal } from './operations-common';
+import { api, endpoint, Modal, PasswordInput } from './operations-common';
 import { HandlingBadge } from './operations-activity';
 import { AccountSettings, TemplateAdministration, AdminMonitoring } from './operations-administration';
 import UsersAndRoles from './operations-accounts';
@@ -30,7 +30,9 @@ import { useOperationsWorkspace } from './use-operations-workspace';
 import { AI_FEATURES } from '@/lib/operations/features';
 
 
-export default function OperationsApp(){
+export type AppEnvironment='local'|'test'|'live';
+const ENVIRONMENT_NOTE:Record<AppEnvironment,{badge?:string;note?:string}>={local:{badge:'LOCAL TEST ENVIRONMENT',note:'Local testing · Email stays on this computer.'},test:{badge:'TEST VERSION',note:'Test version · Email goes to the test inbox, never to agents.'},live:{}};
+export default function OperationsApp({environment='local'}:{environment?:AppEnvironment}){
   const [mode,setMode]=useState<'checking'|'staff'|'owner'>('checking'),[boot,setBoot]=useState<OwnerBoot|null>(null),[epoch,setEpoch]=useState(0);
   // Division Heads and SOAs use a separate, whitelisted API: find out which app this session needs.
   const detect=useCallback(async():Promise<'staff'|'owner'>=>{
@@ -42,10 +44,10 @@ export default function OperationsApp(){
   useEffect(()=>{void detect();},[detect]);
   if(mode==='checking')return <div className="ops-app ops-loading"><RefreshCw className="ops-spin"/><p>Opening your workspace…</p></div>;
   if(mode==='owner'&&boot)return <OwnerApp key={boot.user.id} initial={boot} onSignedOut={()=>{setBoot(null);setMode('staff');setEpoch(n=>n+1);}}/>;
-  return <StaffApp key={epoch} onSignedIn={detect}/>;
+  return <StaffApp key={epoch} environment={environment} onSignedIn={detect}/>;
 }
 
-function StaffApp({onSignedIn}:{onSignedIn:()=>Promise<'staff'|'owner'>}){
+function StaffApp({onSignedIn,environment}:{onSignedIn:()=>Promise<'staff'|'owner'>;environment:AppEnvironment}){
   const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[loginError,setLoginError]=useState(''),[busy,setBusy]=useState(false),[requestedPage,setPage]=useState('Dashboard'),[selected,setSelected]=useState(''),[filter,setFilter]=useState('All statuses'),[search,setSearch]=useState(''),[division,setDivision]=useState('All divisions'),[intakeOpen,setIntakeOpen]=useState(false),[upload,setUpload]=useState<File|null>(null),[sender,setSender]=useState(''),[now,setNow]=useState(()=>Date.now());
   const [noticeOpen,setNoticeOpen]=useState(false);const closeNotices=useCallback(()=>setNoticeOpen(false),[]);
   const [searchQuery,setSearchQuery]=useState(''),[listPage,setListPage]=useState(1),[noticePage,setNoticePage]=useState(1),[sort,setSort]=useState<ListSort>('newest');
@@ -68,7 +70,7 @@ function StaffApp({onSignedIn}:{onSignedIn:()=>Promise<'staff'|'owner'>}){
   async function afterCreate(inquiry:InquiryRecord){await refresh();setIntakeOpen(false);setUpload(null);setImportOwner(null);void open(inquiry);toast[inquiry.closure||inquiry.clientReview?.state==='duplicate'?'warning':'success'](inquiry.closure?'Request declined and archived: previous registration expired.':inquiry.clientReview?.state==='duplicate'?'Duplicate client flagged. Processing is on hold.':'Inquiry created. Client checking is active.');}
   async function readNotices(ids:string[],all=false){try{await api('notifications',all?{all:true}:{ids});await refresh();}catch(error){toast.error((error as Error).message);}}
   if(loading)return <div className="ops-app ops-loading"><RefreshCw className="ops-spin"/><p>Opening your workspace…</p></div>;
-  if(!data)return <div className="ops-app"><Toaster position="top-right"/><div className="ops-login"><section className="ops-login-story"><div className="ops-brand"><img src="/rmc2-logo.png" alt="RMC2"/><div><b>RMC2</b><small>CONSULTANCY CORPORATION</small></div></div><div><span className="ops-kicker">FRANCHISING OPERATIONS</span><h1>From inquiry<br/>to approved proposal.</h1><p>A shared workspace for your team.<br/>Clear information. Fewer steps.</p><div className="ops-login-flow"><span><Inbox/>Review form</span><span><FileText/>Prepare</span><span><ClipboardCheck/>Approve</span></div></div><small>Your trusted partner in Health, Life and Non-Life Coverage.</small></section><section className="ops-login-panel"><form onSubmit={login}><span className="ops-badge amber">LOCAL TEST ENVIRONMENT</span><h1>Welcome back</h1><p>Sign in to your franchising workspace.</p><label>Username or email<input aria-label="Username or email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} required maxLength={254}/></label><label>Password<input autoComplete="current-password" type="password" value={password} onChange={e=>setPassword(e.target.value)} required/></label>{loginError&&<p role="alert" className="ops-message amber">{loginError}</p>}<button className="ops-btn primary" disabled={busy}>{busy?'Signing in…':'Sign in'}<ArrowRight size={16}/></button><div className="ops-login-help"><b>Use your staff credentials</b><p>Your administrator can create your account. Change your sign-in details in Settings.</p><small>Local testing · Email remains in test mode.</small></div></form></section></div></div>;
+  if(!data)return <div className="ops-app"><Toaster position="top-right"/><div className="ops-login"><section className="ops-login-story"><div className="ops-brand"><img src="/rmc2-logo.png" alt="RMC2"/><div><b>RMC2</b><small>CONSULTANCY CORPORATION</small></div></div><div><span className="ops-kicker">FRANCHISING OPERATIONS</span><h1>From inquiry<br/>to approved proposal.</h1><p>A shared workspace for your team.<br/>Clear information. Fewer steps.</p><div className="ops-login-flow"><span><Inbox/>Review form</span><span><FileText/>Prepare</span><span><ClipboardCheck/>Approve</span></div></div><small>Your trusted partner in Health, Life and Non-Life Coverage.</small></section><section className="ops-login-panel"><form onSubmit={login}>{ENVIRONMENT_NOTE[environment].badge&&<span className="ops-badge amber">{ENVIRONMENT_NOTE[environment].badge}</span>}<h1>Welcome back</h1><p>Sign in to your franchising workspace.</p><label>Username or email<input aria-label="Username or email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} required maxLength={254}/></label><label>Password<PasswordInput autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required/></label>{loginError&&<p role="alert" className="ops-message amber">{loginError}</p>}<button className="ops-btn primary" disabled={busy}>{busy?'Signing in…':'Sign in'}<ArrowRight size={16}/></button><div className="ops-login-help"><b>Use your staff credentials</b><p>Your administrator can create your account. Change your sign-in details in Settings.</p>{ENVIRONMENT_NOTE[environment].note&&<small>{ENVIRONMENT_NOTE[environment].note}</small>}</div></form></section></div></div>;
   const {user,users,inquiries,templates}=data,unreadCount=data.unreadCount;
   const mail=data.mail;
   const current=data.current?.id===selected?data.current:undefined;

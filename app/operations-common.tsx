@@ -1,6 +1,6 @@
 'use client';
-import { useEffect, useRef } from 'react';
-import { Inbox, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Eye, EyeOff, Inbox, X } from 'lucide-react';
 import type { Staff, WorkflowStatus } from '@/lib/operations/types';
 export const endpoint='/api/operations';
 export async function api<T>(path:string,body?:unknown):Promise<T>{
@@ -27,3 +27,5 @@ export function Modal({title,onClose,children,wide=false,drawer=false}:{title:st
 }
 export function Empty({text,hint='New inquiries and updates will appear here.'}:{text:string;hint?:string}){return <div className="ops-empty"><Inbox size={28}/><h3>{text}</h3><p>{hint}</p></div>;}
 
+/** A password field with a show/hide toggle. The toggle never changes the field's autocomplete hint. */
+export function PasswordInput(props:Omit<React.InputHTMLAttributes<HTMLInputElement>,'type'>){const [shown,setShown]=useState(false);return <span className="ops-password"><input {...props} type={shown?'text':'password'} spellCheck={false} autoCapitalize="none"/><button type="button" className="ops-password-toggle" aria-label={shown?'Hide password':'Show password'} aria-pressed={shown} onClick={()=>setShown(s=>!s)}>{shown?<EyeOff size={17} aria-hidden="true"/>:<Eye size={17} aria-hidden="true"/>}</button></span>;}

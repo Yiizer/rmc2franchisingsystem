@@ -186,7 +186,7 @@ export async function importInbound(user: Staff, id: string, index: number, auto
     const ownerId = ownerOverride !== undefined ? ownerOverride : autoOwner?.id ?? null;
     // When linked, replies go to the owner's account address, never to a header the sender chose.
     const sender = autoOwner ? autoOwner.email : [record.replyTo, record.from].find(address => isSafeEmail(address)) || '';
-    const inquiry = await intake(user, new File([new Uint8Array(bytes)], attachment.name, { type: FORM_TYPES[attachment.type] }), sender, { ownerId, origin: 'email' });
+    const inquiry = await intake(user, new File([new Uint8Array(bytes)], attachment.name, { type: FORM_TYPES[attachment.type] }), sender, { ownerId, origin: 'email', fromAddress: record.from });
     await finish(id, { ...record, state: 'imported', inquiryId: inquiry.id, handledBy: user.id, handledAt: new Date().toISOString(), importError: undefined });
     return inquiry;
   } catch (error) {
