@@ -8,6 +8,41 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## Final check, 2026-11-09 batch (commits `2549aca`, `fd17179`; live on deployment `rmc2-preview-ivdry14o7`, aliased to rmc2-test)
+
+- **Code-review minors, done:**
+  - **batched reindex:** the index sync works in set-based batches of 200. `scripts/test-index-batch.mjs` 4/4 shows it builds exactly the same summaries and keys as one inquiry at a time (454 inquiries, 1350 keys, 3 batches, deletes across a batch edge).
+  - **activity query filtered by inquiry:** single-inquiry reads now filter in SQL.
+- **Found and fixed while testing:** a late heartbeat could bring back an expired handling lock, depending on whether clean-up had just run. Now only a live lock is refreshed. `test-exclusive-handling`: its 4 API checks pass. It was also updated for the 2026-11-08 "Started handling" history entry. Its browser part still waits for an old "Browse templates" button (stale selector).
+- **Inquiry numbers use the Manila year** (00:30 on 1 January Manila time gives the new year).
+- **Verified TLS to Supabase: code ready, not switched on.** Set `RMC2_DATABASE_CA` to the Supabase CA certificate (Project Settings > Database > SSL), optionally with `RMC2_DATABASE_SSL=verify-full`. Then the certificate and host name are checked. Needs the PO to download the certificate and approve the env change. `scripts/test-db-connection.mjs` 8/8.
+- **Cold start:** a paused free Supabase project does not wake by itself (someone restores it in the dashboard). The app now answers a plain 503 "may be paused" instead of a 500. It still retries readiness on every request (the failure is not cached). Not tried against a really paused project. Daily dry-run use keeps it from pausing.
+- **Data hygiene (read-only, `scripts/storage-audit-test.mjs`):** 145 stored files on TEST, all names pass `assertKey`. 36 are referenced by no record, not even by id (attachments 11, generated 16, inbound 2, outbox 5, sources 2): leftovers from earlier test resets. Nothing deleted. The bucket is wiped at cutover.
+  - **Renderer backfill:** not needed. Only packages made before the marker lack it, and they are all fictional test data wiped at cutover. New packages always carry it.
+- **Security review (security-engineer, read-only)**
+  - **Fixed in inbound email:**
+    - a sender is verified (and auto-linked to a Division Head / SOA) only on DMARC pass aligned with the From domain. SPF + DKIM pass for another domain was enough before, so a forged From could link an inquiry to a real agent;
+    - Authentication-Results is read token by token, so sender text cannot fake a result;
+    - an unreadable email is listed as skipped and no longer blocks later mail; the cursor is saved even if the loop stops;
+    - oldest emails are read first (a burst over 25 was dropped before);
+    - emails over 15 MB are not downloaded, and at most 5 attachments are kept per email.
+    - `scripts/test-inbound-auth.mjs` 5/5. "Check mail now" online: connected, 0 new.
+    - Note: Gmail addresses pass DMARC, so Division Heads / SOAs emailing from Gmail still link automatically. A company domain without DMARC imports unlinked, for staff to link.
+  - **Still open, from the same review:**
+    - [ ] **migration 500 stamps any database `test` by default.** If production is migrated without first setting `environment=production`, the rollback scripts would pass their guard there. Must be handled in the phase 8 runbook: set the marker before 500, or change 500 before production.
+    - [ ] rollback files missing for 20261105000000, 20261105000100, 20261106000000 and 20261106000100; the README run order misses 1108 and 600.
+    - [ ] `rmc2_app` can overwrite `app_meta.environment` (low).
+    - [ ] a UTF-8 BOM on six rollback files (may stop psql; dry-run them locally).
+    - [ ] inbound: an error banner and back-off when the inbox keeps failing; a reaper for messages stuck in "importing".
+    - [ ] inbound: hold auto-imports without DMARC pass for a staff click (PO call).
+    - [ ] inbound: magic-byte checks on attachments, and an Excel size cap before parsing.
+    - [ ] **inbound retention: there is none.** Proposal for the PO: skipped emails 30 days; unhandled 60 days; imported emails' copies deleted at 90 days, keeping a small record for duplicate checks.
+- **Stress tests T1–T10 (qa-engineer, on TEST):**
+  - **Passed:** T1 (7/7; once, a postgres.js socket error after an idle-in-transaction test, not reproduced), T2, T6, T7 (239 writes, 0 stale), T8 (no torn reads), T9 (11/11, audit tables append-only), `test-phase4-pg-sql` and `test-store-postgres` (41).
+  - **Not valid yet:** T3, T4, T5 and T10. Reasons: runner setup; T4 assumed the old roles; T5 ignores the new per-IP limit. T4, T5 and T10 change accounts on the database the dry runs will use, so they wait for the PO, or for a throwaway database.
+  - **Incident:** a script bug in the agent's T4 clean-up wrote Emerson's and Zeo's account data as a JSON string for a few minutes, so online sign-in returned 500. The agent restored both from its snapshot. Sign-in now also survives a malformed account row (`fd17179`).
+  - **Left on TEST:** about 89 `QA-PG` test inquiries (they show in staff lists) plus 49 security events and 50 file-access rows (append-only now). Cleaning up the inquiries needs PO approval.
+
 ## Settings tabs and the top-bar theme toggle (commit `da3d7ca`; live on the test version since 2026-11-09)
 
 - **Settings** (`app/operations-settings.tsx`) is split into Profile, Security, Notifications and Email templates
