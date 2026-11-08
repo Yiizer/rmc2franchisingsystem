@@ -90,10 +90,12 @@ export function ageLabel(value: string, now=Date.now()) { const mins=Math.max(0,
 
 // ---- Feedback round 2026-11-07: response contracts shared by server and UI ----
 /** GET monitoring/proposals?period=day|week|month (Head, Supervisor). Buckets are Manila time; weeks run Monday-Sunday. */
-export type ProposalStatsPeriod = 'day'|'week'|'month';
-export type ProposalStatsRange = '7d'|'30d'|'90d'|'12m';
+/** Bucket size. 'hour' is used by the Monitoring "Today" range only. */
+export type ProposalStatsPeriod = 'hour'|'day'|'week'|'month';
+/** Monitoring ranges (PO 2026-11-08b): calendar periods in Manila time. Today / Weekly / Monthly / Yearly. */
+export type ProposalStatsRange = 'day'|'week'|'month'|'year';
 /** Monitoring KPI change against the previous period. Neutral when the previous count is 0. Colour follows the meaning (PO Q5): for Declined and
- * Not yet started (upIsGood=false) a rise is 'bad'. */
+ * Still new (upIsGood=false) a rise is 'bad'. */
 export function kpiDelta(current:number,previous:number,upIsGood:boolean):{text:string;tone:'good'|'bad'|'neutral';direction:'up'|'down'|'flat'}{
   if(previous<=0)return {text:'—',tone:'neutral',direction:'flat'};
   const change=Math.round((current-previous)/previous*100);
@@ -101,17 +103,35 @@ export function kpiDelta(current:number,previous:number,upIsGood:boolean):{text:
   const up=change>0;
   return {text:Math.abs(change)+'%',tone:up===upIsGood?'good':'bad',direction:up?'up':'down'};
 }
-/** Counts over [from, to). notStarted = received in the window and still "New inquiry" with no closure, as of now. */
+/** Counts over [from, to). notStarted ("Still new" on screen) = received in the window and still "New inquiry" with no closure, as of now. */
 export type ProposalWindowTotals = { from: string; to: string; received: number; sent: number; declined: number; notStarted: number };
 export type ProposalStats = {
   period: ProposalStatsPeriod; from: string; to: string; asOf: string;
   /** received = inquiries created in the bucket (added 2026-11-08 for the Monitoring trend). */
-  buckets: { label: string; start: string; received: number; sent: number; declined: number; notStarted: number }[];
+  /** future: the bucket starts after asOf (the current period's later hours/days/months), drawn empty. Only with ?range=. */
+  buckets: { label: string; start: string; received: number; sent: number; declined: number; notStarted: number; future?: boolean }[];
   funnel: { step: 'Received'|'Started'|'Submitted'|'Approved'|'Sent'; count: number }[];
   /** Milliseconds. avg* are null when the matching count is 0. */
   timing: { userId: string; name: string; created: number; avgCreateMs: number|null; sent: number; avgHandlingMs: number|null }[];
-  /** Only with ?range=. sentRate = funnel Sent ÷ Received (whole percent), null when nothing was received. weekdays = proposals sent, Mon..Sun. */
-  summary?: { range: ProposalStatsRange; current: ProposalWindowTotals; previous: ProposalWindowTotals; weekdays: { day: 'Mon'|'Tue'|'Wed'|'Thu'|'Fri'|'Sat'|'Sun'; sent: number }[]; sentRate: number|null };
+  /** Only with ?range=. sentRate = funnel Sent ÷ Received (whole percent), null when nothing was received. weekdays = proposals sent, Mon..Sun.
+   * period / label: the selected period (key as in ?period=); currentPeriod / earliestPeriod: the keys the page may step between.
+   * toDate: the selected period is the current one, so `previous` ends at the same point of the previous period (like for like). */
+  summary?: { range: ProposalStatsRange; period: string; label: string; currentPeriod: string; earliestPeriod: string; previousLabel: string; toDate: boolean;
+    current: ProposalWindowTotals; previous: ProposalWindowTotals; weekdays: { day: 'Mon'|'Tue'|'Wed'|'Thu'|'Fri'|'Sat'|'Sun'; sent: number }[]; sentRate: number|null };
+};
+/** GET monitoring/proposals/employee?user=&range=&period= (Head, Supervisor): one employee's work in the selected period.
+ * summary.created / avgCreateMs / sent / avgHandlingMs are the same numbers as that employee's Time per employee row.
+ * declined = inquiries this employee declined in the period. Events: the inquiry's received time, this employee's first start, their submitted
+ * versions with the decisions on them, the send of a version they prepared, and a decline. inPeriod is false for events outside the period. */
+export type ProposalTimelineEvent = { kind: 'received'|'started'|'submitted'|'returned'|'approved'|'sent'|'declined'; at: string; inPeriod: boolean; version?: number;
+  /** submitted: this version's time to create, when it counts in the period's average. sent: the handling time, when it counts. */
+  createMs?: number; handlingMs?: number };
+export type ProposalEmployeeDetail = {
+  user: { id: string; name: string }; range: ProposalStatsRange; period: string; label: string; from: string; to: string; asOf: string;
+  summary: { created: number; sent: number; declined: number; avgCreateMs: number|null; avgHandlingMs: number|null };
+  proposals: { inquiryId: string; company: string; status: WorkflowStatus; outcome: 'sent'|'declined'|'open'; events: ProposalTimelineEvent[] }[];
+  /** More matched than the cap; only the first ones (oldest first) are listed. */
+  truncated: boolean;
 };
 /** GET my-team (Division Head only). */
 export type TeamMember = Pick<Staff,'id'|'name'|'email'|'username'|'position'|'phone'|'active'|'mustChangePassword'|'division'>;

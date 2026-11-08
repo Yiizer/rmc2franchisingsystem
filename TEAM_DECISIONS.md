@@ -8,6 +8,24 @@ Format: **Decision** — why — where it applies.
 
 ## Product decisions (approved by the Product Owner)
 
+- **Monitoring feedback round 2026-11-08b** (approved by the PO 2026-11-08, "approve as proposed"). Supersedes, for the Monitoring page only:
+  the 7/30/90-day and 12-month ranges, the CSV export (`FEEDBACK_2026-11-08_PLAN.md` §2.4) and "no new date-picker beyond the 4 ranges" (§5).
+  - **Ranges are calendar periods in Manila time:** Today (24 hourly buckets) · Weekly, Monday–Sunday (7 days) · Monthly (28–31 days) · Yearly (12 months). Monthly is the default.
+  - **Deltas:** a past period is compared with the whole period before it. The current, unfinished period is compared **like for like**: the previous period up to the same moment. A day the earlier month or year doesn't have clamps to that month's end (31 Mar → all of Feb; 29 Feb → all of Feb the year before).
+  - **Past periods:** a ‹ › stepper, a "Jump to" picker and "Back to current". There are no future periods.
+    - The URL is `?range=day|week|month|year&period=…`, next to `#monitoring`. Keys: day `YYYY-MM-DD`, week = its Monday `YYYY-MM-DD`, month `YYYY-MM`, year `YYYY`.
+    - The server rejects with 400: a malformed or impossible date, a week key that isn't a Monday, a future period, and anything older than the lookback.
+  - **Lookback: 5 years**, back to 1 January of (the current year − 5). That's a sanity bound, not a cost bound: every request already reads all inquiries in one snapshot.
+  - **Jump to uses native controls** (a date input; month and year selects). `components/ui/calendar.tsx` was not used: the ops pages don't use shadcn, and its theme colours aren't the ops tokens.
+  - **Colours:** Received / pipeline = `--ops-navy`; Sent = `--ops-action` (burnt orange); Declined = `--ops-error`; Still new = `--ops-muted`.
+    - This chart use of orange is a deliberate exception to the tokens' "status colours never reuse orange" rule.
+    - No hex in the dashboard files. Light theme only, since the app has no dark theme. Navy/white 16:1, orange/white 5.1:1, navy/orange 3.1:1, neutral bars on track 3.3:1.
+  - **"Not yet started" becomes "Still new"** (not "Not yet sent", which would mislabel it). Same metric: received in the period and still "New inquiry" with no closure, as of now. Starting handling alone doesn't move an inquiry out; a saved draft or template does.
+  - **Export is a PDF** built in the browser with `pdf-lib` (already a dependency, loaded on demand) from the numbers on screen. Colours are read from the tokens. It uses the built-in Helvetica font, so characters outside Latin-1 print as "?".
+  - **Time per employee drill-down:** `GET monitoring/proposals/employee?user=&range=&period=`, with the same `canSeeProposalStats` rule (403) and 404 for an unknown user.
+    - Its summary is computed by the same code as the table row, so the two always match. "Created" is labelled "Versions submitted" because a v2 counts again.
+    - The timeline lists received → started → submitted / returned / approved → sent / declined, with durations. It's capped at 300 proposals.
+
 - **Feedback round 2026-11-08** (`FEEDBACK_2026-11-08_PLAN.md`, approved 2026-11-08):
   - **Q1, who gets expiry reminders: everyone involved.** That means:
     - the employees who handled the client (`handledBy` plus the preparer of the sent version);

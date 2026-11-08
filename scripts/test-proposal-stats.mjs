@@ -1,4 +1,4 @@
-// Feedback round 2026-11-07, items 3 and 4: proposal dashboard buckets, funnel and time per employee, plus the "Started handling" log line.
+// Feedback rounds 2026-11-07 (items 3, 4), 2026-11-08 and 2026-11-08b: proposal dashboard buckets, funnel, time per employee, calendar periods and the drill-down.
 // computeProposalStats is pure, so the fixtures below have fixed timestamps and the expected numbers are hand-computed (see the tables).
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -188,98 +188,210 @@ const min = 60000;
   t.pass('First start per user writes one "Started handling" line without bumping the revision; later starts add nothing; a save on the old revision still works');
 }
 
-// ========== Feedback round 2026-11-08: Monitoring ranges (range=7d|30d|90d|12m), previous period, sends per weekday, sent rate ==========
+// ========== Feedback round 2026-11-08b: calendar periods (range=day|week|month|year), past periods (&period=), like-for-like deltas, drill-down ==========
 const types = await t.load('types');
+const periods = await t.load('proposal-periods');
 const totals = w => ({ received: w.received, sent: w.sent, declined: w.declined, notStarted: w.notStarted });
 const kpis = s => Object.fromEntries(['received', 'sent', 'declined', 'notStarted'].map(k => [k, types.kpiDelta(s.current[k], s.previous[k], k === 'received' || k === 'sent')]));
 const weekdays = s => Object.fromEntries(s.weekdays.filter(d => d.sent).map(d => [d.day, d.sent]));
+const ms = text => Date.parse(M(text));
 
-// ---------- 7d: Mon Nov 2 .. Sun Nov 8 vs Mon Oct 26 .. Sun Nov 1 ----------
-//            received                 sent (delivery.at)            declined   not started
-// current    R2 R4 R5 R6         = 4  R5 R9(00:00 Nov 2) R4 R6 = 4  —      = 0  R2     = 1
-// previous   R1 R3 R7 R8 R9      = 5  R8(23:59:59 Nov 1)       = 1  R7   = 1  R1 R3  = 2
-// deltas     -20% bad (down)          +300% good (up)               -100% good   -50% good (a fall in not-started is good)
+// ---------- Period keys, labels and validation (proposal-periods.ts) ----------
 {
-  const r = stats.computeRangeStats(records, people, '7d', NOW), s = r.summary;
+  const P = periods, ok = (range, key, now = NOW) => P.parsePeriod(range, key, now).ok;
+  // labels
+  assert.equal(P.periodLabel('day', ms('2026-11-07T00:00:00')), 'Sat 7 Nov 2026');
+  assert.equal(P.periodLabel('week', ms('2026-11-02T00:00:00')), 'Week of 2–8 Nov 2026');
+  assert.equal(P.periodLabel('week', ms('2026-10-26T00:00:00')), 'Week of 26 Oct – 1 Nov 2026', 'a week across two months');
+  assert.equal(P.periodLabel('week', ms('2026-12-28T00:00:00')), 'Week of 28 Dec 2026 – 3 Jan 2027', 'a week across two years');
+  assert.equal(P.periodLabel('month', ms('2026-10-01T00:00:00')), 'October 2026');
+  assert.equal(P.periodLabel('year', ms('2025-01-01T00:00:00')), '2025');
+  // week start (Monday, Manila) and Manila midnight edges
+  assert.equal(P.periodKey('week', P.periodStart('week', NOW)), '2026-11-02', 'Sunday Nov 8 belongs to the week of Monday Nov 2');
+  assert.equal(P.periodKey('week', P.periodStart('week', ms('2026-11-09T00:00:00'))), '2026-11-09', 'Monday 00:00 starts a new week');
+  assert.equal(P.periodKey('week', P.periodStart('week', ms('2026-01-01T12:00:00'))), '2025-12-29', 'Thursday 1 Jan 2026 is in the week of Monday 29 Dec 2025');
+  assert.equal(P.periodKey('day', P.periodStart('day', Date.parse('2026-11-01T15:59:59.999Z'))), '2026-11-01');
+  assert.equal(P.periodKey('day', P.periodStart('day', Date.parse('2026-11-01T16:00:00.000Z'))), '2026-11-02', '16:00 UTC is Manila midnight');
+  // stepping across month and year boundaries
+  assert.equal(P.periodKey('month', P.shiftPeriod('month', ms('2026-01-01T00:00:00'), -1)), '2025-12');
+  assert.equal(P.periodKey('month', P.shiftPeriod('month', ms('2025-12-01T00:00:00'), 1)), '2026-01');
+  assert.equal(P.periodKey('year', P.shiftPeriod('year', ms('2026-01-01T00:00:00'), -1)), '2025');
+  assert.equal(P.periodKey('day', P.shiftPeriod('day', ms('2026-03-01T00:00:00'), -1)), '2026-02-28');
+  assert.equal(P.periodKey('day', P.shiftPeriod('day', ms('2028-03-01T00:00:00'), -1)), '2028-02-29', 'leap year');
+  assert.equal(P.periodKey('week', P.shiftPeriod('week', ms('2027-01-04T00:00:00'), -1)), '2026-12-28');
+  // validation: malformed, impossible, not a Monday, future, too old
+  for (const [range, key] of [['month', '2026-13'], ['month', '2026-1'], ['day', '2026-02-30'], ['day', '2026-02-29'], ['day', 'abc'], ['day', ' 2026-11-01'], ['year', '26'], ['week', '2026-11-03'], ['month', '2026-11-01']])
+    assert.equal(ok(range, key), false, `${range}=${key} is rejected`);
+  assert.equal(ok('day', '2028-02-29', ms('2028-03-01T09:00:00')), true, '29 Feb in a leap year is a real day');
+  assert.equal(ok('week', '2026-11-02'), true);
+  for (const [range, key] of [['day', '2026-11-09'], ['week', '2026-11-09'], ['month', '2026-12'], ['year', '2027']])
+    assert.match(P.parsePeriod(range, key, NOW).error, /not started yet/, `future ${range} ${key}`);
+  for (const [range, key] of [['day', '2026-11-08'], ['month', '2026-11'], ['year', '2026']]) assert.equal(ok(range, key), true, 'the current period is allowed');
+  // lookback: 5 years, from 1 Jan 2021 (Manila); a week reaches back to the Monday of the week holding 1 Jan 2021
+  assert.equal(P.LOOKBACK_YEARS, 5);
+  assert.equal(ok('year', '2021'), true); assert.match(P.parsePeriod('year', '2020', NOW).error, /goes back 5 years/);
+  assert.equal(ok('month', '2021-01'), true); assert.equal(ok('month', '2020-12'), false);
+  assert.equal(ok('day', '2021-01-01'), true); assert.equal(ok('day', '2020-12-31'), false);
+  assert.equal(ok('week', '2020-12-28'), true); assert.equal(ok('week', '2020-12-21'), false);
+  // like-for-like comparison point, with the clamp for a day the earlier month or year does not have
+  assert.equal(new Date(P.sameMomentEarlier('month', ms('2026-03-15T09:00:00'))).toISOString(), M('2026-02-15T09:00:00'));
+  assert.equal(new Date(P.sameMomentEarlier('month', ms('2026-03-31T15:00:00'))).toISOString(), M('2026-03-01T00:00:00'), '31 Mar compares with the whole of February');
+  assert.equal(new Date(P.sameMomentEarlier('year', ms('2028-02-29T10:00:00'))).toISOString(), M('2027-03-01T00:00:00'), '29 Feb compares with all of Feb 2027');
+  assert.equal(new Date(P.sameMomentEarlier('year', ms('2026-11-08T10:00:00'))).toISOString(), M('2025-11-08T10:00:00'));
+  assert.equal(new Date(P.sameMomentEarlier('month', ms('2026-01-20T10:00:00'))).toISOString(), M('2025-12-20T10:00:00'), 'January compares with December of the year before');
+  t.pass('Periods: labels, Monday week start, Manila midnight, month/year/leap-year stepping, malformed/impossible/non-Monday/future/too-old keys rejected, like-for-like clamp');
+}
+
+// ---------- Weekly, current week (Mon Nov 2 .. Sun Nov 8), compared like for like with Mon Oct 26 .. Sun Nov 1 10:00 ----------
+//            received                 sent                          declined                not started
+// current    R2 R4 R5 R6         = 4  R5 R9(00:00 Nov 2) R4 R6 = 4  —                   = 0  R2     = 1
+// previous   R7 R8 R9            = 3  (R8 Nov 1 23:59 is later) = 0 (R7 Nov 1 12:00 later) 0  (R1 R3 are Nov 1 evening) = 0
+{
+  const r = stats.computeRangeStats(records, people, 'week', NOW), s = r.summary;
   assert.equal(r.period, 'day');
-  assert.equal(r.buckets.length, 7);
-  assert.equal(r.buckets[0].label, 'Nov 2');
-  assert.equal(r.buckets[6].label, 'Nov 8');
+  assert.deepEqual(r.buckets.map(b => b.label), ['Nov 2', 'Nov 3', 'Nov 4', 'Nov 5', 'Nov 6', 'Nov 7', 'Nov 8']);
+  assert.equal(r.buckets.some(b => b.future), false, 'Sunday is the last day and has started');
+  assert.equal(s.period, '2026-11-02'); assert.equal(s.label, 'Week of 2–8 Nov 2026'); assert.equal(s.currentPeriod, '2026-11-02'); assert.equal(s.earliestPeriod, '2020-12-28');
+  assert.equal(s.toDate, true); assert.equal(s.previousLabel, 'Week of 26 Oct – 1 Nov 2026');
   assert.equal(s.current.from, M('2026-11-02T00:00:00')); assert.equal(s.current.to, M('2026-11-09T00:00:00'));
-  assert.equal(s.previous.from, M('2026-10-26T00:00:00')); assert.equal(s.previous.to, M('2026-11-02T00:00:00'));
+  assert.equal(s.previous.from, M('2026-10-26T00:00:00')); assert.equal(s.previous.to, M('2026-11-01T10:00:00'), 'previous week up to the same moment');
   assert.deepEqual(totals(s.current), { received: 4, sent: 4, declined: 0, notStarted: 1 });
-  assert.deepEqual(totals(s.previous), { received: 5, sent: 1, declined: 1, notStarted: 2 });
-  assert.deepEqual(kpis(s), {
-    received: { text: '20%', tone: 'bad', direction: 'down' }, sent: { text: '300%', tone: 'good', direction: 'up' },
-    declined: { text: '100%', tone: 'good', direction: 'down' }, notStarted: { text: '50%', tone: 'good', direction: 'down' },
-  });
-  assert.deepEqual(column(r, 'received'), { 'Nov 2': 2, 'Nov 3': 1, 'Nov 5': 1 }, 'received per day for the trend');
-  assert.deepEqual(weekdays(s), { Mon: 2, Wed: 1, Thu: 1 }, 'sends by Manila weekday: R5 and R9 on Monday Nov 2, R4 Wednesday, R6 Thursday');
+  assert.deepEqual(totals(s.previous), { received: 3, sent: 0, declined: 0, notStarted: 0 });
+  assert.deepEqual(kpis(s).received, { text: '33%', tone: 'good', direction: 'up' });
+  assert.deepEqual(kpis(s).sent, { text: '—', tone: 'neutral', direction: 'flat' }, 'no sends by that point last week');
+  assert.deepEqual(weekdays(s), { Mon: 2, Wed: 1, Thu: 1 });
   assert.deepEqual(funnel(r), { Received: 4, Started: 3, Submitted: 3, Approved: 3, Sent: 3 });
-  assert.equal(s.sentRate, 75, 'sent rate = funnel Sent 3 / Received 4');
-  t.pass('7d: Manila week windows, current vs previous totals, deltas (Declined/Not started falling = good), sends per weekday, sent rate 75% (hand-computed)');
+  assert.equal(s.sentRate, 75);
+  t.pass('Weekly (current): Monday-Sunday days, like-for-like previous window ends at the same moment last week, deltas, weekdays, sent rate');
 }
 
-// ---------- 30d: Oct 10 .. Nov 8 vs Sep 10 .. Oct 9 ----------
-// current: received all but R10 = 9, sent R4 R5 R6 R8 R9 = 5, declined R7 = 1, not started R1 R2 R3 = 3. previous: R10 received and sent (Oct 3/4).
+// ---------- Weekly, past week Oct 26 .. Nov 1 (?period=2026-10-26): compared with the whole week before ----------
 {
-  const r = stats.computeRangeStats(records, people, '30d', NOW), s = r.summary;
-  assert.equal(r.buckets.length, 30);
-  assert.equal(s.current.from, M('2026-10-10T00:00:00')); assert.equal(s.previous.from, M('2026-09-10T00:00:00'));
-  assert.deepEqual(totals(s.current), { received: 9, sent: 5, declined: 1, notStarted: 3 });
-  assert.deepEqual(totals(s.previous), { received: 1, sent: 1, declined: 0, notStarted: 0 });
-  assert.deepEqual(kpis(s).received, { text: '800%', tone: 'good', direction: 'up' });
-  assert.deepEqual(kpis(s).declined, { text: '—', tone: 'neutral', direction: 'flat' }, 'previous 0: neutral');
-  assert.deepEqual(kpis(s).notStarted, { text: '—', tone: 'neutral', direction: 'flat' });
-  assert.deepEqual(weekdays(s), { Mon: 2, Wed: 1, Thu: 1, Sun: 1 }, 'R8 delivered Sunday Nov 1 23:59:59');
-  assert.equal(s.sentRate, 56, '5 of 9 = 55.6% rounds to 56');
-  assert.deepEqual(types.kpiDelta(3, 3, false), { text: '0%', tone: 'neutral', direction: 'flat' });
-  assert.deepEqual(types.kpiDelta(3, 2, false), { text: '50%', tone: 'bad', direction: 'up' }, 'more declined = red');
-  t.pass('30d: totals, previous-period zero gives a neutral delta, a rise in Declined is red, sent rate rounds');
+  const r = stats.computeRangeStats(records, people, 'week', NOW, '2026-10-26'), s = r.summary;
+  assert.equal(s.toDate, false); assert.equal(s.label, 'Week of 26 Oct – 1 Nov 2026'); assert.equal(s.currentPeriod, '2026-11-02');
+  assert.equal(s.previous.from, M('2026-10-19T00:00:00')); assert.equal(s.previous.to, M('2026-10-26T00:00:00'), 'a whole week');
+  assert.deepEqual(totals(s.current), { received: 5, sent: 1, declined: 1, notStarted: 2 }, 'R1 R3 R7 R8 R9 received; R8 sent; R7 declined');
+  assert.deepEqual(totals(s.previous), { received: 0, sent: 0, declined: 0, notStarted: 0 });
+  assert.deepEqual(timing(r), { judy: [1, H, 1, 38 * H + 59 * min + 59000], jefferson: [1, H, 0, null] }, 'time per employee follows the period');
+  t.pass('Weekly (past): ?period=2026-10-26, whole previous week, the timing table follows the selected period');
 }
 
-// ---------- 90d: exactly Aug 11 .. Nov 8, weekly buckets with the first week (Mon Aug 10) clipped ----------
+// ---------- Monthly: November so far vs October 1-8 10:00; October 2026 vs all of September; 28/29/31 daily buckets ----------
 {
-  const edge = rec('R11', M('2026-08-10T12:00:00'), 'New inquiry'); // inside the first week bucket, but one day before the window
-  const r = stats.computeRangeStats([...records, edge], people, '90d', NOW), s = r.summary;
-  assert.equal(r.period, 'week');
-  assert.equal(r.buckets.length, 13);
-  assert.equal(r.buckets[0].start, M('2026-08-10T00:00:00'));
-  assert.equal(r.from, M('2026-08-11T00:00:00'), 'the window is clipped to 90 days');
-  assert.equal(s.current.received, 10, 'R11 (Aug 10) is outside the 90 days');
-  assert.equal(r.buckets[0].received + r.buckets[0].notStarted, 0, 'and not in the clipped first bucket');
-  assert.equal(s.previous.received, 1, 'R11 falls in the previous 90 days');
-  assert.equal(funnel(r).Received, 10);
-  t.pass('90d: exact 90-day window, weekly buckets, the first week clipped to the window, previous 90 days');
+  const r = stats.computeRangeStats(records, people, 'month', NOW), s = r.summary;
+  assert.equal(r.buckets.length, 30); assert.equal(r.buckets[0].label, 'Nov 1'); assert.equal(r.buckets[29].label, 'Nov 30');
+  assert.equal(r.buckets.filter(b => b.future).length, 22, 'Nov 9-30 are still to come');
+  assert.equal(s.previous.to, M('2026-10-08T10:00:00'));
+  assert.deepEqual(totals(s.current), { received: 6, sent: 5, declined: 1, notStarted: 3 });
+  assert.deepEqual(totals(s.previous), { received: 1, sent: 1, declined: 0, notStarted: 0 }, 'R10 (Oct 3 / sent Oct 4) is before Oct 8 10:00');
+  const october = stats.computeRangeStats(records, people, 'month', NOW, '2026-10').summary;
+  assert.equal(october.label, 'October 2026'); assert.equal(october.toDate, false); assert.equal(october.previousLabel, 'September 2026');
+  assert.deepEqual(totals(october.current), { received: 4, sent: 1, declined: 0, notStarted: 0 });
+  assert.equal(october.previous.from, M('2026-09-01T00:00:00')); assert.equal(october.previous.to, M('2026-10-01T00:00:00'));
+  assert.equal(stats.computeRangeStats(records, people, 'month', NOW, '2026-10').buckets.length, 31);
+  assert.equal(stats.computeRangeStats([], people, 'month', NOW, '2026-02').buckets.length, 28);
+  assert.equal(stats.computeRangeStats([], people, 'month', ms('2028-06-01T00:00:00'), '2028-02').buckets.length, 29, 'February in a leap year');
+  const jan = stats.computeRangeStats([rec('J', M('2025-12-31T23:59:00'), 'New inquiry'), rec('K', M('2026-01-01T00:00:00'), 'New inquiry')], people, 'month', NOW, '2026-01').summary;
+  assert.equal(jan.current.received, 1, 'Jan 1 00:00 Manila is January'); assert.equal(jan.previous.received, 1, 'Dec 31 23:59 is December'); assert.equal(jan.previousLabel, 'December 2025');
+  t.pass('Monthly: current month to date vs the same point last month, past month vs the whole month before, 28/29/30/31 days, the year boundary');
 }
 
-// ---------- 12m: Dec 2025 .. Nov 2026 vs Dec 2024 .. Nov 2025; no inquiries gives a null sent rate ----------
+// ---------- Yearly: 2026 so far vs 2025 to Nov 8 10:00; a past year; Today in hours ----------
 {
-  const r = stats.computeRangeStats(records, people, '12m', NOW), s = r.summary;
-  assert.equal(r.period, 'month');
-  assert.equal(r.buckets.length, 12);
-  assert.equal(r.buckets[0].label, 'Dec 2025'); assert.equal(r.buckets[11].label, 'Nov 2026');
-  assert.equal(s.current.from, M('2025-12-01T00:00:00')); assert.equal(s.previous.from, M('2024-12-01T00:00:00'));
-  assert.equal(s.current.received, 10); assert.equal(s.previous.received, 0);
-  const none = stats.computeRangeStats([], people, '7d', NOW).summary;
-  assert.equal(none.sentRate, null);
-  assert.deepEqual(totals(none.current), { received: 0, sent: 0, declined: 0, notStarted: 0 });
-  t.pass('12m: calendar months, previous 12 months; an empty period has a null sent rate and zero totals');
+  const r = stats.computeRangeStats(records, people, 'year', NOW), s = r.summary;
+  assert.equal(r.period, 'month'); assert.equal(r.buckets.length, 12); assert.equal(r.buckets[0].label, 'Jan 2026');
+  assert.deepEqual(r.buckets.filter(b => b.future).map(b => b.label), ['Dec 2026']);
+  assert.equal(s.label, '2026'); assert.equal(s.previous.to, M('2025-11-08T10:00:00')); assert.equal(s.current.received, 10);
+  const y2025 = stats.computeRangeStats(records, people, 'year', NOW, '2025').summary;
+  assert.equal(y2025.toDate, false); assert.equal(y2025.current.received, 0); assert.equal(y2025.previousLabel, '2024');
+  const day = stats.computeRangeStats(records, people, 'day', NOW, '2026-11-02');
+  assert.equal(day.period, 'hour'); assert.equal(day.buckets.length, 24); assert.equal(day.buckets[0].label, '12 AM'); assert.equal(day.buckets[13].label, '1 PM');
+  assert.deepEqual(column(day, 'received'), { '12 AM': 1, '8 AM': 1 }, 'R2 at midnight, R5 at 08:00');
+  assert.deepEqual(column(day, 'sent'), { '12 AM': 1, '11 AM': 1 }, 'R9 at midnight, R5 at 11:30');
+  assert.equal(day.summary.label, 'Mon 2 Nov 2026'); assert.equal(day.summary.previousLabel, 'Sun 1 Nov 2026');
+  assert.deepEqual(totals(day.summary.previous), { received: 2, sent: 1, declined: 1, notStarted: 2 }, 'the whole of Sunday Nov 1');
+  const today = stats.computeRangeStats(records, people, 'day', NOW);
+  assert.equal(today.buckets.filter(b => b.future).length, 13, 'after 10 AM');
+  assert.equal(today.summary.previous.to, M('2026-11-07T10:00:00'), 'yesterday up to the same time');
+  const none = stats.computeRangeStats([], people, 'week', NOW).summary;
+  assert.equal(none.sentRate, null); assert.deepEqual(totals(none.current), { received: 0, sent: 0, declined: 0, notStarted: 0 });
+  assert.throws(() => stats.computeRangeStats(records, people, 'year', NOW, '2027'), e => e.status === 400, 'a future year is rejected');
+  assert.throws(() => stats.computeRangeStats(records, people, 'month', NOW, '2020-12'), e => e.status === 400, 'older than the lookback is rejected');
+  t.pass('Yearly: months, to-date comparison, a past year; Today: 24 hourly buckets, yesterday to the same time; future and too-old periods throw 400');
 }
 
-// ---------- range on the route: roles and validation ----------
+// ---------- The route: roles and validation ----------
 {
-  const view = async (who, range) => t.status(stats.proposalStats(who, new URLSearchParams({ range })));
-  assert.equal(await view(t.user('emerson'), '30d'), 200);
-  assert.equal(await view(t.user('zeo'), '12m'), 200);
-  for (const id of ['cryssa', 'admin', 'division-head', 'soa'])assert.equal(await view(t.user(id), '7d'), 403, id);
-  assert.equal(await view(t.user('emerson'), '1y'), 400);
-  const live = await stats.proposalStats(t.user('emerson'), new URLSearchParams({ range: '90d' }));
-  assert.equal(live.summary.range, '90d');
-  assert.equal(live.summary.weekdays.length, 7);
+  const view = async (who, query) => t.status(stats.proposalStats(who, new URLSearchParams(query)));
+  assert.equal(await view(t.user('emerson'), { range: 'month' }), 200);
+  assert.equal(await view(t.user('zeo'), { range: 'year' }), 200);
+  for (const id of ['cryssa', 'admin', 'division-head', 'soa']) assert.equal(await view(t.user(id), { range: 'week' }), 403, id);
+  for (const query of [{ range: '30d' }, { range: '12m' }, { range: 'month', period: '2099-01' }, { range: 'month', period: 'bad' }, { range: 'week', period: '2026-11-03' }, { range: 'day', period: '2000-01-01' }, { range: 'year', period: '2026-01-01-extra' }])
+    assert.equal(await view(t.user('emerson'), query), 400, JSON.stringify(query));
+  const live = await stats.proposalStats(t.user('emerson'), new URLSearchParams({ range: 'month' }));
+  assert.equal(live.summary.range, 'month'); assert.equal(live.summary.period, live.summary.currentPeriod); assert.equal(live.summary.weekdays.length, 7);
+  const lastYear = await stats.proposalStats(t.user('emerson'), new URLSearchParams({ range: 'year', period: String(Number(live.summary.currentPeriod.slice(0, 4)) - 1) }));
+  assert.equal(lastYear.summary.toDate, false);
   const old = await stats.proposalStats(t.user('emerson'), new URLSearchParams({ period: 'day' }));
   assert.equal(old.summary, undefined, 'the period form is unchanged');
-  t.pass('range: Head and Supervisor 200; Employee, Admin, Division Head, SOA 403; an unknown range 400; the period form still works');
+  t.pass('range: Head and Supervisor 200; others 403; old ranges, malformed, non-Monday, future and too-old periods 400; the period form still works');
+}
+
+// ---------- Drill-down (item 5): one employee's summary and timeline ----------
+{
+  const d = stats.employeeTimeline(records, people, 'cryssa', 'week', NOW);
+  const row = stats.computeRangeStats(records, people, 'week', NOW).timing.find(x => x.userId === 'cryssa');
+  assert.deepEqual(d.summary, { created: row.created, sent: row.sent, declined: 0, avgCreateMs: row.avgCreateMs, avgHandlingMs: row.avgHandlingMs }, 'the summary is the Time per employee row');
+  assert.deepEqual(d.summary, { created: 2, sent: 1, declined: 0, avgCreateMs: 8100000, avgHandlingMs: 22 * H + 5 * min });
+  assert.equal(d.label, 'Week of 2–8 Nov 2026'); assert.equal(d.user.name, 'Cryssa Kate Aban');
+  assert.deepEqual(d.proposals.map(p => p.inquiryId), ['R4', 'R6'], 'oldest first; R7 (declined Nov 1) and R10 (October) are outside this week');
+  const r4 = d.proposals[0];
+  assert.equal(r4.outcome, 'sent');
+  assert.deepEqual(r4.events.map(e => [e.kind, e.at, e.version, e.createMs, e.handlingMs]), [
+    ['received', M('2026-11-03T09:00:00'), undefined, undefined, undefined],
+    ['started', M('2026-11-03T10:00:00'), undefined, undefined, undefined],
+    ['submitted', M('2026-11-03T12:00:00'), 1, 2 * H, undefined],
+    ['returned', M('2026-11-03T14:00:00'), 1, undefined, undefined],
+    ['submitted', M('2026-11-03T17:30:00'), 2, 2.5 * H, undefined],
+    ['approved', M('2026-11-04T08:00:00'), 2, undefined, undefined],
+    ['sent', M('2026-11-04T08:05:00'), 2, undefined, 22 * H + 5 * min],
+  ]);
+  assert.deepEqual(d.proposals[1].events.map(e => e.kind), ['received', 'submitted', 'approved', 'sent'], 'R6 has no start, so no time to create or handling');
+  assert.ok(d.proposals[1].events.every(e => e.createMs === undefined && e.handlingMs === undefined));
+  const creates = d.proposals.flatMap(p => p.events).filter(e => e.createMs !== undefined).map(e => e.createMs);
+  assert.equal(creates.length, d.summary.created); assert.equal(Math.round(creates.reduce((a, b) => a + b, 0) / creates.length), d.summary.avgCreateMs, 'the timeline adds up to the summary');
+  assert.equal(d.proposals.flatMap(p => p.events).filter(e => e.handlingMs !== undefined).length, d.summary.sent);
+  // past week: Cryssa declined R7 on Sunday Nov 1
+  const past = stats.employeeTimeline(records, people, 'cryssa', 'week', NOW, '2026-10-26');
+  assert.equal(past.summary.declined, 1);
+  assert.deepEqual(past.proposals.map(p => [p.inquiryId, p.outcome, p.events.map(e => e.kind)]), [['R7', 'declined', ['received', 'declined']]]);
+  // an event outside the period is still shown, marked
+  const oct = stats.employeeTimeline(records, people, 'judy', 'month', NOW, '2026-10');
+  assert.deepEqual(oct.proposals[0].events.map(e => [e.kind, e.inPeriod]), [['received', true], ['started', true], ['submitted', true], ['approved', true], ['sent', false]], 'R8 was sent on Nov 1');
+  assert.equal(oct.summary.sent, 0, 'the send counts in November, not October');
+  // empty, cap
+  const idle = stats.employeeTimeline(records, people, 'judy', 'week', NOW);
+  assert.deepEqual(idle.summary, { created: 0, sent: 0, declined: 0, avgCreateMs: null, avgHandlingMs: null }); assert.deepEqual(idle.proposals, []);
+  const many = Array.from({ length: stats.MAX_TIMELINE + 5 }, (_, i) => rec('M' + i, M('2026-11-03T09:00:00'), 'Awaiting approval', { history: [started('2026-11-03T09:30:00', 'judy')], submissions: [sub(1, M('2026-11-03T10:00:00'), 'judy')] }));
+  const capped = stats.employeeTimeline(many, people, 'judy', 'week', NOW);
+  assert.equal(capped.proposals.length, stats.MAX_TIMELINE); assert.equal(capped.truncated, true); assert.equal(capped.summary.created, stats.MAX_TIMELINE + 5, 'the summary still counts everything');
+  t.pass('Drill-down: summary equals the Time per employee row; chronological timeline with versions, time to create and handling; past period and decline; outside-period events marked; empty; capped list');
+}
+
+// ---------- Drill-down endpoint: the same Head/Supervisor rule, validation, unknown user ----------
+{
+  const get = async (who, query) => t.status(stats.proposalEmployee(who, new URLSearchParams(query)));
+  assert.equal(await get(t.user('emerson'), { user: 'cryssa', range: 'week' }), 200);
+  assert.equal(await get(t.user('zeo'), { user: 'cryssa', range: 'month', period: '2026-10' }), 200);
+  for (const id of ['cryssa', 'jefferson', 'admin', 'division-head', 'soa']) assert.equal(await get(t.user(id), { user: 'cryssa', range: 'week' }), 403, id);
+  assert.equal(await get(t.user('emerson'), { user: 'nobody-' + randomUUID(), range: 'week' }), 404);
+  assert.equal(await get(t.user('emerson'), { user: 'cryssa', range: 'week', period: '2099-01-05' }), 400, 'future');
+  assert.equal(await get(t.user('emerson'), { user: 'cryssa', range: 'week', period: '2026-11-03' }), 400, 'not a Monday');
+  assert.equal(await get(t.user('emerson'), { range: 'week' }), 400, 'no user');
+  assert.equal(await get(t.user('emerson'), { user: 'cryssa', range: '7d' }), 400, 'old range');
+  const live = await stats.proposalEmployee(t.user('emerson'), new URLSearchParams({ user: 'cryssa', range: 'year' }));
+  assert.equal(live.user.id, 'cryssa'); assert.ok(Array.isArray(live.proposals));
+  t.pass('Drill-down endpoint: Head and Supervisor 200; Employee, Admin, Division Head, SOA 403; unknown user 404; future, non-Monday, missing user and old ranges 400');
 }
 
 console.log(t.checks.length + ' checks passed');

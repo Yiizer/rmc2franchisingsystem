@@ -9,7 +9,7 @@ import { declineInquiry, transferWithBor, decideAgentTransfer, requestExpiredTra
 import { beginSupervisorEdit, cancelSupervisorEdit } from '@/lib/operations/supervisor-edit';
 import { stageTemplate, publishTemplate, setTemplateActive, templateStage } from '@/lib/operations/template-admin';
 import { monitoring } from '@/lib/operations/monitoring';
-import { proposalStats } from '@/lib/operations/proposal-stats';
+import { proposalEmployee, proposalStats } from '@/lib/operations/proposal-stats';
 import { createSoa, deactivateSoa, listTeam, resetSoaPassword } from '@/lib/operations/division-team';
 import { getEmailTemplates, saveEmailTemplates } from '@/lib/operations/email-templates';
 import { checkInbox, claimInboxCheck, runClaimedInboxCheck, cronAllowed, dismissInbound, importInbound, inboundAttachment, listInbound } from '@/lib/operations/inbound';
@@ -90,6 +90,7 @@ export async function GET(request:NextRequest,context:Context){try{
   if(route[0]==='directory')return response(route[1]==='client'&&route[2]?await directoryClient(route[2]):route[1]?{record:await directoryRecord(route[1])}:await clientDirectory(request.nextUrl.searchParams));
   if(route[0]==='inquiries'&&route[1]&&route[2]==='historical-matches')return response({matches:await historicalMatches(await inquiry(route[1]))});
   if(route[0]==='monitoring'&&route[1]==='proposals'&&route.length===2)return response(await proposalStats(user,request.nextUrl.searchParams));
+  if(route[0]==='monitoring'&&route[1]==='proposals'&&route[2]==='employee'&&route.length===3)return response(await proposalEmployee(user,request.nextUrl.searchParams));
   if(route[0]==='my-team'&&route.length===1)return response(await listTeam(user)); // Division Head only; an SOA passes the whitelist and gets 403 here
   if(route[0]==='email-templates'&&route.length===1)return response(await getEmailTemplates(user));
   if(route[0]==='monitoring')return response(await monitoring(user));
