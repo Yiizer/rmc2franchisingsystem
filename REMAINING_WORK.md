@@ -8,6 +8,37 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## Pilot plan for 2026-11-16, day 1 (commit `747c4eb`; live on the test version)
+
+The plan is `PLAN_2026-11-16_PROMPT.md`, and the decision is in `TEAM_DECISIONS.md`: §0 and §2 now run this week, with a feature freeze at the end of 2026-11-12. `phase-4-postgres` was pushed to origin as a backup and not merged.
+- **What changed:**
+  - **Show/hide password** on all 10 password fields: login, Account settings, Users & roles, and My team. `PasswordInput` lives in `operations-common.tsx`.
+  - **The login badge follows where mail goes:**
+    - "LOCAL TEST ENVIRONMENT" locally;
+    - "TEST VERSION" online while mail is redirected;
+    - no badge once `RMC2_MAIL_ENV=production`.
+    - `app/page.tsx` reads this at build time.
+  - **Reply-To warning:**
+    - An emailed inquiry whose Reply-To differs from From stores `source.replyToFrom`.
+    - The email To line then shows "Reply-To differs from From…".
+    - Older records and Division Head / SOA submissions show nothing.
+- **Deployment:** `rmc2-preview-c23vmlydn-yiizer.vercel.app`, aliased to https://rmc2-test-yiizer.vercel.app. `npm run build` passed first. No migration was needed.
+- **Online read-only check:** the page carries `environment: test`; signed-out `session` and `workspace` return 401. No sign-in smoke check was run.
+- **Verified locally:**
+  - `tsc` passes; lint errors in the changed files are the same as HEAD;
+  - `test-reply-to-warning` 4/4 (new) and `test-reply-recipient` 7/7.
+  - Browser checks on port 5196 with QA data:
+    - the toggle by mouse and keyboard (Space), with `aria-label` and `aria-pressed` switching;
+    - autocomplete hints unchanged;
+    - sign-in works with the password shown;
+    - the badge reads "LOCAL TEST ENVIRONMENT";
+    - at 375px the toggle sits inside the field, with no horizontal scroll.
+- **Not checked:**
+  - the Reply-To warning on screen (needs an inquiry with a chosen template; part of the §0 click-through);
+  - the toggle on the owner app's My team dialogs in a browser;
+  - the online login screen in a browser.
+- QA data note: `INQ-QA-0019` in `test-results/feedback-1108/qa-data` was edited by hand (sender and `replyToFrom`) for this check.
+
 ## Monitoring round 2026-11-08c (commit `784db4e`, not pushed; live on the test version)
 
 Decisions are in `TEAM_DECISIONS.md` (Monitoring feedback round 2026-11-08c).
