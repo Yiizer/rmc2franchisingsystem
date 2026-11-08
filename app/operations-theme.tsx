@@ -1,13 +1,13 @@
 'use client';
 import { useSyncExternalStore } from 'react';
-import { Monitor, Moon, Sun } from 'lucide-react';
+import { Moon, Sun } from 'lucide-react';
 import { THEME_KEY } from './theme-script';
 import './operations-theme.css';
 
-// Light / Dark / System (pilot plan item 8). The early script in app/layout.tsx sets data-theme on <html>; this file
-// only saves a new choice and re-applies it. The choice is per device and never sent to the server.
+// Light / Dark (pilot plan item 8). With nothing saved the app follows the device ("system"). The early script in
+// app/layout.tsx sets data-theme on <html>; this file only saves a new choice and re-applies it. The choice is per
+// device and never sent to the server.
 export type ThemeChoice = 'light' | 'dark' | 'system';
-const CHOICES: { value: ThemeChoice; label: string; Icon: typeof Sun }[] = [{ value: 'light', label: 'Light', Icon: Sun }, { value: 'dark', label: 'Dark', Icon: Moon }, { value: 'system', label: 'System', Icon: Monitor }];
 const EVENT = 'rmc2-theme-change';
 
 function subscribe(change: () => void) {
@@ -34,22 +34,11 @@ export function setThemeChoice(choice: ThemeChoice) {
   window.dispatchEvent(new Event(EVENT));
 }
 
-/** Three-way switch. `compact` shows icons only (login screen); labels stay available to screen readers. */
-export function ThemeSwitch({ compact = false }: { compact?: boolean }) {
-  const { choice } = useTheme();
-  return <fieldset className={'ops-theme-switch' + (compact ? ' compact' : '')}>
-    <legend className={compact ? 'sr-only' : undefined}>Appearance</legend>
-    <div>{CHOICES.map(({ value, label, Icon }) => <label key={value} title={compact ? label : undefined} className={choice === value ? 'active' : ''}>
-      <input type="radio" name="ops-theme" value={value} checked={choice === value} onChange={() => setThemeChoice(value)} />
-      <Icon size={16} aria-hidden="true" /><span className={compact ? 'sr-only' : undefined}>{label}</span>
-    </label>)}</div>
-  </fieldset>;
-}
-
-export function AppearanceSettings() {
-  return <section className="ops-card ops-pad ops-appearance">
-    <h2>Appearance</h2>
-    <p>Choose light or dark, or follow this device&apos;s setting. Saved on this device only. Proposals and PDFs always stay light.</p>
-    <ThemeSwitch />
-  </section>;
+/** Topbar (and sign-in screen) button that flips light and dark. It shows the icon of the theme it switches to. */
+export function ThemeToggle() {
+  const { theme } = useTheme();
+  const label = theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
+  return <button type="button" className="ops-icon ops-theme-toggle" data-now={theme} aria-label={label} title={label} onClick={() => setThemeChoice(theme === 'dark' ? 'light' : 'dark')}>
+    <Moon size={18} aria-hidden="true" className="ops-theme-moon" /><Sun size={18} aria-hidden="true" className="ops-theme-sun" />
+  </button>;
 }

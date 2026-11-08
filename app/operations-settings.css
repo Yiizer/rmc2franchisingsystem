@@ -1,0 +1,64 @@
+/* Settings: section rail on the left, one panel on the right. Tokens only, so dark mode follows automatically. */
+.ops-settings{max-width:1080px}
+.ops-settings-head{margin-bottom:28px}
+.ops-settings-head h1{margin:0;letter-spacing:-.02em}
+.ops-settings-head p{margin:6px 0 0;color:var(--ops-muted);max-width:60ch}
+.ops-settings-layout{display:grid;grid-template-columns:248px minmax(0,1fr);gap:32px;align-items:start}
+
+/* Section rail */
+.ops-settings-nav{position:sticky;top:88px;display:grid;gap:4px;padding:6px;border:1px solid var(--ops-line);border-radius:12px;background:var(--ops-surface)}
+.ops-settings-nav button{position:relative;display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;border:0;border-radius:8px;background:transparent;color:var(--ops-muted);text-align:left;cursor:pointer;transition:background-color .15s ease,color .15s ease}
+.ops-settings-nav button:hover{background:var(--ops-canvas);color:var(--ops-ink)}
+.ops-settings-nav button:focus-visible{outline:3px solid var(--ops-orange);outline-offset:1px}
+.ops-settings-nav button b{display:block;font-size:var(--ops-text-sm);font-weight:600;color:inherit}
+.ops-settings-nav button small{display:block;margin-top:2px;font-size:var(--ops-text-xs);color:var(--ops-muted)}
+.ops-settings-glyph{display:grid;place-items:center;width:32px;height:32px;flex:none;border-radius:8px;border:1px solid var(--ops-line);background:var(--ops-surface);color:var(--ops-muted);transition:inherit}
+.ops-settings-nav button[aria-selected=true]{background:var(--ops-canvas);color:var(--ops-ink)}
+.ops-settings-nav button[aria-selected=true]::before{content:'';position:absolute;left:-6px;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0;background:var(--ops-orange)}
+.ops-settings-nav button[aria-selected=true] .ops-settings-glyph{background:var(--ops-orange);border-color:var(--ops-orange);color:var(--ops-surface)}
+
+/* Panel */
+.ops-settings-panel{min-width:0;animation:ops-settings-in .18s ease-out}
+@keyframes ops-settings-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.ops-settings-panel{animation:none}.ops-settings-nav button,.ops-settings-glyph{transition:none}}
+.ops-settings-panel-head{padding-bottom:18px;margin-bottom:20px;border-bottom:1px solid var(--ops-line)}
+.ops-settings-panel-head h2{margin:0;font-size:var(--ops-title-sm,20px);letter-spacing:-.01em}
+.ops-settings-panel-head p{margin:6px 0 0;color:var(--ops-muted);max-width:62ch}
+.ops-settings-panel>.ops-message{margin-bottom:16px}
+
+.ops-settings-identity{display:flex;align-items:center;gap:16px;padding:20px 22px;margin-bottom:16px;border:1px solid var(--ops-line);border-radius:12px;background:var(--ops-surface)}
+.ops-settings-avatar{display:grid;place-items:center;width:56px;height:56px;flex:none;border-radius:50%;border:1px solid var(--ops-line);background:var(--ops-canvas);color:var(--ops-ink);font-size:18px;font-weight:700;letter-spacing:.02em}
+.ops-settings-identity b{display:block;font-size:var(--ops-text-lg);color:var(--ops-ink)}
+.ops-settings-identity>div>span{display:block;margin-top:2px;font-size:var(--ops-text-sm);color:var(--ops-muted)}
+.ops-settings-identity>div>small{display:block;margin-top:2px;font-size:var(--ops-text-sm);color:var(--ops-muted);overflow-wrap:anywhere}
+
+.ops-settings-group{border:1px solid var(--ops-line);border-radius:12px;background:var(--ops-surface);overflow:hidden}
+.ops-settings-row{display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr);gap:24px;padding:18px 22px;border-bottom:1px solid var(--ops-line)}
+.ops-settings-row-label label,.ops-settings-row-label span{display:block;margin:0;font-size:var(--ops-text-sm);font-weight:600;color:var(--ops-ink)}
+.ops-settings-row-label small{display:block;margin-top:4px;font-size:var(--ops-text-xs);color:var(--ops-muted);line-height:1.45}
+.ops-settings-row-control{max-width:420px;min-width:0}
+.ops-settings-row-control input,.ops-settings-row-control .ops-password{width:100%;margin-top:0}
+.ops-settings-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:14px 22px;background:var(--ops-canvas)}
+.ops-settings-foot p{margin:0;flex:1 1 260px;font-size:var(--ops-text-xs);color:var(--ops-muted)}
+.ops-settings-foot .ops-client-error{flex-basis:100%;order:-1}
+
+/* Sections reused from elsewhere: the panel header replaces their own title and spacing. */
+.ops-settings-panel .ops-phone-notifications{margin-top:0;border-radius:12px}
+.ops-settings-panel .ops-phone-notifications h2{display:none}
+.ops-settings-panel .ops-et{margin-top:0}
+.ops-settings-panel .ops-et>.ops-heading{display:none}
+.ops-settings-panel .ops-et-card{border-radius:12px}
+
+@media(max-width:960px){.ops-settings-layout{grid-template-columns:1fr;gap:20px}
+ .ops-settings-nav{position:static;display:flex;overflow-x:auto;scrollbar-width:none;gap:4px}
+ .ops-settings-nav::-webkit-scrollbar{display:none}
+ .ops-settings-nav button{width:auto;flex:none;padding:8px 12px 8px 8px}
+ .ops-settings-nav button small{display:none}
+ .ops-settings-nav button[aria-selected=true]::before{left:12px;right:12px;top:auto;bottom:-6px;width:auto;height:3px;border-radius:3px 3px 0 0}}
+@media(max-width:760px){.ops-settings-head{margin-bottom:18px}
+ .ops-settings-row{grid-template-columns:1fr;gap:8px;padding:16px}
+ .ops-settings-row-control{max-width:none}
+ .ops-settings-row-control input{font-size:16px}
+ .ops-settings-foot{padding:14px 16px}.ops-settings-foot .ops-btn{flex:1 1 100%;min-height:44px}
+ .ops-settings-identity{padding:16px}.ops-settings-avatar{width:48px;height:48px;font-size:16px}
+ .ops-settings-nav button{min-height:44px}}

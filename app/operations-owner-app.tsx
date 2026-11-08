@@ -6,7 +6,7 @@ import { manilaTime, ageLabel } from '@/lib/operations/types';
 import type { Staff } from '@/lib/operations/types';
 import type { OwnerClient, OwnerNotice, OwnerUser } from '@/lib/operations/owner-view';
 import { api, Empty } from './operations-common';
-import { AccountSettings } from './operations-administration';
+import { AccountSettings } from './operations-settings';
 import OperationsShell from './operations-shell';
 import { noticeStyle } from './operations-notifications';
 import MyClients from './operations-owner-clients';
