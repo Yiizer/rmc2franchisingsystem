@@ -584,8 +584,8 @@ The full specialist reviews were deferred. Run all of them together over everyth
   - Run the Postgres stress tests T1–T10 from `test-results/phase4-design.md`. The QA run was stopped part-way; its scripts `scripts/test-pg-*.mjs` and `scripts/db-parity/` are committed but unverified.
   - Online checks: PDFs over 4.5 MB through the storage links, real email send, automatic email import, a PDF waiting on Requests, and an unreadable form.
 - [ ] **Code review majors** (not yet fixed in code):
-  - [ ] **M1, lost index enqueue.** The database fix is written in `supabase/migrations/20261101000400_index_and_bump_fixes.sql` but **not applied**.
-  - [x] **M2, deadlocks at commit.** 40001/40P01 raised at COMMIT are now retried (2026-11-02, unit + live checks pass). The bump-order fix in migration 400 is still not applied (see M1).
+  - [x] **M1, lost index enqueue.** `supabase/migrations/20261101000400_index_and_bump_fixes.sql` **applied to TEST on 2026-11-09** (PO: "Yes, apply both"), through `scripts/apply-migration-test.mjs` in one transaction. Both trigger functions read back with the new code.
+  - [x] **M2, deadlocks at commit.** 40001/40P01 raised at COMMIT are now retried (2026-11-02, unit + live checks pass). The bump-order fix in migration 400 is applied on TEST since 2026-11-09 (see M1).
 - [ ] **Code review minors:**
   - [x] lock order (2026-11-02): decline, client review and request-details now take `lease:` before the duplicate lookup's `idx-sync`. A lease known only after matching (the previous registration) still comes later; that rare deadlock is detected and retried (40P01). Typecheck only, not run end to end.
   - [x] try/catch around the poll's activity prune (2026-11-02)
@@ -596,7 +596,11 @@ The full specialist reviews were deferred. Run all of them together over everyth
   - [x] strip NUL characters on every write: the Postgres store drops NULs and `\u0000` escapes from every string parameter (2026-11-02; unit + live check on a temp table)
   - [x] log-safe `mapPgError`: any other server error becomes a detail-free 500, logs carry the code only (2026-11-02)
 - [ ] **Security:**
-  - [ ] Apply `supabase/migrations/20261101000500_security_hardening.sql`: append-only audit tables, a role connection limit, an environment marker, and stricter self-checks.
+  - [x] Apply `supabase/migrations/20261101000500_security_hardening.sql`: append-only audit tables, a role connection limit, an environment marker, and stricter self-checks. **Applied to TEST on 2026-11-09**, after re-checking that the app still never updates or deletes rows in the audit tables, and that every newer table uses the standard `app_all` policy that the self-check expects.
+    - Its own self-checks passed. Read back afterwards: `rmc2_app` connection limit 60 (was none); the five audit tables have `app_insert, app_select` only and the app can no longer update, delete or truncate them; `app_meta.environment` = `test`.
+    - After both migrations, online: `section0-more-online.mjs` 6/6 (BOR, template publish, account create and deactivate, notifications, two same-moment races) and `large-files-check-online.mjs` 4/4.
+    - Rollbacks exist in `supabase/rollbacks/` and were not needed.
+    - **Production:** both files still have to be applied there as part of the phase 8 setup.
   - [ ] Verified TLS to Supabase using the Supabase CA (it is currently `ssl:'require'`, which encrypts but does not verify the certificate).
   - [x] Login limits (commit `8ea0c07`, 2026-11-09; live on deployment `rmc2-preview-pog0dqggk`, aliased to rmc2-test):
     - [x] counted on the account id, so a username and its email share one count of 8 per 15 minutes (unknown names count on the typed text);
