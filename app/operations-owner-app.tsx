@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Toaster, toast } from 'sonner';
+import { useTheme } from './operations-theme';
 import { manilaTime, ageLabel } from '@/lib/operations/types';
 import type { Staff } from '@/lib/operations/types';
 import type { OwnerClient, OwnerNotice, OwnerUser } from '@/lib/operations/owner-view';
@@ -59,10 +60,11 @@ export default function OwnerApp({ initial, onSignedOut }: { initial: OwnerBoot;
   const signOut = useCallback(async () => { try { await api('logout', {}); } catch { /* the session is gone either way */ } onSignedOut(); }, [onSignedOut]);
   async function read(ids: string[], all = false) { try { await api('notifications', all ? { all: true } : { ids }); await refresh(); } catch (e) { toast.error((e as Error).message); } }
 
+  const { theme } = useTheme();
   const user = boot.user as unknown as Staff;
   const found = useMemo(() => boot.clients.find(c => c.id === route.id), [boot.clients, route.id]);
   const names = useMemo(() => new Map(boot.clients.map(c => [c.id, c.client])), [boot.clients]);
-  return <div className="ops-app ops-owner-app"><Toaster position="top-right" />
+  return <div className="ops-app ops-owner-app"><Toaster position="top-right" theme={theme} />
     <OperationsShell user={{ ...user, active: true, canApprove: false }} page={page} pending={0} unread={boot.unreadCount} onGo={go} onSignOut={signOut}>
       <main className="ops-main ops-owner-main" id="main">
         {page === 'My Clients' && <MyClients clients={boot.clients} loading={loading} error={error} onRetry={() => void refresh()} onOpen={openClient} onSubmit={() => void go('Submit inquiry')} now={now} />}

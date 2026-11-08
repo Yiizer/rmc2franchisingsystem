@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test:workflow": "node scripts/test-workflow.mjs",
     "test:storage": "node scripts/test-storage.mjs",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "theme:check": "node scripts/theme-tokenize.mjs --check"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

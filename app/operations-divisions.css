@@ -2,15 +2,15 @@
 .ops-div-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;margin-bottom:16px}
 .ops-div-card{padding:16px;display:flex;flex-direction:column;gap:12px}
 .ops-div-card header{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.ops-div-card header small{color:#5a6e8b;font-size:12px;white-space:nowrap}
-.ops-div-name{font-size:16px;font-weight:700;margin:0;color:#172e50}
-.ops-div-empty{font-size:13px;color:#5a6e8b;margin:0}
+.ops-div-card header small{color:var(--dk-text-5a6e8b,#5a6e8b);font-size:12px;white-space:nowrap}
+.ops-div-name{font-size:16px;font-weight:700;margin:0;color:var(--dk-text-172e50,#172e50)}
+.ops-div-empty{font-size:13px;color:var(--dk-text-5a6e8b,#5a6e8b);margin:0}
 .ops-div-branches{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
-.ops-div-branches li{border:1px solid #dce5f1;border-radius:8px;padding:10px;display:grid;gap:8px}
-.ops-div-branches label,.ops-div-aliases{display:grid;gap:4px;font-size:12px;font-weight:600;color:#2a4569}
-.ops-div-branches label small,.ops-div-aliases small{font-weight:400;color:#5a6e8b}
+.ops-div-branches li{border:1px solid var(--dk-line-dce5f1,#dce5f1);border-radius:8px;padding:10px;display:grid;gap:8px}
+.ops-div-branches label,.ops-div-aliases{display:grid;gap:4px;font-size:12px;font-weight:600;color:var(--dk-text-2a4569,#2a4569)}
+.ops-div-branches label small,.ops-div-aliases small{font-weight:400;color:var(--dk-text-5a6e8b,#5a6e8b)}
 .ops-div-branches input,.ops-div-aliases input{font-size:14px;padding:7px 9px;font-weight:400}
 .ops-div-row-actions{display:flex;gap:8px;justify-content:flex-end;align-items:center}
 .ops-div-move{display:flex!important;grid-auto-flow:column;align-items:center;gap:6px}
 .ops-div-move select{font-size:13px;padding:6px 8px}
-@media (max-width:760px){.ops-div-grid{grid-template-columns:1fr}.ops-div-actions{position:sticky;top:0;z-index:2;background:var(--ops-bg,#f5f7fb);padding:8px 0}.ops-div-actions .ops-btn{flex:1;min-height:44px}.ops-div-branches input,.ops-div-aliases input{font-size:16px}}
+@media (max-width:760px){.ops-div-grid{grid-template-columns:1fr}.ops-div-actions{position:sticky;top:0;z-index:2;background:var(--ops-bg,var(--dk-bg-f5f7fb,#f5f7fb));padding:8px 0}.ops-div-actions .ops-btn{flex:1;min-height:44px}.ops-div-branches input,.ops-div-aliases input{font-size:16px}}

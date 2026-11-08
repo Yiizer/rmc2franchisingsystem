@@ -12,7 +12,7 @@
 .ops-et-body textarea,.ops-et-body input{width:100%;max-width:100%;box-sizing:border-box}
 .ops-et-body textarea{font-family:inherit;line-height:1.45;resize:vertical}
 .ops-et-hint{margin:0;color:var(--ops-muted);font-size:12px;overflow-wrap:anywhere}
-.ops-et-preview{border:1px dashed var(--ops-line);border-radius:var(--ops-radius,6px);padding:10px 12px;background:var(--ops-canvas,#f8faff);display:grid;gap:6px;min-width:0}
+.ops-et-preview{border:1px dashed var(--ops-line);border-radius:var(--ops-radius,6px);padding:10px 12px;background:var(--ops-canvas,var(--dk-bg-f8faff,#f8faff));display:grid;gap:6px;min-width:0}
 .ops-et-preview small{color:var(--ops-muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
 .ops-et-preview pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:13px}
 .ops-et-body .ops-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
@@ -22,7 +22,7 @@
 /* Email form inside the Decline / Request details dialogs */
 .ops-mail-form{display:grid;gap:10px;min-width:0}
 .ops-mail-to{display:grid;gap:4px;font-size:13px}
-.ops-mail-to output{display:block;padding:9px 11px;border:1px solid var(--ops-line);border-radius:var(--ops-radius,6px);background:var(--ops-canvas,#f8faff);overflow-wrap:anywhere}
+.ops-mail-to output{display:block;padding:9px 11px;border:1px solid var(--ops-line);border-radius:var(--ops-radius,6px);background:var(--ops-canvas,var(--dk-bg-f8faff,#f8faff));overflow-wrap:anywhere}
 .ops-mail-form textarea{width:100%;box-sizing:border-box}
 .ops-mail-form .ops-check{display:inline-flex;align-items:center;gap:10px;margin:0}
 .ops-mail-form .ops-check input{width:18px;height:18px;margin:0;flex:none}

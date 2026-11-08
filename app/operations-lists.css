@@ -1,4 +1,4 @@
-.ops-inquiry-table{border-spacing:0;background:white;padding:0;min-width:1080px;table-layout:auto}
+.ops-inquiry-table{border-spacing:0;background:var(--dk-bg-ffffff,#ffffff);padding:0;min-width:1080px;table-layout:auto}
 .ops-inquiry-table thead th{font-size:11px;letter-spacing:.04em;text-transform:uppercase;background:var(--ops-canvas);padding:16px}
 .ops-inquiry-table tbody td{border:0;border-bottom:1px solid var(--ops-line);padding:14px 16px;font-size:13px;border-radius:0;vertical-align:middle}
 .ops-inquiry-table tbody td:first-child{border-left:0;border-radius:0;min-width:220px;max-width:300px}.ops-inquiry-table tbody td:last-child{border-right:0;border-radius:0}
@@ -9,7 +9,7 @@
 @media(max-width:760px){.ops-inquiry-table{display:block;min-width:0;background:var(--ops-canvas);padding:12px}.ops-inquiry-table thead{display:none}.ops-inquiry-table tbody{display:block}.ops-inquiry-table tbody tr{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--ops-line);border-radius:10px;padding:12px;margin:0 0 12px;background:var(--ops-surface)}.ops-inquiry-table tbody td:nth-child(n){border:0;padding:6px 0;min-width:0;max-width:none;grid-row:auto;grid-column:auto;font-size:12px}.ops-inquiry-table tbody td:first-child{grid-column:1/3;padding-right:10px}.ops-inquiry-table tbody td:nth-child(2){grid-column:1/3}.ops-inquiry-table td:nth-child(n):before{content:attr(data-label);display:block;color:var(--ops-muted);font-size:11px;margin-bottom:4px}.ops-inquiry-table td:first-child:before,.ops-inquiry-table td:nth-child(2):before{content:none}.ops-inquiry-table tbody td:nth-child(5){grid-column:2;grid-row:3}.ops-inquiry-table .ops-badge{font-size:12px}.ops-inquiry-table .ops-account{font-size:14px}}
 .ops-app .ops-toolbar .ops-search input{padding-left:38px;margin-top:0}.ops-app .ops-toolbar .ops-search>svg{top:50%;transform:translateY(-50%);pointer-events:none}
 /* Amber "Shared mobile" chip in the Account cell: the client's mobile equals the agent's. A warning only, never a blocker. */
-.ops-shared-chip{display:inline-flex;align-items:center;margin-top:4px;padding:2px 8px;border:1px solid var(--ops-amber-line,#f1dcae);border-radius:999px;background:var(--ops-hold-tint,#fff4dc);color:var(--ops-hold,#805500);font-size:11px;font-weight:600;line-height:1.5;white-space:nowrap}
+.ops-shared-chip{display:inline-flex;align-items:center;margin-top:4px;padding:2px 8px;border:1px solid var(--ops-amber-line,var(--dk-line-f1dcae,#f1dcae));border-radius:999px;background:var(--ops-hold-tint,var(--dk-bg-fff4dc,#fff4dc));color:var(--ops-hold,var(--dk-text-805500,#805500));font-size:11px;font-weight:600;line-height:1.5;white-space:nowrap}
 .ops-dashboard .dash-queue .ops-shared-chip{display:inline-flex;margin-top:4px}
 .ops-shared-mobile{margin-bottom:12px}
 .ops-preview-status .ops-shared-chip{margin:0 0 0 8px}

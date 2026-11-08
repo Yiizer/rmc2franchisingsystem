@@ -17,16 +17,16 @@
 .ops-submission-meta div{display:grid;grid-template-columns:76px minmax(0,1fr);gap:8px;min-width:0}
 .ops-submission-meta dt{color:var(--ops-muted-text);font-size:11px;line-height:1.5}
 .ops-submission-meta dd{margin:0;color:var(--ops-ink);font-weight:500;line-height:1.45;overflow-wrap:anywhere}
-.ops-submission-flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;list-style:none;margin:0;padding:14px 24px;border-top:1px solid var(--ops-rule);background:#fafcff}
+.ops-submission-flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;list-style:none;margin:0;padding:14px 24px;border-top:1px solid var(--ops-rule);background:var(--dk-bg-fafcff,#fafcff)}
 .ops-submission-flow li{position:relative;display:flex;align-items:center;gap:10px;min-width:0;margin:0;color:var(--ops-muted-text)}
-.ops-submission-flow li:not(:last-child):after{content:"";flex:1;min-width:12px;height:2px;border-radius:2px;background:var(--ops-rule)}
-.ops-submission-flow li.complete:not(:last-child):after{background:#acd2b9}
+.ops-submission-flow li:not(:last-child):after{content:"";flex:1;min-width:12px;height:2px;border-radius:2px;background:var(--dk-bg--ops-rule,var(--ops-rule))}
+.ops-submission-flow li.complete:not(:last-child):after{background:var(--dk-bg-acd2b9,#acd2b9)}
 .ops-submission-step-icon{display:flex;align-items:center;justify-content:center;flex:none;width:36px;height:36px;border:1px solid var(--ops-rule);border-radius:50%;background:var(--ops-info-tint)}
 .ops-submission-step-text{display:flex;flex-direction:column;min-width:0}
 .ops-submission-flow b{font-size:12px;line-height:1.4;font-weight:600}
 .ops-submission-flow small{font-size:11px;line-height:1.4}
 .ops-submission-flow .complete{color:var(--ops-done)}
-.ops-submission-flow .complete .ops-submission-step-icon{background:var(--ops-done-tint);border-color:#b5d6c0}
+.ops-submission-flow .complete .ops-submission-step-icon{background:var(--ops-done-tint);border-color:var(--dk-line-b5d6c0,#b5d6c0)}
 .ops-submission-flow .current{color:var(--tone)}
 .ops-submission-flow .current .ops-submission-step-icon{background:var(--tone-tint);border-color:var(--tone);box-shadow:0 0 0 3px var(--tone-tint)}
 .ops-submission-flow .current small{font-weight:600}

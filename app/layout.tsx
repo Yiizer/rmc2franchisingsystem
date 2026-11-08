@@ -3,6 +3,7 @@ import localFont from 'next/font/local';
 import './globals.css';
 import './operations.css';
 import './operations-tokens.css';
+import { themeScript } from './theme-script';
 
 const plex = localFont({
   src: [
@@ -25,5 +26,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { themeColor: '#172e50' };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en" className={plex.variable}><body>{children}</body></html>;
+  // The theme script sets data-theme on <html> before React loads, hence suppressHydrationWarning on that element only.
+  return <html lang="en" className={plex.variable} suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeScript }} /></head><body>{children}</body></html>;
 }
