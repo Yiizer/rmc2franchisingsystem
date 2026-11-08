@@ -36,10 +36,11 @@ const uuid = (): string => {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 };
 
-type Props = { variant: 'staff' | 'owner'; upload: ReactNode; onCreated: (result: unknown) => void | Promise<void>; ownerId?: string | null; extra?: ReactNode; onCancel?: () => void; onBusyChange?: (busy: boolean) => void; submitLabel?: string };
+/** Without `upload`, only the fill-in form is shown (no tabs), as on the Division Head / SOA Submit inquiry page. */
+type Props = { variant: 'staff' | 'owner'; upload?: ReactNode; onCreated: (result: unknown) => void | Promise<void>; ownerId?: string | null; extra?: ReactNode; onCancel?: () => void; onBusyChange?: (busy: boolean) => void; submitLabel?: string };
 
 export default function InquiryEntry({ variant, upload, onCreated, ownerId, extra, onCancel, onBusyChange, submitLabel }: Props) {
-  const [tab, setTab] = useState<'upload' | 'fill'>('upload'), [values, setValues] = useState<Record<string, string>>(() => ({ requestDate: manilaToday() })), [shown, setShown] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const [tab, setTab] = useState<'upload' | 'fill'>(upload ? 'upload' : 'fill'), [values, setValues] = useState<Record<string, string>>(() => ({ requestDate: manilaToday() })), [shown, setShown] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [key] = useState(uuid); // once per time the form is opened: a double click or a retry replays the same inquiry
   const base = useId(), form = useRef<HTMLFormElement>(null), owner = variant === 'owner';
   const groups = useMemo(() => GROUPS.map(g => ({ ...g, fields: g.fields.filter(f => !(owner && f.key === 'agentEmail')) })), [owner]);
@@ -78,9 +79,9 @@ export default function InquiryEntry({ variant, upload, onCreated, ownerId, extr
     setTab(next); document.getElementById(base + '-tab-' + next)?.focus();
   };
   return <div className="ops-entry">
-    <div className="ops-entry-tabs" role="tablist" aria-label="How to add the inquiry">{tabs.map(([id, label]) => <button key={id} id={base + '-tab-' + id} role="tab" type="button" aria-selected={tab === id} aria-controls={base + '-panel-' + id} tabIndex={tab === id ? 0 : -1} className={tab === id ? 'is-active' : ''} onClick={() => setTab(id)} onKeyDown={move}>{label}</button>)}</div>
-    <div id={base + '-panel-upload'} role="tabpanel" aria-labelledby={base + '-tab-upload'} hidden={tab !== 'upload'}>{upload}</div>
-    <div id={base + '-panel-fill'} role="tabpanel" aria-labelledby={base + '-tab-fill'} hidden={tab !== 'fill'}>
+    {upload && <div className="ops-entry-tabs" role="tablist" aria-label="How to add the inquiry">{tabs.map(([id, label]) => <button key={id} id={base + '-tab-' + id} role="tab" type="button" aria-selected={tab === id} aria-controls={base + '-panel-' + id} tabIndex={tab === id ? 0 : -1} className={tab === id ? 'is-active' : ''} onClick={() => setTab(id)} onKeyDown={move}>{label}</button>)}</div>}
+    {upload && <div id={base + '-panel-upload'} role="tabpanel" aria-labelledby={base + '-tab-upload'} hidden={tab !== 'upload'}>{upload}</div>}
+    <div id={base + '-panel-fill'} {...(upload ? { role: 'tabpanel', 'aria-labelledby': base + '-tab-fill' } : {})} hidden={!!upload && tab !== 'fill'}>
       <form ref={form} noValidate onSubmit={submit} className="ops-entry-form" aria-busy={busy}>
         <p className="ops-entry-note">Type the details from the agent’s request. <span aria-hidden="true">*</span><span className="sr-only">Fields marked required</span> Only the fields marked with an asterisk are needed now; the review step flags anything else that is missing.</p>
         {groups.map(group => <fieldset key={group.title} className="ops-entry-group"><legend>{group.title}</legend><div className="ops-entry-grid">{group.fields.map(spec => {

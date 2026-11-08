@@ -37,6 +37,7 @@ Format: **Decision** — why — where it applies.
   - **Feature freeze at the end of 2026-11-12.** After that, only bug fixes.
   - Why: the client wants a reliable system they can use for dry runs, with problems found and fixed during them.
 
+- **2026-11-09, PO: Division Heads and SOAs submit inquiries by filling in the form only.** The "Upload form" tab is removed from the portal's Submit inquiry page. Franchising staff keep both ways ("Import an agent's form").
 - **2026-11-09, PO: one page standard, taken from the staff Dashboard.** Every page in the staff app and the Division Head / SOA portal uses the Dashboard's heading (28px title, 14px subtitle), cards (12px corners, no shadow), table style (11px uppercase headers, 14px rows with row lines) and underlined status tabs. The first column of inquiry tables is "Inquiry". Lives in `app/operations-page-standard.css`.
 - **2026-11-09, PO: phone push notifications are in.** Tested on an iPhone and working, so the VAPID keys are accepted for the test version.
 - **2026-11-09, PO: inquiry numbers do not restart each year.** The counter keeps running (`INQ-2027-00175` follows `INQ-2026-00174`).
