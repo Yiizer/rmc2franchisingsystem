@@ -598,12 +598,14 @@ The full specialist reviews were deferred. Run all of them together over everyth
 - [ ] **Security:**
   - [ ] Apply `supabase/migrations/20261101000500_security_hardening.sql`: append-only audit tables, a role connection limit, an environment marker, and stricter self-checks.
   - [ ] Verified TLS to Supabase using the Supabase CA (it is currently `ssl:'require'`, which encrypts but does not verify the certificate).
-  - [ ] Login limits:
-    - key on user id rather than the typed name;
-    - add per-IP and global limits;
-    - prune `auth_attempts`;
-    - make the password hashing async;
-    - consider a Vercel Firewall rule.
+  - [x] Login limits (commit `8ea0c07`, 2026-11-09; live on deployment `rmc2-preview-pog0dqggk`, aliased to rmc2-test):
+    - [x] counted on the account id, so a username and its email share one count of 8 per 15 minutes (unknown names count on the typed text);
+    - [x] per IP: 60 attempts per 15 minutes (a whole office may share one address), not reset by a correct password. The address is the first `x-forwarded-for` entry, which Vercel sets;
+    - [x] site-wide: more than 300 wrong passwords in 15 minutes pauses all sign-ins for 15 minutes. Trade-off: a spread-out attack can make everyone wait;
+    - [x] finished `auth_attempts` rows are pruned (on about 1 sign-in in 20);
+    - [x] password hashing and checks use async scrypt; old hashes still verify;
+    - [ ] a Vercel Firewall rate-limit rule: needs a dashboard change, so it waits for the PO before production;
+    - **Checked:** `scripts/test-login-limits.mjs` 7/7 locally. `test-roles-scoping` now plants its lockout under the per-account key and still fails only at its known line 198. Division team, problem reports, email templates, duplicate rule and large files pass. **Online:** Emerson, Cryssa and Zeo sign in, and a made-up name is refused (429) on its 9th wrong try.
   - [ ] Check the guarded rollback scripts in `supabase/rollbacks/`.
   - [ ] Inbound email: review the IMAP failure modes, sender trust (show SPF/DKIM only, never treat an address as identity), and an inbox retention policy.
 - [ ] **Data hygiene:**
