@@ -8,7 +8,7 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
-## Inbound email retention, and approval notices for the Head (2026-11-11)
+## Inbound email retention, and approval notices for the Head (2026-11-11; commit `f87ea03`, live on deployment `rmc2-preview-h85ry287h`, aliased to rmc2-test; `roles-check-online` 37/37)
 
 - **Retention (PO decision 2026-11-11: 30 / 60 / 90 days):** `pruneInbound` in `lib/operations/inbound.ts` runs from the inbox check, at most once an hour per server.
   - **Cleared after:** 30 days for a skipped email, counted from when it was skipped; 60 days for one nobody handled; 90 days for an imported one, counted from the import.
