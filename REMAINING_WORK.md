@@ -20,7 +20,11 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
   - `scripts/test-file-sweep.mjs` 6/6 (new): the name rules, Admin only, the database and other folders never listed, the 24-hour wait, a file that gains a reference before deletion is kept, the log entry, and the status.
   - Browser on a QA copy: a scan found 20 of 48 unused (all regenerated packages). With the scan backdated, the confirmation dialog deleted those 20, and all 7 package files still in use and the database stayed.
   - `tsc`, build and lint pass.
-- **On TEST:** not deleted. Deleting needs the PO's go-ahead, and the bucket is wiped at cutover anyway.
+- **Online** (commit `29ce6ec`, deployment `rmc2-preview-efyfhjsiz`, aliased to rmc2-test; `roles-check-online` 37/37):
+  - `scripts/stored-files-scan-online.mjs` (scan only, never deletes): the Head is refused (403).
+  - The Admin's scan works on Postgres: 143 stored files, 62 unused (attachments 31, bor 4, generated 20, inbound 2, outbox 5). They are ready from 2026-11-12 23:10 Manila.
+  - The 11-09 audit counted 36. The rest most likely belong to the 126 fictional inquiries deleted later that day, whose files were deliberately kept.
+- **On TEST:** nothing deleted. Deleting needs the PO's go-ahead, and the bucket is wiped at cutover anyway.
 
 ## Inbound email retention, and approval notices for the Head (2026-11-11; commit `f87ea03`, live on deployment `rmc2-preview-h85ry287h`, aliased to rmc2-test; `roles-check-online` 37/37)
 
