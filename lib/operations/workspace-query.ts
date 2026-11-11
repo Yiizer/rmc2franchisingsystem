@@ -78,7 +78,7 @@ export async function workspaceView(user: Staff, params: URLSearchParams): Promi
   const emptyPage = {page:1,pageSize:25,total:0,pages:1};
   const mail = mailStatus();
   if (user.mustChangePassword) return {
-    mail, user, users:[user], templates:[], integrations:{database:'',gmail:'',ai:'',documents:''},
+    mail, user, users:[user], templates:[], integrations:{database:'',gmail:'',documents:''},
     inquiries:[],clientStates:{},packageRenderers:{},activity:[],notifications:[],
     cursor:'activate:'+user.id, metadataVersion:'activate', pagination:emptyPage,noticePagination:emptyPage,
     unreadCount:0,pendingCount:0,divisions:[],stats:{},attention:[],attentionCount:0,resume:[],
@@ -159,7 +159,7 @@ async function workspaceSnapshot(user: Staff, query: z.infer<typeof querySchema>
     }
   }
   return {
-    mail, user, ...(query.metadataVersion===metadataVersion?{}:{users,templates:templates.map(template=>({...template,file:''})),integrations:{database:databaseLabel(),gmail:mail.mode==='local'?'Local test mailbox · no real Gmail sends':mail.label,ai:'Simulated · supplied proposal sources only',documents:conversionName()}}),
+    mail, user, ...(query.metadataVersion===metadataVersion?{}:{users,templates:templates.map(template=>({...template,file:''})),integrations:{database:databaseLabel(),gmail:mail.mode==='local'?'Local test mailbox · no real Gmail sends':mail.label,documents:conversionName()}}),
     cursor, metadataVersion, inquiries:listing.items, pagination:listing.pagination,
     ...(current?{current}:{}), packageRenderers:{},
     clientStates:Object.fromEntries([...visibleIds].filter(id=>data.states[id]).map(id=>[id,data.states[id]])),

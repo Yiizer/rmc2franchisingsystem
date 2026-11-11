@@ -8,6 +8,19 @@ Format: **Decision** — why — where it applies.
 
 ## Product decisions (approved by the Product Owner)
 
+- **Production deployment decisions** (approved by the PO 2026-11-11, by clicking through the open questions in the handover).
+  - **Ownership:** the client owns and pays for the production Vercel team and Supabase organisation (Pro plans, about US$45/month) and invites us as members.
+  - **Backups:** Supabase Pro daily backups (7 days kept), plus a regular export of the file bucket.
+  - **Cutover:** after **1 week** of staff dry runs, so around 2026-11-23. The final check, two import rehearsals and the production setup all fit in that week.
+  - **AI:** removed for the first release. Live AI is not in scope. Done 2026-11-11 (see `REMAINING_WORK.md`, "AI removed"). The rule-based "Suggested templates" stay: they are fixed matching rules, not AI.
+  - **Sign-in:** keep the app's own login at launch. Supabase Auth (invites, self-service reset, MFA) comes after cutover.
+  - **Vercel Firewall:** add a rate-limit rule in front of sign-in on the production project.
+  - **Expired-agent recheck:** keep rule (a) from 2026-11-06. Once a supervisor approves a new agent after expiry, older held requests stay on hold when rechecked.
+  - **Proposal serial number:** none. Proposals keep using the inquiry number.
+  - **Inbound email retention:** 30 days for skipped, 60 for unhandled and 90 for imported emails, then a small record stays for duplicate checks. This covers only the app's own copies. The app reads Gmail read-only, so the originals stay in the mailbox under its own retention. Not built yet.
+  - **Unverified senders (no DMARC pass):** keep importing automatically, unlinked, for staff to link.
+  - **Housekeeping:** the unreachable prototype `app/franchise-workspace.tsx` is deleted. The roles test already expects "Enrolled" (fixed 2026-11-09).
+
 - **Duplicate hold needs the same company or the same file (F5)** (approved by the PO 2026-11-08, "Require company name").
   - A matching client contact or addressee name alone no longer holds an inquiry for a different company.
   - A hold now needs the same account / company (normalized) or the identical submitted file.

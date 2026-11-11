@@ -8,6 +8,26 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## AI removed for the first release (2026-11-11, PO: "we will remove ai for now"; not committed yet)
+
+The production decisions from the same day are in `TEAM_DECISIONS.md` ("Production deployment decisions").
+- **Removed:** the `AI_FEATURES` switch (it had hidden these since 2026-11-07) and everything behind it:
+  - the "AI notes" button and panel in the proposal editor (`operations-ai-notes.*`, `operations-proposal-help.tsx`);
+  - the simulated proposal assistant (`POST inquiries/<id>/chat`, `chat()` and `getProposalHelp`);
+  - AI token usage in Monitoring, and the "AI" row on Integrations.
+- **Monitoring** (`GET monitoring`) is now Admin only. The Head and Supervisors used to get an AI-usage-only answer there, now 403. Their Monitoring page is the proposal dashboard, which is unchanged.
+- **Unused old prototype deleted:** 15 files the app never loads (`app/admin.tsx`, `workspace.tsx`, `simple-workspace.tsx`, `model.ts`, `chatgpt-auth.ts`, `franchise-workspace.tsx` and the files only they used), plus two browser tests for the AI panel.
+- **Kept:** the rule-based "Suggested templates" (fixed matching rules, labelled "Staff review required"). The `ai_usage` table stays in both databases, since dropping it would need a migration; nothing reads or writes it any more. Old records keep their `chat` field.
+- **Checked locally:**
+  - `tsc` passes, `npm run build` passes and `theme:check` passes. Lint: no new problems in the changed files (one fewer).
+  - `test-roles-scoping` 30/30, `test-proposal-stats` 16/16, `test-problem-reports` 11/11, `test-login-limits` 7/7, `test-large-files` 10/10, `test-division-team` 9/9, `test-workspace-upgrade` 17/17.
+  - Browser, fresh QA data on port 5190:
+    - the Admin's Monitoring and Integrations show no AI;
+    - the Head's proposal dashboard loads and calls only `monitoring/proposals`;
+    - the proposal editor has no AI button or panel, and the D023 preview renders its 14 pages.
+- **Out of date, not caused by this change:** `test-workflow` now runs past the old assistant step (23 checks), then stops at "emerson receives approval notice", because Emerson is Head since the roles restructure. Its notice loop now covers only the accounts it signs in. `test-pg-http` drops its two chat probes.
+- **Not done:** deploying to the test version, and the online checks (`roles-check-online`).
+
 ## Online-check inquiries deleted from TEST (2026-11-09, PO: "Yes, delete them")
 
 - `INQ-2026-00155` to `00174`: all 20 were confirmed fictional by name ("Pilot Check", "Check …", "Large File Check"), and no other record referred to them. Deleted with 60 index keys, 20 summaries, 42 notifications and 3 outbox rows, in one transaction that checked every count before committing. **14 inquiries left on TEST.**

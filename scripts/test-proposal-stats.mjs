@@ -156,7 +156,7 @@ const min = 60000;
   assert.equal(live.buckets.length, 12);
   assert.equal(live.funnel.length, 5);
   const perm = await t.load('permissions');
-  assert.equal(perm.canSeeAiUsage({ role: 'Admin' }), true, 'canSeeAiUsage is unchanged');
+  assert.equal(perm.canSeeSystemHealth({ role: 'Admin' }), true, 'canSeeSystemHealth is unchanged');
   t.pass('Head and Supervisor read the stats; Employee, Admin, Division Head, SOA get 403; bad period or half a range gets 400');
 }
 

@@ -1,12 +1,5 @@
 import type { CatalogTemplate, FormFields } from './types';
 
-export const PROPOSAL_HELP_PROMPTS = {
-  suggest: 'Suggest proposals',
-  explain: 'Why does this proposal fit?',
-  compare: 'Compare the alternatives',
-} as const;
-export type ProposalHelpTopic = keyof typeof PROPOSAL_HELP_PROMPTS;
-
 const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 function requestedVariant(request: string) {
   if (/dreaded/.test(request)) return 'PEC + dreaded covered';
@@ -47,14 +40,14 @@ function matchTemplate(fields: FormFields, template: CatalogTemplate) {
   return { template, score: (familyMatch ? 30 : 0) + (sectorMatch ? 20 : 0) + (variantMatch ? 15 : 0) + (standard && !variant ? 4 : 0), reasons: reasons.length ? reasons : ['Available in the supplied proposal library for manual review. No sector or requested-plan match was found.'], cues };
 }
 
-/** Shared by the visible cards and simulated chat. These are preparation rules, not underwriting rules. */
+/** Rule-based template matching for the "Suggested templates" cards (no AI). These are preparation rules, not underwriting rules. */
 export function suggestTemplates(fields: FormFields, templates: CatalogTemplate[]) {
   return templates.filter(template => !restrictions(fields, template).length)
     .map(template => matchTemplate(fields, template)).filter(item => item.score > 4)
     .sort((a, b) => b.score - a.score).slice(0, 3);
 }
 
-/** On-demand simulated review. Never changes a selection or claims to verify unlisted coverage. */
+/** On-demand rule-based review of the chosen template. Never changes a selection or claims to verify unlisted coverage. */
 export function reviewTemplateChoice(fields: FormFields, templates: CatalogTemplate[], selectedId: string, customized = false) {
   const selected = templates.find(template => template.id === selectedId);
   const suggested = suggestTemplates(fields, templates);
@@ -79,19 +72,6 @@ export function reviewTemplateChoice(fields: FormFields, templates: CatalogTempl
   return {status, reasons, selectedId, recommendedId:recommendation?.id,
     sourceIds:[...new Set([target?.id, recommendation?.id].filter((id):id is string => !!id))],
     note:'Based on the catalog details only. Staff review required. Open the source to confirm complete eligibility, rates and benefits.'};
-}
-
-/** Proposal-only quick actions share exactly the same source matching as the visible cards. */
-export function getProposalHelp(fields: FormFields, templates: CatalogTemplate[], selectedId: string, topic: ProposalHelpTopic) {
-  const suggested = suggestTemplates(fields, templates);
-  const selected = templates.find(template => template.id === selectedId && template.active);
-  const items = topic === 'explain' ? (selected ? [matchTemplate(fields, selected)] : []) : topic === 'compare' && selected ? [matchTemplate(fields, selected), ...suggested.filter(option => option.template.id !== selected.id)].slice(0, 3) : suggested;
-  return {
-    title: topic === 'explain' ? 'Your selected proposal' : topic === 'compare' ? 'Compare proposal options' : 'Suggested proposals',
-    description: topic === 'explain' ? (selected ? 'Here is how this template matches the inquiry.' : 'Choose a template first to see its proposal explanation.') : topic === 'compare' ? 'Compare the program and variant named in each supplied proposal. Open its source for the complete benefits and rates.' : 'Suggestions use the requested plan, explicit coverage variant and known catalog restrictions.',
-    items,
-    note: 'You choose the proposal. Confirm eligibility and coverage in its source; no benefits or rates are added by this helper.',
-  };
 }
 
 /** Stable inputs for requested matches. Polling and unrelated edits do not invalidate them. */

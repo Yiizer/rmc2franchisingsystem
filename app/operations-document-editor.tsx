@@ -1,29 +1,27 @@
 'use client';
 import { manilaTime } from '@/lib/operations/types';
-import { useEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Download, FileText, RefreshCw, RotateCcw, Check, Eye } from 'lucide-react';
 import CustomDocument from './operations-custom-document';
 import type { CatalogTemplate, FormFields, CustomizedProposal, CustomEdit, GeneratedPackage } from '@/lib/operations/types';
 import { addresseeName, philippinePhone, proposalTitles } from '@/lib/operations/proposal-fields';
 import type { PDFDocumentProxy, RenderTask, TextLayer } from 'pdfjs-dist';
 import { endpoint } from './operations-common';
-import ProposalAiNotes from './operations-ai-notes';
-import { AI_FEATURES } from '@/lib/operations/features';
-import ProposalDetailChecks, { useProposalDetailCheck, ProposalCheckButton, ProposalCheckResults } from './operations-proposal-checks';
+import { useProposalDetailCheck, ProposalCheckButton, ProposalCheckResults } from './operations-proposal-checks';
 import { sameProposalFields, sameProposalEdits } from '@/lib/operations/proposal-state';
 import './operations-document.css';
 import './operations-document-controls.css';
 
 const slots=['proposalDate','addresseeTitle','addressee','addresseePosition','company','address','agentName','agentPhone'] as const;
 const slotLabels:Record<string,string>={proposalDate:'Proposal date',addresseeTitle:'Title',addressee:'Client / addressee',addresseePosition:'Position / designation',company:'Account name',address:'Account address',agentName:'Agent name',agentPhone:'Agent contact number'};
-export default function ProposalDocumentEditor({template,fields,originalFields,editable,busy,onField,onSave,onChoose,onClose,savedAt,embedded=false,externalAssistance=false,helpVisible=false,onDismissHelp,helpContent,customization,inquiryId,onCustomEdit,prepared,previewOnly=false,dirty=true}:{
+export default function ProposalDocumentEditor({template,fields,originalFields,editable,busy,onField,onSave,onChoose,onClose,savedAt,embedded=false,customization,inquiryId,onCustomEdit,prepared,previewOnly=false,dirty=true}:{
   dirty?:boolean;customization?:CustomizedProposal;previewOnly?:boolean;prepared?:GeneratedPackage;inquiryId?:string;onCustomEdit?:(id:string,edit:CustomEdit|null)=>void;
   template:CatalogTemplate;fields:FormFields;originalFields:FormFields;editable:boolean;busy:boolean;
-  onField:(key:string,value:string)=>void;onSave:()=>Promise<boolean>;onChoose?:()=>void;onClose?:()=>void;savedAt:string;embedded?:boolean;externalAssistance?:boolean;helpVisible?:boolean;onDismissHelp?:()=>void;helpContent?:ReactNode;
+  onField:(key:string,value:string)=>void;onSave:()=>Promise<boolean>;onChoose?:()=>void;onClose?:()=>void;savedAt:string;embedded?:boolean;
 }){
   const [pdf,setPdf]=useState<PDFDocumentProxy|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[retry,setRetry]=useState(0),[zoom,setZoom]=useState('fit'),[original,setOriginal]=useState(false);
   const [renderedPdf,setRenderedPdf]=useState<PDFDocumentProxy|null>(null),[snapshot,setSnapshot]=useState(JSON.stringify({fields,customEdits:customization?.edits})),[customEditing,setCustomEditing]=useState(!!customization&&editable);
-  const [width,setWidth]=useState(760),[localSaving,setLocalSaving]=useState(false),[geometry,setGeometry]=useState({top:128,toolbarTop:64,available:700}),[checked,setChecked]=useState(false),[localTemplateHelp,setLocalTemplateHelp]=useState(false);
+  const [width,setWidth]=useState(760),[localSaving,setLocalSaving]=useState(false),[geometry,setGeometry]=useState({top:128,toolbarTop:64,available:700});
   const viewport=useRef<HTMLDivElement>(null),sidebar=useRef<HTMLElement>(null),editor=useRef<HTMLDivElement>(null),toolbar=useRef<HTMLDivElement>(null),activePdf=useRef<PDFDocumentProxy|null>(null);
   const snapshotValues=JSON.parse(snapshot) as {fields:FormFields;customEdits?:Record<string,CustomEdit>};
   const updating=loading||(!error&&pdf!==renderedPdf),outdated=!sameProposalFields(fields,snapshotValues.fields)||!sameProposalEdits(customization?.edits,snapshotValues.customEdits);
@@ -48,7 +46,6 @@ export default function ProposalDocumentEditor({template,fields,originalFields,e
   },[embedded]);
   useEffect(()=>{if(prepared&&prepared.templateId===template.id&&prepared.customization?.id===customization?.id&&sameProposalFields(fields,prepared.fields)&&sameProposalEdits(customization?.edits,prepared.customization?.edits)){setOriginal(false);setSnapshot(JSON.stringify({fields:prepared.fields,customEdits:prepared.customization?.edits}));}},[prepared?.id]);
   useEffect(()=>{if(!editable)setSnapshot(JSON.stringify({fields,customEdits:customization?.edits}));},[editable,fields,customization]);
-  useEffect(()=>{if(helpVisible){setChecked(false);setLocalTemplateHelp(false);}},[helpVisible]);
   useEffect(()=>{
     let active=true,settled=false;const controller=new AbortController();let documentTask:{destroy:()=>Promise<void>}|undefined;
     setLoading(true);setError('');setRenderedPdf(null);
@@ -64,12 +61,9 @@ export default function ProposalDocumentEditor({template,fields,originalFields,e
   useEffect(()=>()=>{void activePdf.current?.loadingTask.destroy();},[]);
   function updatePreview(){setOriginal(false);setSnapshot(JSON.stringify({fields,customEdits:customization?.edits}));setRetry(value=>value+1);}
   async function save(){setLocalSaving(true);try{if(await onSave()&&!embedded)onClose?.();}finally{setLocalSaving(false);}}
-  const notesOpen=AI_FEATURES&&!externalAssistance&&(checked||helpVisible||localTemplateHelp);
-  function closeNotes(){setChecked(false);setLocalTemplateHelp(false);onDismissHelp?.();}
-  function toggleNotes(){if(notesOpen)closeNotes();else if(helpContent)setLocalTemplateHelp(true);else setChecked(true);}
   return <div ref={editor} className={'ops-doc-editor'+(embedded?' embedded':'')+(geometry.available<620?' compact':'')+(geometry.available<500?' short':'')} style={{'--ops-doc-sticky-top':geometry.top+'px','--ops-doc-toolbar-top':geometry.toolbarTop+'px','--ops-doc-available-height':geometry.available+'px'} as CSSProperties}>
-    <div ref={toolbar} className="ops-doc-toolbar">{customization&&<div className="ops-custom-view-tabs">{!embedded&&<span className="ops-badge customized">Customized</span>}<button className="ops-btn" aria-pressed={customEditing} disabled={!editable} onClick={()=>setCustomEditing(true)}>Edit document</button><button className="ops-btn" aria-pressed={!customEditing} onClick={()=>{updatePreview();setCustomEditing(false);}}>PDF preview</button></div>}<div><FileText size={18}/><b>{template.sourceId}</b><span>{template.variant}</span></div><div><button className="ops-btn" aria-pressed={original} onClick={()=>{setOriginal(!original);if(customization)setCustomEditing(false);}}><Eye size={15}/>{original?'Show filled proposal':'Show blank template'}</button><label>Zoom<select aria-label="Proposal zoom" value={zoom} onChange={e=>setZoom(e.target.value)}><option value="fit">Fit width</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option></select></label><a className="ops-link" href={endpoint+'/source/'+template.id}><Download size={15}/>Blank Word template</a>{useSavedPdf&&!outdated&&<a className="ops-link" href={savedPdf} download><Download size={15}/>Download PDF</a>}{AI_FEATURES&&!externalAssistance&&<button className="ops-btn ops-ai-toggle" aria-expanded={notesOpen} onClick={toggleNotes}>AI notes</button>}</div></div>
-    <div className={'ops-doc-layout'+(notesOpen?' has-ai-notes':'')}>
+    <div ref={toolbar} className="ops-doc-toolbar">{customization&&<div className="ops-custom-view-tabs">{!embedded&&<span className="ops-badge customized">Customized</span>}<button className="ops-btn" aria-pressed={customEditing} disabled={!editable} onClick={()=>setCustomEditing(true)}>Edit document</button><button className="ops-btn" aria-pressed={!customEditing} onClick={()=>{updatePreview();setCustomEditing(false);}}>PDF preview</button></div>}<div><FileText size={18}/><b>{template.sourceId}</b><span>{template.variant}</span></div><div><button className="ops-btn" aria-pressed={original} onClick={()=>{setOriginal(!original);if(customization)setCustomEditing(false);}}><Eye size={15}/>{original?'Show filled proposal':'Show blank template'}</button><label>Zoom<select aria-label="Proposal zoom" value={zoom} onChange={e=>setZoom(e.target.value)}><option value="fit">Fit width</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.25">125%</option></select></label><a className="ops-link" href={endpoint+'/source/'+template.id}><Download size={15}/>Blank Word template</a>{useSavedPdf&&!outdated&&<a className="ops-link" href={savedPdf} download><Download size={15}/>Download PDF</a>}</div></div>
+    <div className="ops-doc-layout">
       <div className="ops-doc-sidebar-column"><aside ref={sidebar} className="ops-doc-fields">
         <div className="ops-doc-fields-scroll" role="region" aria-label="Proposal fields" tabIndex={0}><div className="ops-doc-fields-intro"><h3>{editable?'Fill proposal details':'Proposal details'}</h3><p>{editable?<>From the form. Click <b>Update preview</b> after edits.</>:<>This version is read-only.</>}</p></div>
         <div className="ops-doc-field-grid">{slots.map(key=>{const check=checks.find(c=>c.field===key),value=fields[key]||'';return <label key={key} className={'ops-doc-field'+(['address','addressee','addresseePosition','company'].includes(key)?' wide':'')}>
@@ -99,9 +93,6 @@ export default function ProposalDocumentEditor({template,fields,originalFields,e
         {!pdf&&<div className="ops-doc-loading"><FileText size={32}/><p>{error?'Preview unavailable':'Preparing the proposal pages…'}</p></div>}
         {pdf&&Array.from({length:pdf.numPages},(_,index)=><DocumentPage key={index} pdf={pdf} number={index+1} width={width} zoom={zoom} onRendered={()=>{if(index===0&&activePdf.current===pdf)setRenderedPdf(pdf);}} onError={()=>setError('A proposal page could not be displayed. Retry the preview.')}/>) }
       </div></div>
-      {notesOpen&&<div className="ops-doc-notes-column"><ProposalAiNotes onClose={closeNotes}>
-        {!checked&&helpContent?helpContent:<ProposalDetailChecks fields={fields} originalFields={originalFields} template={template} customization={customization}/>}
-      </ProposalAiNotes></div>}
     </div>
     {!embedded&&<div className="ops-doc-footer"><p>{previewOnly?'Current layout preview':'Original template layout.'}<small>{previewOnly?'Preview only · not the saved submission':<>Saved {manilaTime(savedAt)}</>}</small></p><button className="ops-btn" onClick={onClose}>Close</button>{onChoose&&<button className="ops-btn primary" onClick={onChoose}>Use this template</button>}</div>}
   </div>;

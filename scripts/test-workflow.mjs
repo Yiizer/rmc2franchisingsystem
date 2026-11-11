@@ -21,7 +21,7 @@ const sampleBytes=await call('cryssa','sample-form');const fixture=new ExcelJS.W
 let record=(await call('cryssa','intake',form,201)).inquiry;
 ok('Real Excel workbook parsed',record.fields.company===identity&&record.source.cells.length>30);
 ok('Agent reply recipient remains separate',record.fields.agentEmail==='agent.workflow@example.com'&&record.fields.contactEmail==='school.contact@example.com');
-for(const person of original.users){const current=await state(person.id);ok(person.id+' received new inquiry notice',current.notifications.some(n=>n.inquiryId===record.id&&n.title==='New inquiry'));}
+for(const person of original.users.filter(p=>sessions[p.id])){const current=await state(person.id);ok(person.id+' received new inquiry notice',current.notifications.some(n=>n.inquiryId===record.id&&n.title==='New inquiry'));}
 ok('Viewing does not record a handler',(await state('cryssa')).inquiries.find(r=>r.id===record.id).handledBy.length===0);
 const staleCopy=record;
 record=await save('cryssa',record,{fields:{...record.fields,company:identity+' revised',employeeAges:''},templateId:'d024'});
@@ -31,7 +31,6 @@ ok('Original form remains unchanged',record.source.fields.company===identity);
 await action('cryssa',record,'generate',{},400);ok('Missing ages block generation');
 record=await action('cryssa',record,'request-details',{body:'Dear agent, please provide the employee age range.'});ok('Details request recorded',record.status==='Waiting for agent details'&&record.detailRequests.length===1);
 record=await save('cryssa',record,{fields:{...record.fields,employeeAges:'25–58'},email:{...record.email,subject:'Reviewed proposal for local workflow test'},emailOverrides:['subject']});
-record=await action('cryssa',record,'chat',{question:'Compare the alternatives'});ok('Assistant cites only supplied sources',record.chat.at(-1).sources.every(id=>original.templates.some(t=>t.id===id)));
 record=await action('cryssa',record,'generate');ok('Actual multi-page PDF and DOCX generated',!!record.generated&&record.generated.pageCount>1);
 ok('Manual email subject survives generation',record.email.subject==='Reviewed proposal for local workflow test');
 const firstPdf=await call('cryssa','file/'+record.id+'/pdf');ok('PDF has a real PDF header',firstPdf.subarray(0,4).toString()==='%PDF');

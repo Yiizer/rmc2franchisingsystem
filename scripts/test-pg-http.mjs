@@ -339,9 +339,7 @@ if (wants('T10')) {
     const stored = (await A.call('cryssa', `inquiries/${rec.id}`, undefined, 200)).value.inquiry;
     const responseDiffers = saved.notes !== 'ab';
     assert.equal(stored.notes, 'ab', 'stored notes'); assert.equal(stored.fields.branch, 'Branch', 'stored field');
-    const chat = await A.raw('cryssa', `inquiries/${rec.id}/chat`, { revision: saved.revision, question: 'hello\u0000 world' });
-    assert.ok(chat.status < 500, 'chat with NUL -> ' + chat.status + ' ' + (await chat.text()).slice(0, 120));
-    return 'save ok (stored without NUL; save response itself ' + (responseDiffers ? 'still carries the NUL' : 'is also stripped') + '), chat ' + chat.status;
+    return 'save ok (stored without NUL; save response itself ' + (responseDiffers ? 'still carries the NUL' : 'is also stripped') + ')';
   });
   await check('T10 NUL in every free-text writer I could reach (JSON.stringify / text columns without the NUL strip) must not be a 500', async () => {
     const results = {}, bad = [];
@@ -351,7 +349,6 @@ if (wants('T10')) {
     { const rec = await fresh('details'); await probe('request-details body', () => A.raw('cryssa', `inquiries/${rec.id}/request-details`, { revision: rec.revision, body: 'Please send\u0000 the ages' })); }
     { const rec = await fresh('decline'); await probe('decline reason', () => A.raw('cryssa', `inquiries/${rec.id}/decline`, { revision: rec.revision, reason: 'Not eligible\u0000 for this plan' })); }
     { const rec = await fresh('recheck'); await probe('review-client note', () => A.raw('cryssa', `inquiries/${rec.id}/review-client`, { revision: rec.revision, action: 'recheck', note: 'checked\u0000 again' })); }
-    { const rec = await fresh('chat'); await probe('chat question', () => A.raw('cryssa', `inquiries/${rec.id}/chat`, { revision: rec.revision, question: 'Compare\u0000 alternatives' })); }
     assert.deepEqual(bad, [], 'writers that return 500 for a NUL character (SQLite accepts it): ' + JSON.stringify(results));
     return JSON.stringify(results);
   });

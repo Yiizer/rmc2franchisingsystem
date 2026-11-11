@@ -112,6 +112,6 @@ try{
   const added=await call('emerson','template-upload',uploadForm(changed,''),201);await call('emerson','template-publish',{id:added.id,reviewed:true});
   const addedTemplate=(await bootstrap('admin')).templates.find(t=>t.id===added.template.id);assert.ok(addedTemplate.active);await call('emerson','template-active',{id:addedTemplate.id,expectedHash:addedTemplate.sourceHash,active:false});
   pass('Head can add a distinct template, view its version history, and retire it without deleting files',(await call('emerson','template-history')).versions.length>=3);
-  const health=await call('admin','monitoring-check',{});pass('Admin connectivity checks exercise database, private storage and PDF conversion; token counts reflect no live AI usage',health.services.filter(s=>['Database','Private file storage','PDF converter'].includes(s.name)).every(s=>s.state==='healthy')&&health.ai.usage.requests===0);
+  const health=await call('admin','monitoring-check',{});pass('Admin connectivity checks exercise database, private storage and PDF conversion',health.services.filter(s=>['Database','Private file storage','PDF converter'].includes(s.name)).every(s=>s.state==='healthy'));
   await writeFile(out+'/fixtures.json',JSON.stringify({proposalId:proposal.id,duplicateId:duplicate.id,incomingId:incoming.id,createdUser:created.user.id,run},null,2));
 }finally{database.close();await writeFile(out+'/checks.json',JSON.stringify(checks,null,2));}

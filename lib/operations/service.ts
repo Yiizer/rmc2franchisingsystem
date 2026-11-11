@@ -27,7 +27,7 @@ import { MANUAL_FIELD_KEYS, parseForm, preservePdfForm, sampleForm } from './for
 import { replyRecipient, replyRecipientOrNull } from './reply-recipient';
 import { fillPlaceholders, loadMyEmailTemplates } from './email-templates';
 import { cachedRenderer, packageRenderer } from './package-rendering';
-import { getProposalHelp, PROPOSAL_HELP_PROMPTS, suggestTemplates } from './suggestions';
+import { suggestTemplates } from './suggestions';
 
 export function checkRevision(record:InquiryRecord,revision:unknown) { if(record.revision!==revision)throw new AppError('This inquiry changed in another session. Reload before continuing.',409); }
 function canPrepare(user:Staff) { if(!canPrepareProposal(user))throw new AppError('Use an Employee or Supervisor account to prepare and submit proposals.',403); }
@@ -432,15 +432,3 @@ export function fillDivisionFromBranch(record:InquiryRecord,table:DivisionTable)
 export const manilaYear=(at=new Date())=>Number(new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Manila',year:'numeric'}).format(at));
 async function nextInquiryNumber() { const row=await db.get<{n:number}>("UPDATE counters SET n=n+1 WHERE name='inquiry' RETURNING n");if(!row)throw new Error('The inquiry counter is missing.');return Number(row.n); }
 export async function alternatives(record:InquiryRecord) { return suggestTemplates(record.fields,await catalog()).map(option=>option.template); }
-export async function chat(id:string,user:Staff,input:unknown) {
-  canPrepare(user);
-  const body=z.object({revision:z.number().int(),question:z.enum([PROPOSAL_HELP_PROMPTS.suggest,PROPOSAL_HELP_PROMPTS.explain,PROPOSAL_HELP_PROMPTS.compare])}).parse(input);
-  return await transaction(async()=>{const record=await inquiry(id);checkRevision(record,body.revision);
-    await requireInquiryHandler(id,user);
-    const topic=body.question===PROPOSAL_HELP_PROMPTS.explain?'explain':body.question===PROPOSAL_HELP_PROMPTS.compare?'compare':'suggest';
-    const result=getProposalHelp(record.fields,await catalog(),record.templateId,topic);
-    if(topic==='explain'&&!result.items.length)throw new AppError('Choose a proposal template to explain first.');
-    const answer=[result.title,result.description,...result.items.map(({template,reasons})=>[template.name,...(topic==='compare'?['Program: '+template.family,'Variant: '+template.variant]:reasons),...template.warnings,'Source: '+template.sourceId+' — '+template.sourceName].join('\n')),result.note].join('\n\n');
-    const sources=result.items.map(item=>item.template.id);
-    const at=new Date().toISOString();record.chat.push({id:randomUUID(),at,role:'user',text:body.question,actorId:user.id,sources:[]},{id:randomUUID(),at,role:'assistant',text:answer,actorId:'assistant',sources});const revision=record.revision;if(user.role==='Employee')audit(record,user,'Used proposal assistant: '+body.question);else {record.revision++;record.updatedAt=at;}await persist(record,revision);return record;});
-}

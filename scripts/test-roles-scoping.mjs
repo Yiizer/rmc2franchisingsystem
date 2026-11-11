@@ -37,7 +37,6 @@ const PASSWORD=database.LOCAL_PASSWORD,DAY=86400000;
   row(perm.canFileProgressReport,       [false,false, false, true,  true,  false]);
   row(perm.canManageTemplates,          [true, false, false, false, false, false]);
   row(perm.canSeeSystemHealth,          [false,false, false, false, false, true ]);
-  row(perm.canSeeAiUsage,               [true, true,  false, false, false, true ]);
   row(perm.canSeeIntegrations,          [false,false, false, false, false, true ]);
   row(perm.canTakeOver,                 [true, true,  false, false, false, false]);
   row(perm.canSeeAllInquiries,          [true, true,  true,  false, false, true ]);
@@ -362,8 +361,7 @@ const target=clientA.id;
 
   // other scattered checks
   assert.equal(await status(monitoring.monitoring(cryssa)),403);
-  const limited=await monitoring.monitoring(head);assert.deepEqual(Object.keys(limited).sort(),['ai','checkedAt']);
-  assert.deepEqual(Object.keys(await monitoring.monitoring(zeo)).sort(),['ai','checkedAt']);
+  assert.equal(await status(monitoring.monitoring(head)),403);assert.equal(await status(monitoring.monitoring(zeo)),403); // AI usage removed: system health is Admin only
   const full=await monitoring.monitoring(admin);assert.ok(full.services.length>=3);
   assert.equal(await status(templateAdmin.stageTemplate(zeo,new FormData())),403);
   assert.equal(await status(templateAdmin.stageTemplate(admin,new FormData())),403);
