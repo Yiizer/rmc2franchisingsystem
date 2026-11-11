@@ -8,7 +8,7 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
-## AI removed for the first release (2026-11-11, PO: "we will remove ai for now"; not committed yet)
+## AI removed for the first release (2026-11-11, PO: "we will remove ai for now"; commit `7b5577f`, live on deployment `rmc2-preview-9dr1vzyjv`, aliased to rmc2-test)
 
 The production decisions from the same day are in `TEAM_DECISIONS.md` ("Production deployment decisions").
 - **Removed:** the `AI_FEATURES` switch (it had hidden these since 2026-11-07) and everything behind it:
@@ -26,7 +26,7 @@ The production decisions from the same day are in `TEAM_DECISIONS.md` ("Producti
     - the Head's proposal dashboard loads and calls only `monitoring/proposals`;
     - the proposal editor has no AI button or panel, and the D023 preview renders its 14 pages.
 - **Out of date, not caused by this change:** `test-workflow` now runs past the old assistant step (23 checks), then stops at "emerson receives approval notice", because Emerson is Head since the roles restructure. Its notice loop now covers only the accounts it signs in. `test-pg-http` drops its two chat probes.
-- **Not done:** deploying to the test version, and the online checks (`roles-check-online`).
+- **Online:** `npm run build` passed first; `roles-check-online` 37/37 across the 6 roles (the Admin's `monitoring` 200, the Head's proposal dashboard 200). No migration was needed.
 
 ## Online-check inquiries deleted from TEST (2026-11-09, PO: "Yes, delete them")
 
