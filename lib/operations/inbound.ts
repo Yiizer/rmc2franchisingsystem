@@ -44,7 +44,44 @@ export type InboundMessage = {
   id: string; messageId: string; receivedAt: string; from: string; fromName: string; replyTo: string; subject: string;
   snippet: string; attachments: InboundAttachment[]; auth: { spf: string; dkim: string; dmarc: string; aligned?: boolean };
   state: 'new' | 'imported' | 'dismissed'; inquiryId?: string; handledBy?: string; handledAt?: string; importError?: string;
+  /** When this app stored the email. `receivedAt` comes from the sender's Date header, so retention never relies on it alone. */
+  storedAt?: string;
 };
+
+/** Retention (PO 2026-11-11): the app's own copy of an email, with its stored attachments, is cleared 30 days after it was
+ *  skipped, 60 days after it arrived if nobody handled it, and 90 days after it was imported. The inquiry keeps its own copy
+ *  of the form, and the original stays in the mailbox (the app only reads it). A small row stays behind, so the same
+ *  Message-ID is never stored again. Cleared rows are no longer listed on Requests. */
+export const RETENTION_DAYS = { dismissed: 30, new: 60, imported: 90 } as const;
+const RETENTION_EVERY_MS = 60 * 60 * 1000, RETENTION_BATCH = 500;
+let lastRetention = 0;
+/** The latest date the app knows for an email: a backdated Date header cannot make it expire early. */
+const retentionAge = (record: InboundMessage) => Math.max(...[record.receivedAt, record.storedAt, record.handledAt].map(at => Date.parse(at || '')).filter(Number.isFinite));
+export async function pruneInbound(now = Date.now()) {
+  let cleared = 0;
+  for (const [state, days] of Object.entries(RETENTION_DAYS)) {
+    const limit = now - days * 86400000;
+    // The age used is never earlier than received_at (indexed), so only rows with received_at before the limit can qualify.
+    const rows = await db.all<{ id: string; data: string }>('SELECT id,data FROM inbound_messages WHERE state=? AND received_at<? ORDER BY received_at LIMIT ' + RETENTION_BATCH, state, new Date(limit).toISOString());
+    for (const row of rows) {
+      const record = JSON.parse(row.data) as InboundMessage;
+      if (!(retentionAge(record) < limit)) continue;
+      const kept = { id: record.id, messageId: record.messageId, receivedAt: record.receivedAt, state: 'cleared', clearedFrom: state, inquiryId: record.inquiryId, clearedAt: new Date(now).toISOString() };
+      // Guarded on the state, so an email a colleague is importing or dismissing right now is left alone.
+      const result = await db.run("UPDATE inbound_messages SET state='cleared',data=? WHERE id=? AND state=?", jsonParam(kept), row.id, state);
+      if (!result.changes) continue;
+      await deleteQuietly(...(record.attachments || []).map(a => a.key)); // after the row: a failed delete leaves an orphan, never a row pointing at nothing
+      cleared++;
+    }
+  }
+  return cleared;
+}
+/** Runs from the inbox check, at most once an hour per server. */
+async function retentionDue() {
+  if (Date.now() - lastRetention < RETENTION_EVERY_MS) return;
+  lastRetention = Date.now();
+  try { await pruneInbound(); } catch (error) { console.error('[inbound] retention failed:', (error as { code?: string })?.code || 'error'); }
+}
 /** The actor recorded in history for automatic imports. Not a sign-in account. */
 const EMAIL_INTAKE: Staff = { id: 'email-intake', name: 'Email intake (automatic)', role: 'Employee', email: '', active: true, position: 'System', canApprove: false } as Staff;
 const AUTO_CHECK_MS = 30 * 1000;
@@ -94,6 +131,7 @@ export async function checkInbox(): Promise<{ added: number; imported: number; c
   const settings = imapSettings(), checkedAt = new Date().toISOString();
   if (!settings) return { added: 0, imported: 0, checkedAt, connected: false };
   await releaseStuckImports().catch(() => { /* retried next check */ });
+  await retentionDue();
   const cursor = await db.get<{ uidvalidity: string; last_uid: number }>('SELECT uidvalidity,last_uid FROM inbound_cursor WHERE mailbox=?', MAILBOX);
   const client = new ImapFlow({ host: settings.host, port: settings.port, secure: true, auth: { user: settings.user, pass: settings.pass }, logger: false });
   const fetched: { uid: number; source: Buffer }[] = [], oversize: { uid: number; size: number; subject: string; from: string; messageId: string }[] = [];
@@ -125,7 +163,7 @@ export async function checkInbox(): Promise<{ added: number; imported: number; c
   let added = 0, imported = 0, lastUid = cursor && cursor.uidvalidity === uidValidity ? Number(cursor.last_uid) : 0;
   /** An email that cannot be read or stored is listed as skipped with the reason, so it never blocks the emails after it. */
   const skipped = async (uid: number, messageId: string, info: { subject?: string; from?: string }, reason: string) => {
-    const id = randomUUID(), record: InboundMessage = { id, messageId: (messageId || 'uid-' + uidValidity + '-' + uid).slice(0, 300), receivedAt: new Date().toISOString(), from: (info.from || '').toLowerCase(), fromName: '', replyTo: '', subject: (info.subject || '(no subject)').slice(0, 300), snippet: '', attachments: [], auth: { spf: 'none', dkim: 'none', dmarc: 'none', aligned: false }, state: 'dismissed', handledBy: 'email-filter', handledAt: new Date().toISOString(), importError: reason };
+    const id = randomUUID(), record: InboundMessage = { id, messageId: (messageId || 'uid-' + uidValidity + '-' + uid).slice(0, 300), receivedAt: new Date().toISOString(), from: (info.from || '').toLowerCase(), fromName: '', replyTo: '', subject: (info.subject || '(no subject)').slice(0, 300), snippet: '', attachments: [], auth: { spf: 'none', dkim: 'none', dmarc: 'none', aligned: false }, state: 'dismissed', handledBy: 'email-filter', handledAt: new Date().toISOString(), importError: reason, storedAt: new Date().toISOString() };
     const result = await db.run('INSERT INTO inbound_messages (id,message_id,received_at,state,data) VALUES (?,?,?,?,?) ON CONFLICT (message_id) DO NOTHING', id, record.messageId, record.receivedAt, record.state, jsonParam(record));
     if (result.changes) added++;
   };
@@ -162,7 +200,7 @@ export async function checkInbox(): Promise<{ added: number; imported: number; c
       const record: InboundMessage = {
         id, messageId, receivedAt: (parsed.date ?? new Date()).toISOString(), from: (from?.address || '').toLowerCase(), fromName: from?.name || '',
         replyTo: replyTo.toLowerCase(), subject: (parsed.subject || '(no subject)').slice(0, 300), snippet: (parsed.text || '').replace(/\s+/g, ' ').trim().slice(0, 400),
-        attachments, auth: readAuthResults(authHeader, (from?.address || '').toLowerCase()), state: 'new',
+        attachments, auth: readAuthResults(authHeader, (from?.address || '').toLowerCase()), state: 'new', storedAt: new Date().toISOString(),
       };
       // Newsletters and notifications (no-reply senders, mailing lists, bulk mail) with no form attached are never agent
       // requests: they are recorded as skipped (still listed under All) instead of waiting in "To review".
@@ -224,7 +262,7 @@ export async function runClaimedInboxCheck(): Promise<void> {
 
 export async function listInbound(user: Staff) {
   requireStaff(user);
-  const rows = await db.all<{ data: string }>('SELECT data FROM inbound_messages ORDER BY received_at DESC LIMIT 200');
+  const rows = await db.all<{ data: string }>("SELECT data FROM inbound_messages WHERE state<>'cleared' ORDER BY received_at DESC LIMIT 200");
   const cursor = await db.get<{ checked_at: string }>('SELECT checked_at FROM inbound_cursor WHERE mailbox=?', MAILBOX);
   return { messages: rows.map(r => JSON.parse(r.data) as InboundMessage), checkedAt: cursor?.checked_at || '', connected: inboundConnected(), health: await readHealth() };
 }

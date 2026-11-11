@@ -8,6 +8,18 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## Inbound email retention, and approval notices for the Head (2026-11-11)
+
+- **Retention (PO decision 2026-11-11: 30 / 60 / 90 days):** `pruneInbound` in `lib/operations/inbound.ts` runs from the inbox check, at most once an hour per server.
+  - **Cleared after:** 30 days for a skipped email, counted from when it was skipped; 60 days for one nobody handled; 90 days for an imported one, counted from the import.
+  - **What clearing does:** the app's copy of the email and its stored attachments are deleted. A small row stays (id, Message-ID, dates, inquiry link; no sender, subject, text or file names), so the same email is never stored twice.
+  - **Not affected:** the inquiry keeps its own copy of the form. The original stays in Gmail, which the app only reads.
+  - **Cleared emails** no longer show on Requests. An email being imported is never touched.
+  - **Age:** new emails record `storedAt`, and the age is the latest of the Date header, `storedAt` and the handled time, so a backdated Date header can't make an email disappear early.
+  - No migration was needed: `cleared` is a new value of the existing `state` text column.
+  - **Checked:** `scripts/test-inbound-retention.mjs` 5/5 (new): each limit one day either side, attachments deleted, the kept row has no personal data, the Message-ID stays unique, a backdated header, an email being imported, the Requests list, and a second run. `test-inbound-safety` 4/4 and `test-inbound-auth` 5/5 still pass.
+- **Bug fixed: the Head got no "Proposal awaiting approval" notice.** Only Supervisors with approval rights were notified, a rule from before Emerson became Head on 2026-11-05. It now notifies everyone who can approve (`canApproveProposal`: the Head, and Supervisors with approval rights). `test-workflow` passes 53/53 end to end. `test-workspace-upgrade` passes 17/17, roles scoping 30/30.
+
 ## AI removed for the first release (2026-11-11, PO: "we will remove ai for now"; commit `7b5577f`, live on deployment `rmc2-preview-9dr1vzyjv`, aliased to rmc2-test)
 
 The production decisions from the same day are in `TEAM_DECISIONS.md` ("Production deployment decisions").
