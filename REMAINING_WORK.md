@@ -8,6 +8,20 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## Unused stored files: scan and delete for the Admin (2026-11-11)
+
+- **What:** `lib/operations/file-sweep.ts` and an "Unused stored files" card at the bottom of the Admin's Monitoring page. `GET stored-files`, `POST stored-files/scan` and `POST stored-files/delete` are Admin only. Nothing is deleted automatically.
+- **Rules:**
+  - **Folders:** only the folders the app writes record files into are looked at (attachments, bor, generated, inbound, outbox, sources, templates). On this computer the store's root is the data directory, so this keeps the SQLite database, `backups/`, `historical-sources/` and `runtime/` out of reach. The first test run showed the database files listed as unused before this rule was added.
+  - **In use:** a file is in use when its full name, or any id or hash in its name, appears in any text column of any table, or in `catalog.json` (template masters are named by their hash).
+  - **Two passes:** a file is deleted only if a scan at least 24 hours earlier also found it unused, and it is still unused when the Admin deletes, because storage records no write times. At most 500 per run. Each deletion is logged in `security_events`.
+- **Why it matters:** regenerating a proposal replaces the package without deleting the old PDF and Word files. In the real local data, a read-only count found 63 such packages (126 files), plus 6 template masters and 17 forms and emails from 2026-10-10 that nothing refers to, in `runtime/` or anywhere else.
+- **Checked locally:**
+  - `scripts/test-file-sweep.mjs` 6/6 (new): the name rules, Admin only, the database and other folders never listed, the 24-hour wait, a file that gains a reference before deletion is kept, the log entry, and the status.
+  - Browser on a QA copy: a scan found 20 of 48 unused (all regenerated packages). With the scan backdated, the confirmation dialog deleted those 20, and all 7 package files still in use and the database stayed.
+  - `tsc`, build and lint pass.
+- **On TEST:** not deleted. Deleting needs the PO's go-ahead, and the bucket is wiped at cutover anyway.
+
 ## Inbound email retention, and approval notices for the Head (2026-11-11; commit `f87ea03`, live on deployment `rmc2-preview-h85ry287h`, aliased to rmc2-test; `roles-check-online` 37/37)
 
 - **Retention (PO decision 2026-11-11: 30 / 60 / 90 days):** `pruneInbound` in `lib/operations/inbound.ts` runs from the inbox check, at most once an hour per server.

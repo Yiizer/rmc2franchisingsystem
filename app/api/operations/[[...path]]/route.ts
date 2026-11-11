@@ -8,7 +8,8 @@ import { setInquiryOwner } from '@/lib/operations/owners';
 import { declineInquiry, transferWithBor, decideAgentTransfer, requestExpiredTransfer } from '@/lib/operations/registration-actions';
 import { beginSupervisorEdit, cancelSupervisorEdit } from '@/lib/operations/supervisor-edit';
 import { stageTemplate, publishTemplate, setTemplateActive, templateStage } from '@/lib/operations/template-admin';
-import { monitoring } from '@/lib/operations/monitoring';
+import { monitoring } from '@/lib/operations/monitoring';
+import { deleteUnusedFiles, scanFiles, sweepStatus } from '@/lib/operations/file-sweep';
 import { proposalEmployee, proposalStats } from '@/lib/operations/proposal-stats';
 import { createSoa, deactivateSoa, listTeam, resetSoaPassword } from '@/lib/operations/division-team';
 import { getEmailTemplates, saveEmailTemplates } from '@/lib/operations/email-templates';
@@ -103,6 +104,7 @@ export async function GET(request:NextRequest,context:Context){try{
   if(route[0]==='monitoring'&&route[1]==='proposals'&&route[2]==='employee'&&route.length===3)return response(await proposalEmployee(user,request.nextUrl.searchParams));
   if(route[0]==='my-team'&&route.length===1)return response(await listTeam(user)); // Division Head only; an SOA passes the whitelist and gets 403 here
   if(route[0]==='email-templates'&&route.length===1)return response(await getEmailTemplates(user));
+  if(route[0]==='stored-files'&&route.length===1)return response(await sweepStatus(user));
   if(route[0]==='monitoring')return response(await monitoring(user));
   if(route[0]==='inquiries'&&route.length===2)return response(await inquiryDetails(route[1]));
   if(route[0]==='template-stage'&&route[1]){const staged=await templateStage(user,route[1]);return await storedFile(user,'template:'+staged.template.id,'template-preview',staged.pdf,'application/pdf','template-preview.pdf',false);}
@@ -147,7 +149,9 @@ export async function POST(request:NextRequest,context:Context){try{
   if(route[0]==='create-account')return response(await createAccount(user,await request.json()),201);
   if(route[0]==='reset-password')return response(await resetPassword(user,await request.json()));
   if(route[0]==='unlock-account')return response(await unlockAccount(user,await request.json()));
-  if(route[0]==='monitoring-check')return response(await monitoring(user,true));
+  if(route[0]==='monitoring-check')return response(await monitoring(user,true));
+  if(route[0]==='stored-files'&&route[1]==='scan'&&route.length===2)return response(await scanFiles(user));
+  if(route[0]==='stored-files'&&route[1]==='delete'&&route.length===2)return response(await deleteUnusedFiles(user));
   if(route[0]==='template-upload')return response(await stageTemplate(user,await resolveUploads(user,await request.formData())),201);
   if(route[0]==='template-publish')return response({template:await publishTemplate(user,await request.json())});
   if(route[0]==='template-active')return response({template:await setTemplateActive(user,await request.json())});
