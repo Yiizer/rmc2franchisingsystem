@@ -11,7 +11,7 @@ import type { DeliveryMode, SendResult } from './mail-transport';
 import { z } from 'zod';
 import { AppError, allUsers, audit, catalog, db, inquiry, notify, persist, transaction } from './database';
 import { forUpdate, jsonMerge, jsonText } from './sql-dialect';
-import { lockRegistry, lockedInquiry } from './inquiry-index';
+import { lockRegistry, lockedInquiry, matchingInquiries } from './inquiry-index';
 import { isAppError } from './errors';
 import { MIME, deleteQuietly, files } from './file-store';
 import { templateBytes } from './template-source';
@@ -375,6 +375,12 @@ export async function intake(user:Staff,file:File,sender:string,options:{ownerId
     // is kept in source.fields.
     else fillDivisionFromBranch(record,divisionTable);
     await lockRegistry(record); // client identity keys first (Postgres), then the counter row, so two imports of one client are ordered
+    // Which of two matching inquiries came first is decided by createdAt (client-rules precedes). `at` was taken before this
+    // request waited for the client lock, so a request that started first but got the lock second would count as earlier
+    // than the one that just committed, ignore it, and both would be "clear" (found by T2 on a local PostgreSQL, 2026-11-12).
+    // Every match found under the lock was committed earlier, so this one is dated after all of them, whatever the clocks.
+    const earlier=(await matchingInquiries(record)).map(other=>Date.parse(other.createdAt)+1).filter(Number.isFinite);
+    record.createdAt=record.updatedAt=new Date(Math.max(Date.now(),Date.parse(at),...earlier)).toISOString();
     record.id='INQ-'+manilaYear()+'-'+String(await nextInquiryNumber()).padStart(5,'0');
     await updateClientReview(record,user);
     await persist(record);if(options.idempotencyKey){await pruneIntakeKeys(options.idempotencyKey);await db.run('INSERT INTO settings(key,data) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data',options.idempotencyKey,JSON.stringify({inquiryId:record.id,at}));}await notify(record,record.closure?'Request declined — previous registration expired':record.clientReview?.state==='duplicate'?'Duplicate import received — on hold':record.clientReview?.state==='identify'?'Client details needed':'New inquiry',`${record.fields.company||'Agent request'} is ready for form review.`,(await allUsers()).filter(u=>u.active).map(u=>u.id));return record;});if(reused)await deleteQuietly(source.storage);return created;}catch(error){await deleteQuietly(source.storage);throw error;}
@@ -383,7 +389,8 @@ const INTAKE_KEY_LIFE_MS=24*3600000;
 /** Drops this user's expired idempotency keys (the prefix up to the uuid) when a new one is written: a handful of rows at most. */
 async function pruneIntakeKeys(settingsKey:string){
   const prefix=settingsKey.slice(0,settingsKey.lastIndexOf(':')+1);
-  for(const row of await db.all<{key:string;data:string}>('SELECT key,data FROM settings WHERE key LIKE ?',prefix+'%')){
+  // Keys starting with the prefix, as a byte range (the prefix ends in ':', so the range ends at ';'). Unlike LIKE, a '_' or '%' in a user id is not a wildcard.
+  for(const row of await db.all<{key:string;data:string}>('SELECT key,data FROM settings WHERE key>=? AND key<?',prefix,prefix.slice(0,-1)+String.fromCharCode(prefix.charCodeAt(prefix.length-1)+1))){
     let at=NaN;try{at=Date.parse((JSON.parse(row.data) as {at:string}).at);}catch{/* unreadable: expired */}
     if(!(Date.now()-at<INTAKE_KEY_LIFE_MS))await db.run('DELETE FROM settings WHERE key=?',row.key);
   }

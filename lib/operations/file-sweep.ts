@@ -45,7 +45,7 @@ async function databaseText(): Promise<string> {
     const rows = await db.all<{ table_name: string; column_name: string }>("SELECT table_name,column_name FROM information_schema.columns WHERE table_schema=current_schema() AND data_type IN ('text','jsonb','json','character varying')");
     for (const row of rows) columns.push({ table: row.table_name, column: row.column_name });
   } else {
-    const tables = await db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
+    const tables = (await db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table'")).filter(table => !table.name.startsWith('sqlite_'));
     for (const { name } of tables) for (const col of await db.all<{ name: string; type: string }>('PRAGMA table_info(' + quote(name) + ')'))
       if (!col.type || /TEXT|CHAR|CLOB|JSON/i.test(col.type)) columns.push({ table: name, column: col.name });
   }

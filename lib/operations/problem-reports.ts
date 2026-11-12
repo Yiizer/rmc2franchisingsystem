@@ -48,7 +48,7 @@ export async function submitProblemReport(user: Staff, input: unknown, userAgent
   if ((input as { kind?: unknown } | null)?.kind === 'error') return submitCrash(user, input, userAgent);
   const body = submitSchema.parse(input);
   const since = new Date(Date.now() - 86400000).toISOString();
-  const recent = await db.get<{ n: number }>("SELECT COUNT(*) AS n FROM problem_reports WHERE user_id=? AND at>? AND id NOT LIKE 'err-%'", user.id, since);
+  const recent = await db.get<{ n: number }>("SELECT COUNT(*) AS n FROM problem_reports WHERE user_id=? AND at>? AND NOT (id>='err-' AND id<'err.')", user.id, since); // ids starting "err-" ('.' follows '-'; ids compare byte by byte)
   if (Number(recent?.n || 0) >= PROBLEM_REPORTS_PER_DAY) throw new AppError(`You can send up to ${PROBLEM_REPORTS_PER_DAY} problem reports a day. Tell your supervisor directly if you need to send more.`, 429);
   const id = randomUUID(), at = new Date().toISOString();
   const data = { description: body.description, page: body.page || 'Unknown page', role: user.role, ...(body.inquiryId ? { inquiryId: body.inquiryId } : {}), version: appVersion(), ...(body.viewport ? { viewport: body.viewport } : {}), browser: clean(userAgent).slice(0, 300) };
@@ -64,7 +64,7 @@ async function submitCrash(user: Staff, input: unknown, userAgent: string) {
   const existing = await db.get<Row>('SELECT id,at,user_id,status,data FROM problem_reports WHERE id=?', id);
   if (!existing) {
     const since = new Date(Date.now() - 86400000).toISOString();
-    const recent = await db.get<{ n: number }>("SELECT COUNT(*) AS n FROM problem_reports WHERE user_id=? AND at>? AND id LIKE 'err-%'", user.id, since);
+    const recent = await db.get<{ n: number }>("SELECT COUNT(*) AS n FROM problem_reports WHERE user_id=? AND at>? AND id>='err-' AND id<'err.'", user.id, since);
     if (Number(recent?.n || 0) >= CRASHES_PER_DAY) throw new AppError('Too many app errors were logged today.', 429);
     const data = { kind: 'error', source: body.source, description: body.message, ...(stack ? { stack } : {}), page: body.page || 'Unknown page', role: user.role, ...(body.inquiryId ? { inquiryId: body.inquiryId } : {}), version, ...(body.viewport ? { viewport: body.viewport } : {}), browser: clean(userAgent).slice(0, 300), count: 1, lastAt: now, userIds: [user.id] };
     // Two browsers can hit the same new crash at once; the second insert is skipped (its occurrence is not counted).

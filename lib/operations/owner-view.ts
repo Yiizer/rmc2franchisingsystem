@@ -118,7 +118,8 @@ export async function claimReminderSlot(now=Date.now()):Promise<boolean>{
   try{
     if(await db.get('SELECT key FROM settings WHERE key=?',key))return false; // the usual case: a read, no write
     const claimed=await db.run('INSERT INTO settings(key,data) VALUES (?,?) ON CONFLICT (key) DO NOTHING',key,jsonParam({at:new Date(now).toISOString()}));
-    if(claimed.changes)await db.run('DELETE FROM settings WHERE key LIKE ? AND key<?',SLOT_PREFIX+'%',key);
+    // Older slots: every key between the prefix and this key starts with the prefix (keys compare byte by byte), so no LIKE.
+    if(claimed.changes)await db.run('DELETE FROM settings WHERE key>=? AND key<?',SLOT_PREFIX,key);
     return !!claimed.changes;
   }catch(error){console.error('[reminders] slot claim failed:',(error as {code?:string})?.code||'error');return false;}
 }

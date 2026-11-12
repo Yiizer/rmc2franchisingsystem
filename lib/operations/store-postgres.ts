@@ -225,7 +225,9 @@ function createGate(size: number): Gate {
 }
 
 // ---------------------------------------------------------------- store
-type PgScope = { tx: PgSql; active: boolean; aborted: boolean; completed: number };
+type PgScope = { tx: PgSql; active: boolean; aborted: boolean; completed: number; dead: boolean };
+/** How long a transaction body waits, after a connection error of its own, to learn whether the connection itself closed. */
+const DEAD_WAIT_MS = 2000;
 const MAX_RETRIES = 2; // 3 tries in total
 const SNAPSHOT_MODE = 'isolation level repeatable read read only';
 const ROLLED_BACK = 'Statement issued after its transaction was rolled back';
@@ -282,14 +284,36 @@ export function createPostgresStore(url: string, deps: PostgresStoreDeps = {}): 
     if (outer?.active) return work(); // nested: join the outer transaction
     const tries = 1 + Math.max(0, Math.min(MAX_RETRIES, Math.trunc(retries) || 0));
     for (let attempt = 1; ; attempt++) {
-      const scope: PgScope = { tx: sql, active: false, aborted: false, completed: 0 };
+      const scope: PgScope = { tx: sql, active: false, aborted: false, completed: 0, dead: false };
       let finished = false, entered = false, abandoned = false, timer: ReturnType<typeof setTimeout> | undefined;
+      let markDead = () => {};
+      const died = new Promise<void>(resolve => { markDead = resolve; });
+      // postgres.js 3.4.x bug: once the server closes a transaction's connection (idle_in_transaction_session_timeout,
+      // an admin kill, a network drop), the driver rejects the transaction at once, but when the callback later settles it
+      // still writes COMMIT or ROLLBACK to the closed socket. That write throws from a timer ("Cannot read properties of
+      // null (reading 'write')"), outside any try, and ends the whole process. The server has already rolled the
+      // transaction back and the caller already has its error, so a body on a dead connection never hands control back
+      // to the driver: it stays pending, and only this one closure is kept. Reproduced by T1 on a local PostgreSQL 17
+      // (scripts/pg-local.mjs); 3.4.9 has the same code.
+      const hang = () => new Promise<T>(() => {});
       const body = async (tx: PgSql): Promise<T> => {
         if (abandoned) throw waitError(); // the caller already got its 503: just roll the empty transaction back and free the connection
         entered = true; clearTimeout(timer);
         scope.tx = tx; scope.active = true;
-        try { const result = await scopes.run(scope, work); finished = true; return result; }
-        catch (error) { scope.aborted = true; throw error; }
+        try {
+          const result = await scopes.run(scope, work); finished = true;
+          if (scope.dead) return hang();
+          return result;
+        } catch (error) {
+          scope.aborted = true;
+          if (scope.dead) return hang();
+          if (isConnectionFailure(error)) {
+            // The statement failed because its connection failed: wait briefly for the driver to report the close.
+            const closed = await Promise.race([died.then(() => true), new Promise<boolean>(resolve => { const t = setTimeout(() => resolve(false), DEAD_WAIT_MS); t.unref?.(); })]);
+            if (closed) return hang();
+          }
+          throw error;
+        }
         finally { scope.active = false; }
       };
       try {
@@ -300,6 +324,7 @@ export function createPostgresStore(url: string, deps: PostgresStoreDeps = {}): 
         try { return await Promise.race([begun, noConnection]); } finally { clearTimeout(timer); }
       } catch (error) {
         scope.aborted = true;
+        if (entered && isConnectionFailure(error)) { scope.dead = true; markDead(); } // the transaction's own connection is gone
         // A deadlock/serialization failure always means the transaction rolled back, even at COMMIT. A connection failure never
         // after the callback finished: COMMIT may or may not have happened.
         const retryable = isRetryableCode(codeOf(error)) || (!finished && isConnectionFailure(error) && scope.completed === 0);
