@@ -22,7 +22,7 @@ production must be fully working by Tuesday 24 Nov.
   - Vercel Hobby is for non-commercial use;
   - the free Supabase project has no backups you can restore, and pauses after 7 idle days;
   - inbox checks run only while someone has the app open; the cron is daily.
-  - **No backups on this PC** (PO, 2026-11-13). A nightly backup to this PC was set up, then cancelled at the PO's request the same day: the task was removed, and the two copies and the local restore rehearsal files were deleted. **Open:** TEST has no restorable backup during the beta. The alternative is somewhere that is not this PC, for example Supabase Pro on the TEST project (daily backups, about US$25/month) or moving production earlier. **[PO decision]**
+  - **No backups on this PC** (PO, 2026-11-13). A nightly backup to this PC was set up, then cancelled at the PO's request the same day: the task was removed, and the two copies and the local restore rehearsal files were deleted. **Decided (PO, 2026-11-13): "No backup for now."** TEST runs the beta with no restorable backup; the PO accepts the risk of losing beta work if the TEST project fails. Revisit if production slips past 2026-11-24 (option: Supabase Pro on TEST, daily backups, about US$25/month).
 - [x] Test inquiries and test emails cleared from TEST (2026-11-13).
 - [x] Shareable link checked, the live caps made configurable, the runbook schedule set (2026-11-13).
 

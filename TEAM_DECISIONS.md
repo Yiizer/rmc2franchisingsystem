@@ -15,6 +15,7 @@ Format: **Decision** — why — where it applies.
   - **Real emails from Monday:** approved replies, details requests and declines go to the real agents. Switching live mail on is still its own step, with the PO's go-ahead on the sending mailbox and signature.
   - **Access:** testers use a Vercel shareable link, which can be revoked. The app's own sign-in still protects everything.
   - **Staff list:** not ready (2026-11-13). The beta cannot start until real accounts exist.
+  - **No backup of TEST during the beta** (PO 2026-11-13). Nothing goes on the PO's PC, and Supabase Pro on TEST was declined for now. The PO accepts the risk of losing beta work if the free TEST project fails. Revisit if production slips past the 24th.
 
 - **Production deployment decisions** (approved by the PO 2026-11-11, by clicking through the open questions in the handover).
   - **Ownership:** the client owns and pays for the production Vercel team and Supabase organisation (Pro plans, about US$45/month) and invites us as members.
