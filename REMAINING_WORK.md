@@ -1,12 +1,73 @@
-# Remaining work (as of 2026-11-05)
+# Remaining work (updated 2026-11-13)
 
-This is the one checklist of what is left before RMC2 runs on real data. Details and the reasons behind
-each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entries) and `MIGRATION_PLAN.md`.
+This is the one checklist of what is left. Decisions and reasons: `TEAM_DECISIONS.md`. Cutover steps: `PRODUCTION_RUNBOOK.md`.
+The dated sections below this list are the history of what was done and how it was checked.
 
-> **PO decision (2026-11-07): final testing is saved for just before production deployment.** Sections 0
-> ("Built but never tested") and 2 ("Final check") run together as one gate before phase 8 cutover. Until then,
-> work on the other items and test each change as it is built. Nothing goes to production or real staff use
-> without that gate.
+## TO-DO TO GO-LIVE (2026-11-13)
+
+**PO** = Product Owner, **client** = RMC2, **dev** = done in this repo. Monday 16 Nov is a real beta on the test version;
+production must be fully working by Tuesday 24 Nov.
+
+### A. Before the beta on Monday 16 Nov
+- [ ] **PO:** send the company franchising mailbox (address and app password), due Sat 14 Nov.
+- [ ] **dev:** switch live email on with it:
+  - SMTP settings, `RMC2_MAIL_ENV=production`, `RMC2_MAIL_LIVE_CONFIRM`, caps 60/hour and 300/day;
+  - deploy, then send one test email to an address the PO chooses. **[PO go-ahead]**
+- [ ] **PO decision:** the first check of a new mailbox reads its **last 14 days** and imports any franchise forms it finds by itself. Import those, or start from the switch-over?
+- [ ] **PO:** send the real staff list (name, role, email; division for Division Heads and SOAs).
+- [ ] **dev:** create the accounts with temporary passwords, switch off the 6 demo accounts, and delete the 4 `check.` accounts.
+- [ ] **client:** the email signature. **dev:** put it in the email templates.
+- [ ] **PO:** send testers the shareable link (`test-results/online-credentials/SHARE-LINK.txt`), their sign-in, and a note to use **Report a problem** for anything wrong.
+- [ ] **PO decision, risks of running real work on the test setup:**
+  - Vercel Hobby is for non-commercial use;
+  - the free Supabase project has no backups you can restore, and pauses after 7 idle days;
+  - inbox checks run only while someone has the app open; the cron is daily.
+  - Proposed: **dev** writes a nightly backup of the TEST database and files to this PC until production exists.
+- [x] Test inquiries and test emails cleared from TEST (2026-11-13).
+- [x] Shareable link checked, the live caps made configurable, the runbook schedule set (2026-11-13).
+
+### B. During the beta, 16–20 Nov
+- [ ] **dev:** read Problem reports and App errors every day; fix and deploy the same day; test each fix.
+- [ ] **dev:** try it on real phones (iPhone Safari, Android Chrome).
+- [ ] **dev:** run the Admin's "Unused stored files" scan and delete after 24 hours. Leftovers are expected from the clear-out of 2026-11-13.
+- [ ] **dev:** watch the email send counts against the caps; watch for "uncertain" sends and confirm them.
+
+### C. Production setup, 18–21 Nov
+- [ ] **client:** create the Vercel Pro team and the Supabase Pro organisation and invite us, **by Wed 18 Nov at the latest**.
+- [ ] **dev:** set up the Supabase project (Singapore):
+  - migrations one file at a time, with `environment=production` set right after the first;
+  - the `rmc2_app` password;
+  - a private bucket with a 25 MB limit.
+- [ ] **PO:** download the Supabase CA certificate. **dev:** set `RMC2_DATABASE_CA` and `RMC2_DATABASE_SSL=verify-full`.
+- [ ] **dev:** set up the Vercel project:
+  - production env vars (runbook table);
+  - the PDF converter project;
+  - the Firewall rate-limit rule on sign-in;
+  - the inbox cron every minute;
+  - new phone-notification keys.
+- [ ] **PO decision:** a custom domain (for example `franchising.<client domain>`) or the `vercel.app` address; and whether production also sits behind Vercel protection.
+- [ ] **dev:** write the TEST → production move script (runbook §4). It skips fictional records and demo accounts, keeps the counter, and copies the files under the same keys.
+- [ ] **dev:** rehearse the move twice: counts, file hashes, open inquiries and PDFs, then empty production again.
+- [ ] **dev:** check all 13 active templates' PDFs on production against the client's signed-off samples. **client:** sign off the sample PDFs.
+
+### D. Final check, 22–23 Nov
+- [ ] **dev:** run the full regression on production with mail redirected:
+  - every test in `scripts/`;
+  - the stress tests through `scripts/pg-local.mjs`;
+  - the online checks (roles, large files, email edge cases).
+- [ ] **dev:** a final security review: auth, file access, inbound email and env/secrets.
+- [ ] **PO:** merge `phase-4-postgres` into `main`, then sign off for go-live.
+
+### E. Go-live, Tue 24 Nov **[PO]**
+- [ ] Freeze TEST: mail back to staging, and staff stop work.
+- [ ] Back up TEST, move the real data to production, and verify it.
+- [ ] Deploy `main` to production, switch production mail live, and send one test email.
+- [ ] Staff move to the production address; check every account can sign in.
+
+### F. After go-live
+- [ ] Watch Problem reports daily for two weeks. Run the stored-files sweep after the first week.
+- [ ] After 30 days, pause the TEST Supabase project, delete or transfer `rmc2-preview` and `rmc2-converter`, and revoke the yiizer17 Gmail app password.
+- [ ] Later: Supabase Auth (self-service password reset, MFA); a "Create inquiry from this email" button for emails with no attachment; font mapping (Arial → Liberation Sans); fix or retire the old tests `test-directory-model` and `test-workspace-advisors`; remove the leftover AI CSS.
 
 ## Real beta from Monday 2026-11-16, production by 2026-11-24 (PO 2026-11-13)
 
@@ -24,7 +85,9 @@ The decisions are in `TEAM_DECISIONS.md`. The beta runs on the current test vers
   - [ ] **The company mailbox** (the PO sends it 2026-11-14), then switch live email on this weekend (PO). Settings: `RMC2_MAIL_ENV=production`, `RMC2_MAIL_LIVE_CONFIRM`, SMTP set to the company mailbox, caps 60/300. Agents then email their forms to the company mailbox.
   - [ ] **The real staff list**, then create the accounts and switch off the 6 demo accounts and the `check.` ones.
   - [ ] **The email signature** (client).
-  - [ ] **The 13 test emails on Requests:** decide whether to clear them. They stay listed after the mailbox changes.
+  - [x] **The 13 test emails on Requests cleared** (PO, 2026-11-13), with `scripts/clear-test-emails-online.mjs`, after a backup.
+    - They were 9 edge-check emails, the 6 Nov demo form, a Google security alert and two newsletters.
+    - The inbox cursor is kept. Afterwards Requests lists 0, "Check mail now" connects and adds 0, and `roles-check-online` passes 37/37.
 
 ## Email edge cases, inbox failures, days left (2026-11-12)
 
