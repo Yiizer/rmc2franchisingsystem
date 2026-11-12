@@ -83,7 +83,7 @@ try {
   }
   console.log('Two app instances on 127.0.0.1:5190 and :5191, sharing the local database');
   if (command.length) {
-    const run = spawn(command[0], command.slice(1), { cwd: root, env: { ...env, RMC2_TEST_URL: 'http://127.0.0.1:5190', RMC2_TEST_URL2: 'http://127.0.0.1:5191', RMC2_LOCAL_OWNER_URL: url('postgres', superPw, 'rmc2_qa'), RMC2_LOCAL_DATA_DIR: appData /* for scripts/restore-backup.mjs rehearsals */ }, stdio: 'inherit', shell: process.platform === 'win32' && command[0] !== process.execPath });
+    const run = spawn(command[0], command.slice(1), { cwd: root, env: { ...env, RMC2_TEST_URL: 'http://127.0.0.1:5190', RMC2_TEST_URL2: 'http://127.0.0.1:5191' }, stdio: 'inherit', shell: process.platform === 'win32' && command[0] !== process.execPath });
     exitCode = await new Promise(resolve => run.on('exit', code => resolve(code ?? 1)));
   } else exitCode = 0;
 } finally {

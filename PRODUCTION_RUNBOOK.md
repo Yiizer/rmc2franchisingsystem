@@ -145,23 +145,6 @@ templates and the staff accounts.
   - delete or transfer `rmc2-preview` and `rmc2-converter`;
   - pause the Supabase TEST project.
 
-## Nightly backup of the test version (from the 2026-11-16 beta until production)
-
-The free Supabase TEST project has no backups we can restore, and from the beta on it holds real work.
-- **Backup:** Windows Task Scheduler task **"RMC2 TEST nightly backup"**, every day at 23:30 on this PC. If the PC was off, it runs at the next start.
-  - It runs `scripts/backup-test-online.mjs`: a read-only copy of every `rmc2` table from one snapshot, every stored file, and a SHA-256 manifest, checked after writing.
-  - Copies go to `D:\Codes\coverdesk-backups\test-online\<time>\`; the newest 14 are kept.
-  - **Log:** `backup.log` there (one line per backup); errors go to `task-output.log`.
-  - **The PC must be on, or switched on, for it to run.** Look at `backup.log` each morning during the beta.
-- **Restore:** `scripts/restore-backup.mjs` verifies the backup, then restores the tables (one transaction, environment marker kept) and the files under the same keys.
-  - For now it only restores into the throwaway local database: `node scripts/pg-local.mjs --pg-dir <dir> -- node scripts/restore-backup.mjs --backup <dir>`.
-  - Restoring into a real project comes with the §4 move script.
-- **Checked 2026-11-13:**
-  - The backup: 30 tables, 3,849 rows, 113 files, 136 MB; every table count matched the live database.
-  - The task's own run: result 0.
-  - The restore into PostgreSQL 17: every count and file hash matched. The app on the restored copy signs Emerson in with his TEST password, and shows 12 accounts, the templates, Divisions and a 2,535-client directory, the same as live.
-- **When production has its own daily backups,** delete the task (`Unregister-ScheduledTask -TaskName 'RMC2 TEST nightly backup'`) **[PO]**.
-
 ## Rollback
 
 - **App:** promote the previous production deployment in Vercel (instant).
