@@ -3,7 +3,21 @@
 The order of steps to move RMC2 from the test version to production. Every step marked **[PO]** needs the Product
 Owner's go-ahead at that moment. Nothing here contains a password, key or connection string; those live only in the
 Vercel and Supabase dashboards and in git-ignored env files. Decisions behind this plan: `TEAM_DECISIONS.md`
-("Production deployment decisions", 2026-11-11). Open items: `REMAINING_WORK.md`.
+("Production deployment decisions", 2026-11-11, and "Monday 2026-11-16 is a real beta", 2026-11-13). Open items: `REMAINING_WORK.md`.
+
+## Schedule (PO 2026-11-13)
+
+| When | What | Waits on |
+|---|---|---|
+| Sat 14 – Sun 15 Nov | Company mailbox in; live email switched on on the test version (caps 60/300); real staff accounts created, demo accounts off | Mailbox (PO, 14th), staff list, signature |
+| **Mon 16 Nov** | **Real beta** on the test version: employees do real work, agents get real emails | The above |
+| 16 – 20 Nov | Fix what the beta finds, daily. Every fix is deployed to the test version the same day. Client creates the production Vercel team and Supabase organisation | Client accounts by the 18th at the latest |
+| 19 – 21 Nov | Production setup (§1 to §3). Rehearse the data move twice from a copy of TEST into production, then empty it again (§4) | Accounts |
+| Sat 22 – Sun 23 Nov | Final check on production with mail redirected. The PO signs off | |
+| **Tue 24 Nov** | **Go-live:** move the beta's real records from TEST, switch production mail live, staff move to the production address | PO go-ahead |
+
+**From the 16th, the test version holds real work.** Its real inquiries, notifications, files and the client directory are
+**moved** to production at go-live (§4), never wiped. Only fictional records stay behind.
 
 ## 0. Before starting
 
@@ -88,15 +102,26 @@ Vercel and Supabase dashboards and in git-ignored env files. Decisions behind th
    sign-in. No demo or `check.` accounts exist on production.
 3. Enter the Divisions & Branches table, with the client's branch answers.
 
-## 4. Data import (two rehearsals, then the real one) **[PO]**
+## 4. Moving the data (two rehearsals, then the real move) **[PO]**
 
-1. **Rehearsal 1 and 2:** load **made-up** data into the production project with
-   `scripts/load-historical-to-postgres.mjs`, compare the counts and file hashes, then empty it again.
-2. **Real import:** take a snapshot of the PC copy (`.data`) and a backup outside the repo. Then load the client
-   directory, the real inquiries that are kept, and their files under the same paths. Only real records:
-   no `[TEST]` or sample inquiries, and no local accounts.
-3. Verify: record counts, file counts and hashes, and open several inquiries and their PDFs.
-4. Keep the PC copy **read-only for 30 days**.
+Since the 16 Nov beta, **the source is the TEST Supabase project**, not the PC copy. TEST holds the real inquiries from
+the beta, their notifications, history and stored files, the client directory, the Divisions & Branches table, email
+templates and the staff accounts.
+
+1. **Build the move script before the rehearsals.** It copies TEST to production table by table (schema `rmc2`), with
+   these rules:
+   - leave out fictional records (the same rules as `scripts/clear-test-inquiries-online.mjs`; anything unclear is
+     listed for the PO);
+   - leave out the demo accounts and `check.` accounts, sessions and sign-in attempts;
+   - keep the inquiry counter;
+   - copy the referenced stored files under the same keys, from bucket `rmc2-test-files` under `preview/` to the
+     production bucket.
+2. **Rehearsal 1 and 2:** move a copy into production, then compare the counts per table, the file counts and the
+   SHA-256 of every file. Open several inquiries and their PDFs. Then empty production again.
+3. **Real move, at go-live:** freeze TEST first (switch its mail to staging and tell staff to stop), take a backup
+   outside the repo, move, then check as in step 2.
+4. Keep TEST **read-only for 30 days**, then pause it **[PO]**. The PC copy (`.data`) holds only pre-beta records; keep
+   it read-only too.
 
 ## 5. Go-live
 
