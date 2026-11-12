@@ -8,6 +8,24 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## Real beta from Monday 2026-11-16, production by 2026-11-24 (PO 2026-11-13)
+
+The decisions are in `TEAM_DECISIONS.md`. The beta runs on the current test version, with real emails to agents and access through the shareable link.
+- **Access:** the shareable link from the 2026-11-04 demo is still active and never expires. The PO chose to keep it, so it is now the beta testers' link. Saved in the git-ignored `test-results/online-credentials/SHARE-LINK.txt`.
+  - Checked: without it, Vercel's login (302); with it, the app's sign-in page (200).
+  - It is attached to the alias, so it survives every re-alias.
+- **Sending caps for real use:** live mode used to be fixed at 5/hour and 20/day. Now `RMC2_MAIL_CAP_PER_HOUR` and `_PER_DAY` work in live mode too, up to 100/500. PO choice: **60/hour, 300/day**, set when live email is switched on. `test-mail-transport` 16/16 (new caps check).
+- **Fictional inquiries cleared from TEST** (PO: "Yes, delete them"), with `scripts/clear-test-inquiries-online.mjs`. It lists by default, flags anything that doesn't look fictional, backs up, then deletes in one checked transaction.
+  - All 26 were demo or test records (`INQ-2026-00141` to `00154`, `00281` to `00292`). `00154` (the demo form emailed in for the 11-06 import check) and `00284` (yesterday's hand-imported test PDF) were checked by hand.
+  - Deleted: 26 inquiries, 59 notifications, 225 recipient rows, 76 index keys, 26 summaries, 12 outbox rows, and the 2 retired "Online Check Plan" templates. Backup in `test-results/clear-test-inquiries/` (git-ignored).
+  - **Kept:** the client directory (3,579), 13 active templates, all 12 accounts, and the append-only audit rows. Stored files go through the Admin's sweep after 24 hours.
+  - After: `roles-check-online` 37/37, 0 inquiries.
+- **Still needed before Monday:**
+  - [ ] **The company mailbox** (the PO sends it 2026-11-14), then switch live email on this weekend (PO). Settings: `RMC2_MAIL_ENV=production`, `RMC2_MAIL_LIVE_CONFIRM`, SMTP set to the company mailbox, caps 60/300. Agents then email their forms to the company mailbox.
+  - [ ] **The real staff list**, then create the accounts and switch off the 6 demo accounts and the `check.` ones.
+  - [ ] **The email signature** (client).
+  - [ ] **The 13 test emails on Requests:** decide whether to clear them. They stay listed after the mailbox changes.
+
 ## Email edge cases, inbox failures, days left (2026-11-12)
 
 - **Online on TEST** (`scripts/email-edge-online.mjs`, fictional data; 9 test emails sent from the test mailbox to itself, plus 6 details requests to the redirect). 9/9:

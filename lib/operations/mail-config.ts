@@ -59,9 +59,12 @@ export function parseMailConfig(env: Record<string, string | undefined>, dataDir
     if (!allowlist.length || allowlist.length > 10 || !allowlist.every(a => !a.includes('*') && isSafeEmail(a))) return refuse('the allowlist must contain 1-10 exact addresses.');
     if (!redirectTo.length || redirectTo.length > 3 || !redirectTo.every(a => isSafeEmail(a) && allowlist.includes(a))) return refuse('the redirect inbox must be on the allowlist.');
   }
-  // Staging may raise the caps for a demo day (all mail still goes to the redirect inbox), never above 60/hour and 200/day.
-  const cap = (value: string | undefined, fallback: number, max: number) => { const n = Number(clean(value)); return mailEnv === 'staging' && Number.isInteger(n) && n > 0 ? Math.min(n, max) : fallback; };
-  const caps = { perHour: cap(env.RMC2_MAIL_CAP_PER_HOUR, MAIL_CAPS.perHour, 60), perDay: cap(env.RMC2_MAIL_CAP_PER_DAY, MAIL_CAPS.perDay, 200) };
+  // The caps are a brake, not a quota: without a setting they stay at 5/hour and 20/day. Real use (PO 2026-11-13: beta from
+  // 2026-11-16, 60/hour and 300/day) may raise them, never above 100/hour and 500/day (Gmail allows about 500 a day for a
+  // personal account). Staging keeps its old ceiling of 60/200, since all its mail goes to one test inbox.
+  const ceiling = mailEnv === 'production' ? { perHour: 100, perDay: 500 } : { perHour: 60, perDay: 200 };
+  const cap = (value: string | undefined, fallback: number, max: number) => { const n = Number(clean(value)); return Number.isInteger(n) && n > 0 ? Math.min(n, max) : fallback; };
+  const caps = { perHour: cap(env.RMC2_MAIL_CAP_PER_HOUR, MAIL_CAPS.perHour, ceiling.perHour), perDay: cap(env.RMC2_MAIL_CAP_PER_DAY, MAIL_CAPS.perDay, ceiling.perDay) };
   const config: MailConfig = { mode: 'smtp', env: mailEnv, redirectTo, allowlist, dryRun, caps, from: { name, address } };
   Object.defineProperty(config, 'smtp', { value: { host, port, user, pass }, enumerable: false });
   return config;

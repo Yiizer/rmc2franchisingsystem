@@ -8,6 +8,14 @@ Format: **Decision** — why — where it applies.
 
 ## Product decisions (approved by the Product Owner)
 
+- **Monday 2026-11-16 is a real beta, and production goes live by 2026-11-24** (PO 2026-11-13). This replaces "dry runs in parallel with the old process" (2026-11-08) and the "cutover around 2026-11-23" in the entry below.
+  - **Monday:** actual employees do actual work in the app, as beta testers. It is not a rehearsal.
+  - **By 2026-11-24:** properly deployed and fully working on production, with no known bugs.
+  - **The beta runs on the current test version** (Vercel `rmc2-preview`, Supabase TEST). Real inquiries from Monday will sit on these test accounts until the move to the client-owned production project. The PO accepts that risk, as for the client directory. Those real records must be moved to production at cutover, not wiped with the test data.
+  - **Real emails from Monday:** approved replies, details requests and declines go to the real agents. Switching live mail on is still its own step, with the PO's go-ahead on the sending mailbox and signature.
+  - **Access:** testers use a Vercel shareable link, which can be revoked. The app's own sign-in still protects everything.
+  - **Staff list:** not ready (2026-11-13). The beta cannot start until real accounts exist.
+
 - **Production deployment decisions** (approved by the PO 2026-11-11, by clicking through the open questions in the handover).
   - **Ownership:** the client owns and pays for the production Vercel team and Supabase organisation (Pro plans, about US$45/month) and invites us as members.
   - **Backups:** Supabase Pro daily backups (7 days kept), plus a regular export of the file bucket.

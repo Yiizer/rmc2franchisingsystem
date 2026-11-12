@@ -71,6 +71,14 @@ await check('guard refusals fall back to local with a value-free warning', () =>
   assert.equal(cfg({}, path.join(realDir, 'nested')).mode, 'local');
   assert.equal(cfg({ RMC2_MAIL_ENV: 'production', RMC2_MAIL_LIVE_CONFIRM: LIVE_CONFIRM }, path.join(cwd, 'prod-data')).mode, 'smtp', 'production needs confirm + non-test data dir');
 });
+await check('sending caps: 5/20 by default; live may raise them up to 100/500 (PO 2026-11-13: 60/300), staging up to 60/200', () => {
+  const live = over => cfg({ RMC2_MAIL_ENV: 'production', RMC2_MAIL_LIVE_CONFIRM: LIVE_CONFIRM, ...over }, path.join(cwd, 'prod-data')).caps;
+  assert.deepEqual(live({}), { perHour: 5, perDay: 20 });
+  assert.deepEqual(live({ RMC2_MAIL_CAP_PER_HOUR: '60', RMC2_MAIL_CAP_PER_DAY: '300' }), { perHour: 60, perDay: 300 });
+  assert.deepEqual(live({ RMC2_MAIL_CAP_PER_HOUR: '1000', RMC2_MAIL_CAP_PER_DAY: '99999' }), { perHour: 100, perDay: 500 });
+  assert.deepEqual(live({ RMC2_MAIL_CAP_PER_HOUR: '-3', RMC2_MAIL_CAP_PER_DAY: 'lots' }), { perHour: 5, perDay: 20 });
+  assert.deepEqual(cfg({ RMC2_MAIL_CAP_PER_HOUR: '1000', RMC2_MAIL_CAP_PER_DAY: '1000' }).caps, { perHour: 60, perDay: 200 });
+});
 await check('email validator and masking', () => {
   for (const bad of ['a@b.com,c@d.com', '"x@y.com"@z.com', 'a@b.com\r\nBcc: e@x.com', 'ａ@b.com', 'a@b.com;c@d.com', '<a@b.com>', 'a b@c.com', 'a@b', 'a@@b.com', '(a)@b.com', 'a@b..com', 'K@b.com', 'a@b.com\u2028', '']) assert.equal(isSafeEmail(bad), false, JSON.stringify(bad));
   for (const ok of ['a@b.com', 'First.Last+tag@Sub.Example.co']) assert.equal(isSafeEmail(ok), true, ok);
