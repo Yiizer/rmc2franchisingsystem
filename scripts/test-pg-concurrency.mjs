@@ -59,14 +59,16 @@ const seen = { ids: [] };
 // ================================================================== T1
 if (wants('T1')) {
   await check('T1 app role: transaction pooler (6543), search_path rmc2, timeouts 15s/5s/30s, not superuser/bypassrls', async () => {
-    const u = new URL(url);
-    assert.equal(u.port, '6543', 'app URL must use the transaction pooler port');
-    assert.ok(/pooler/.test(u.hostname), 'host is a pooler host');
+    const u = new URL(url), local = ['127.0.0.1', 'localhost', '::1'].includes(u.hostname); // scripts/pg-local.mjs: no Supabase pooler there
+    if (!local) {
+      assert.equal(u.port, '6543', 'app URL must use the transaction pooler port');
+      assert.ok(/pooler/.test(u.hostname), 'host is a pooler host');
+    }
     const row = await db.get(`SELECT current_user AS u, current_setting('search_path') AS sp, current_setting('statement_timeout') AS st, current_setting('lock_timeout') AS lt, current_setting('idle_in_transaction_session_timeout') AS it,
       (SELECT rolsuper FROM pg_roles WHERE rolname=current_user) AS su, (SELECT rolbypassrls FROM pg_roles WHERE rolname=current_user) AS bypass, (SELECT rolcreatedb OR rolcreaterole FROM pg_roles WHERE rolname=current_user) AS create_stuff`);
     assert.match(row.u, /^rmc2_app/); assert.equal(row.sp, 'rmc2'); assert.equal(row.st, '15s'); assert.equal(row.lt, '5s'); assert.equal(row.it, '30s');
     assert.equal(row.su, false); assert.equal(row.bypass, false); assert.equal(row.create_stuff, false);
-    return `user ${row.u.split('.')[0]}, search_path ${row.sp}, timeouts ${row.st}/${row.lt}/${row.it}`;
+    return `user ${row.u.split('.')[0]}, search_path ${row.sp}, timeouts ${row.st}/${row.lt}/${row.it}` + (local ? ' (local database: pooler port not applicable)' : '');
   });
   await check('T1 DDL and other schemas are denied to the app role', async () => {
     for (const statement of ['CREATE TABLE rmc2.qa_should_fail(x int)', 'DROP TABLE rmc2.users', 'ALTER TABLE rmc2.users ADD COLUMN qa int', 'TRUNCATE rmc2.app_meta_does_not_matter', 'CREATE TABLE public.qa_should_fail(x int)', 'SELECT * FROM auth.users LIMIT 1', 'SELECT * FROM storage.objects LIMIT 1'])
@@ -151,10 +153,12 @@ if (wants('T2')) {
     const ids = all.map(r => r.id); seen.ids.push(...ids);
     assert.equal(new Set(ids).size, ids.length, label + ': inquiry numbers must be distinct');
     for (const g of groups) {
-      const rows = await db.all("SELECT id, data->'clientReview'->>'state' AS state FROM inquiries WHERE data->'fields'->>'company'=?", g.company);
+      const rows = await db.all("SELECT id, data->'clientReview'->>'state' AS state, data->>'createdAt' AS at, data->'clientReview'->'matches' AS matches FROM inquiries WHERE data->'fields'->>'company'=? ORDER BY id", g.company);
       assert.equal(rows.length, g.count, label + ' ' + g.company + ': rows in the database');
       const clear = rows.filter(r => r.state === 'clear'), held = rows.filter(r => r.state === 'duplicate');
-      assert.equal(clear.length, 1, label + ' ' + g.company + ': exactly one clear, got ' + rows.map(r => r.state).join(','));
+      const answered = new Map(all.map(r => [r.id, r]));
+      const detail = () => rows.map(r => `${r.id} ${r.state} ${String(r.at).slice(11, 23)} matches=[${(typeof r.matches === 'string' ? JSON.parse(r.matches) : r.matches || []).map(m => m.inquiryId).join(' ')}] intake-said=${answered.get(r.id)?.state}[${(answered.get(r.id)?.matches || []).join(' ')}]`).join(' | ');
+      assert.equal(clear.length, 1, label + ' ' + g.company + ': exactly one clear, got ' + rows.map(r => r.state).join(',') + ' :: ' + (clear.length === 1 ? '' : detail()));
       assert.equal(held.length, g.count - 1, label + ' ' + g.company + ': the rest are held');
     }
     for (const g of groups.filter(g => g.mustAcceptAtOnce)) {

@@ -12,11 +12,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { register } from 'tsx/esm/api';
-import { client, createChecks, databaseUrl, formBytes, intakeForm, maskText, passwordFor, require, root, sleep, uniq } from './db-parity/lib.mjs';
+import { client, createChecks, databaseUrl, formBytes, intakeForm, maskText, passwordFor, pgSsl, require, root, sleep, uniq } from './db-parity/lib.mjs';
 
 const urlA = process.env.RMC2_TEST_URL, urlB = process.env.RMC2_TEST_URL2;
 for (const u of [urlA, urlB]) if (!/^http:\/\/127\.0\.0\.1:519\d$/.test(u || '')) throw new Error('Use isolated localhost QA instances on 5190-5199.');
-assert.notEqual(urlA, urlB, 'This script needs two instances (run-pgn.mjs --n 2).');
+assert.notEqual(urlA, urlB, 'This script needs two instances (scripts/pg-local.mjs starts them on a throwaway local database).');
 const only = process.argv.slice(2).filter(a => /^T\d+h?$/.test(a));
 const wants = id => !only.length || only.includes(id);
 const A = client(urlA), B = client(urlB);
@@ -24,7 +24,7 @@ const { check, finish } = createChecks();
 const run = uniq();
 const pgmod = await import('file:///' + require.resolve('postgres').replace(/\\/g, '/'));
 const postgres = pgmod.default ?? pgmod;
-const sql = postgres(databaseUrl(), { ssl: 'require', max: 4, prepare: false, connect_timeout: 15, onnotice: () => {}, idle_timeout: 10 });
+const sql = postgres(databaseUrl(), { ssl: pgSsl(), max: 4, prepare: false, connect_timeout: 15, onnotice: () => {}, idle_timeout: 10 });
 const who = ['admin', 'cryssa', 'jefferson', 'judy', 'emerson', 'zeo'];
 const pw = passwordFor('admin'); // the admin's own password (used as "current password" for sensitive account changes)
 const loginAll = async () => { for (const id of who) { const r = await A.login(id); assert.equal(r.status, 200, 'login ' + id + ' ' + r.status); B.sessions[id] = A.sessions[id]; } };
@@ -149,8 +149,13 @@ if (wants('T4')) {
 
 // ================================================================== T5
 if (wants('T5')) {
-  const keyOf = email => 'login:' + createHash('sha256').update(email.toLowerCase()).digest('hex');
+  // Since 8ea0c07 a known account counts on its id ('login-user:<id>', username and email share it); an unknown name on the
+  // hash of the typed text. Every attempt also counts on the caller's address ('login-ip:<hash>', 60 per 15 minutes):
+  // `next start` sets x-forwarded-for like Vercel does, so these floods from one address trip it as well.
+  const keyOf = email => { const id = /^(\w+)@rmc2\.local$/.exec(email)?.[1]; return id && who.includes(id) ? 'login-user:' + id : 'login:' + createHash('sha256').update(email.toLowerCase()).digest('hex'); };
   const clearKey = async email => { await sql`delete from auth_attempts where key=${keyOf(email)}`; };
+  const clearIp = async () => { await sql`delete from auth_attempts where key like 'login-ip:%'`; };
+  await clearIp();
   const flood = async (email, n, password = 'definitely-wrong-' + uniq()) => {
     const started = Date.now();
     const rs = await Promise.all(Array.from({ length: n }, (_, i) => fetch(pick(i).api + 'login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) }).then(async r => ({ status: r.status, ms: Date.now() - started, body: await r.json().catch(() => ({})) }))));
@@ -168,8 +173,13 @@ if (wants('T5')) {
     return JSON.stringify(t) + ' in ' + ms + ' ms';
   });
   await check('T5 real account: 100 parallel wrong passwords block it (even the right password gets 429), other accounts unaffected, unblocking restores sign-in', async () => {
+    await clearIp();
     const { t } = await flood('judy@rmc2.local', 100);
     assert.ok((t[401] || 0) <= 8, JSON.stringify(t));
+    const ipBlocked = (await sql`select count(*)::int n from auth_attempts where key like 'login-ip:%' and blocked_until > ${Date.now()}`)[0].n;
+    assert.equal(ipBlocked, 1, 'the flooding address is blocked too (per-IP limit, shared by both instances)');
+    assert.equal((await B.login('cryssa')).status, 429, 'while the address is blocked, every sign-in from it waits');
+    await clearIp();
     const right = await A.login('judy'); assert.equal(right.status, 429, 'blocked account: right password still refused');
     assert.equal((await B.login('cryssa')).status, 200, 'another account can still sign in');
     await clearKey('judy@rmc2.local');
@@ -185,6 +195,7 @@ if (wants('T5')) {
   });
   await check('T5 a successful sign-in clears the failure counter (7 wrong, then right, then 7 wrong again are all verified)', async () => {
     const email = 'zeo@rmc2.local';
+    await clearIp();
     for (let i = 0; i < 7; i++) assert.equal((await A.raw('x', 'login', { email, password: 'bad' + i })).status, 401);
     assert.equal((await A.login('zeo')).status, 200);
     for (let i = 0; i < 7; i++) assert.equal((await B.raw('x', 'login', { email, password: 'bad' + i })).status, 401, 'attempt ' + i);
@@ -318,7 +329,8 @@ if (wants('T10')) {
   });
   await check('T10 metadata change on A (staff list) invalidates B\'s metadataVersion and ships the new users', async () => {
     const wm = await poll(B, 'admin'); const m1 = wm.metadataVersion;
-    await A.call('admin', 'users', { id: 'jefferson', active: true, role: 'Employee', canApprove: false }, 200);
+    // Since the roles restructure the Head manages accounts and re-enters their password for role changes.
+    await A.call('emerson', 'users', { id: 'jefferson', active: true, role: 'Employee', canApprove: false, currentPassword: passwordFor('emerson') }, 200);
     B.sessions.jefferson = (await A.login('jefferson')) && A.sessions.jefferson;
     const next = await again(B, 'admin', wm);
     assert.ok(!next.unchanged); assert.notEqual(next.metadataVersion, m1); assert.ok(Array.isArray(next.users) && next.users.length >= 6);

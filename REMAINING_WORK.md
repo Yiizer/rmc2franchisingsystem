@@ -8,6 +8,28 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## Postgres stress tests on a local copy, two bugs fixed, cutover runbook (2026-11-12)
+
+PO decisions 2026-11-12: T4, T5 and T10 run only on a throwaway local database, never on TEST. Email edge cases may run on TEST, to the redirect inbox. The inbox-down cases are simulated locally.
+- **`scripts/pg-local.mjs` (new):** a throwaway PostgreSQL 17 on 127.0.0.1, with UTF-8 like Supabase and the three Supabase roles.
+  - It applies all 13 migrations one by one, starts two `next start` instances sharing one deployment id, runs a test against them, then deletes everything.
+  - `embedded-postgres` (17.10.0-beta.17, PO approved the download) is installed outside the repo and is not a project dependency.
+- **Results on the local copy:**
+  - `test-pg-http` 21/21: T3, T4, T5, T6h, T8, T10.
+  - `test-pg-concurrency` 16/16: T1, T2, T6, T7. On a local database the pooler-port check reports "not applicable".
+  - **T3, T4, T5 and T10 are now valid.** Fixes were in the tests: T5 for the per-account and per-IP sign-in keys (`next start` sets `x-forwarded-for` like Vercel, so the IP limit applies); T10 for account changes that only the Head may make.
+- **Bug 1, fixed: a closed transaction connection could crash the server** (the "postgres.js socket error" seen once on 11-09). When Postgres ends a transaction left idle (30 seconds), postgres.js 3.4.x still writes COMMIT or ROLLBACK to the dead socket once the body finishes. That write throws from a timer and ends the process; 3.4.9 has the same code. `store-postgres.ts` now never hands a body on a dead connection back to the driver. The caller already got its 503, and the server has already rolled back. T1's idle test now passes, and the suite runs on to the end.
+- **Bug 2, fixed: two agents could both get "clear" for the same client.** Who was first is decided by `createdAt`, but intake set it *before* waiting for the client lock. A request that started first but got the lock second counted as earlier than the one that had just committed, ignored it, and stayed clear. T2 showed this in 5 of 7 runs, on the committed code too; it hardly shows on TEST, where the network spreads requests out.
+  - **Fix:** under the lock, the new inquiry is dated after every match it finds, whatever the clocks say (`intake` in `service.ts`).
+  - **After the fix:** T2 6/6 in 5 runs in a row; SQLite `test-client-protection` 48/48 and `test-workflow` 53/53.
+- **Production runbook:** `PRODUCTION_RUNBOOK.md` (new). The environment marker order was checked on the local copy: with `environment=production` set right after the first migration, it stays `production` after all 13, and `rmc2_app` is refused when it tries to change it (42501).
+- **Portable SQL:** the last `LIKE` queries were replaced with byte ranges (`owner-view.ts`, `problem-reports.ts`, the intake key prune in `service.ts`, `file-sweep.ts`). `test-phase4-callsites` now passes 15/15; it failed on HEAD.
+- **Other out-of-date tests fixed:**
+  - `test-store-postgres`: the paused-project message.
+  - `test-storage` 45/45: progress reports are filed by the owner.
+  - `test-config`: 8 seeded accounts.
+- **Local regression (2026-11-12):** all 34 standalone tests pass, except `test-directory-model` (old fixture databases) and `test-workspace-advisors` (its own module loader is broken). Both failed the same way before today. `test-proposal-document` needs `node --env-file=.env.local`. Server tests: `test-client-protection` 48/48, `test-workflow` 53/53, `test-workspace-upgrade` 17/17.
+
 ## Unused stored files: scan and delete for the Admin (2026-11-11)
 
 - **What:** `lib/operations/file-sweep.ts` and an "Unused stored files" card at the bottom of the Admin's Monitoring page. `GET stored-files`, `POST stored-files/scan` and `POST stored-files/delete` are Admin only. Nothing is deleted automatically.

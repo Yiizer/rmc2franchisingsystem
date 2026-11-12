@@ -37,7 +37,7 @@ await check('application SQL stays inside the portable subset (no SQLite-only co
     let text = readFileSync(path.join('lib/operations', file), 'utf8');
     if (file === 'database.ts') text = text.slice(text.indexOf('export type DatabaseSelection')); // openDatabase() is the SQLite adapter's DDL
     for (const [pattern, why] of forbidden) {
-      const hit = text.split('\n').find(line => pattern.test(line) && !/^\s*(\/\/|\*)/.test(line) && !/z\.string\(\)\.datetime/.test(line));
+      const hit = text.split('\n').find(line => pattern.test(line) && !/^\s*(\/\/|\/?\*)/.test(line) /* comment lines: //, /** and * */ && !/z\.string\(\)\.datetime/.test(line));
       assert.ok(!hit, `${file}: ${why}: ${hit?.trim().slice(0, 120)}`);
     }
   }

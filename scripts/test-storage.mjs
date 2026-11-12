@@ -283,22 +283,26 @@ const database = await imp('database.ts'), svc = await imp('service.ts'), forms 
 const store = fs.files();
 assert.equal(store.kind, 'local');
 const employee = (await database.allUsers()).find(user => user.id === 'cryssa');
+// Since the roles restructure (2026-11-05) only the client's owner (a Division Head or SOA) files progress reports.
+const owner = (await database.allUsers()).find(user => user.id === 'division-head');
 const importForm = async (company, agent) => {
   const fields = { company, sector: 'Private', agentName: agent, agentEmail: agent.toLowerCase().replace(/\s+/g, '.') + '@example.test', agentPhone: '09171234567', contactName: 'Contact of ' + company, addressee: 'Contact of ' + company, contactEmail: 'contact@example.test', division: 'Division 1' };
-  return svc.intake(employee, new File([await forms.sampleForm(fields)], company.replace(/\W+/g, '-') + '.xlsx'), fields.agentEmail);
+  return svc.intake(employee, new File([await forms.sampleForm(fields)], company.replace(/\W+/g, '-') + '.xlsx'), fields.agentEmail, { ownerId: owner.id });
 };
 const pdfFile = name => new File([Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF')], name, { type: 'application/pdf' });
-const reportBody = (record, extra = {}) => ({ revision: record.revision, requestId: randomUUID(), sender: record.fields.agentEmail, sentAt: new Date(Date.now() - 12 * 3600000).toISOString(), summary: 'Agent confirmed the proposal was presented.', reference: 'REF-' + run, ...extra });
+// The owner's report form since 2026-11-05: no revision or sender (the owner is the sender), strict schema.
+const reportBody = (record, extra = {}) => ({ requestId: randomUUID(), sentAt: new Date(Date.now() - 12 * 3600000).toISOString(), summary: 'Agent confirmed the proposal was presented.', reference: 'REF-' + run, ...extra });
+const otherOwner = { ...owner, id: 'not-the-owner' };
 
 await check('intake stores the original under attachments/ and the file is readable through the store', async () => {
   const record = await importForm('Storage Intake Corp', 'Agent Intake');
   assert.match(record.source.storage, /^attachments\/[0-9a-f-]{36}\.xlsx$/);
   assert.ok((await store.get(record.source.storage)).length > 1000);
 });
-await check('progress report with a stale revision leaves no new file', async () => {
+await check('a progress report refused before storing (someone else\'s client) leaves no new file', async () => {
   const record = await importForm('Stale Report Corp', 'Agent Stale');
   const before = (await store.list('progress-reports')).length;
-  await assert.rejects(clientService.addProgressReport(record.id, employee, reportBody(record, { revision: record.revision + 50 }), pdfFile('report.pdf')), error => error.status === 409);
+  await assert.rejects(clientService.addProgressReport(record.id, otherOwner, reportBody(record), pdfFile('report.pdf')), error => error.status === 404);
   assert.equal((await store.list('progress-reports')).length, before);
 });
 await check('progress report: success stores one file; repeating the same requestId leaves no orphan', async () => {
@@ -308,14 +312,15 @@ await check('progress report: success stores one file; repeating the same reques
   record = await database.inquiry(record.id);
   const before = (await store.list('progress-reports')).length;
   const body = reportBody(record);
-  const saved = await clientService.addProgressReport(record.id, employee, body, pdfFile('report.pdf'));
+  const saved = await clientService.addProgressReport(record.id, owner, body, pdfFile('report.pdf'));
   assert.equal(saved.progressReports.length, 1);
   assert.equal((await store.list('progress-reports')).length, before + 1);
   assert.ok(await store.stat(saved.progressReports[0].attachment.storage), 'the referenced key exists');
-  const again = await clientService.addProgressReport(record.id, employee, body, pdfFile('report.pdf'));
+  const again = await clientService.addProgressReport(record.id, owner, body, pdfFile('report.pdf'));
   assert.equal(again.progressReports.length, 1, 'idempotent');
   assert.equal((await store.list('progress-reports')).length, before + 1, 'the duplicate request must not leave a second file');
-  await assert.rejects(clientService.addProgressReport(record.id, employee, reportBody(saved, { sender: 'someone.else@example.test' }), pdfFile('report2.pdf')), error => error.status === 409);
+  // A second report while the first still waits for a decision is refused (409), and leaves no file.
+  await assert.rejects(clientService.addProgressReport(record.id, owner, reportBody(saved), pdfFile('report2.pdf')), error => error.status === 409);
   assert.equal((await store.list('progress-reports')).length, before + 1, 'a rejected report must not leave a file');
 });
 await check('a BOR transfer that fails its checks leaves no file in bor/', async () => {

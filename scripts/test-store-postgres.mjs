@@ -84,7 +84,8 @@ await check('mapPgError: connection, pool, auth and paused-project failures -> 5
       const mapped = pg.mapPgError(error);
       assert.ok(mapped instanceof AppError, error.code);
       assert.equal(mapped.status, 503);
-      assert.equal(mapped.message, 'Database busy. Try again.');
+      // Since 2026-11-09 a paused Supabase project ("Tenant or user not found") says so, still with no details.
+      assert.equal(mapped.message, /tenant or user not found/i.test(error.message) ? 'The database cannot be reached right now. It may be paused: ask the administrator to check Supabase.' : 'Database busy. Try again.');
     }
   } finally { console.error = originalError; }
   assert.ok(logged.every(line => !/secret-host|10\.0\.0\.9|rmc2_app|postgres:\/\//.test(line)), 'logs carry codes only');

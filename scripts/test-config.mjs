@@ -47,8 +47,8 @@ const prodNone = run('prod-none', { NODE_ENV: 'production', RMC2_SEED_DEMO: unde
 assert.deepEqual([prodNone.u, prodNone.i], [0, 0], 'production without flag creates no demo users/inquiries');
 assert.equal(prodNone.cat, 1, 'RMC2_RESOURCES_DIR catalog is read');
 const prodSeed = run('prod-seed', { NODE_ENV: 'production', RMC2_SEED_DEMO: '1' });
-assert.deepEqual([prodSeed.u, prodSeed.i], [6, 4], 'production with flag seeds as before');
+assert.deepEqual([prodSeed.u, prodSeed.i], [8, 4], 'production with flag seeds as before (6 staff + the Division Head and SOA demo accounts since 2026-11-05)');
 const dev = run('dev', { NODE_ENV: 'development', RMC2_SEED_DEMO: undefined });
-assert.deepEqual([dev.u, dev.i], [6, 4], 'dev default seeds as before');
+assert.deepEqual([dev.u, dev.i], [8, 4], 'dev default seeds as before (8 accounts)');
 console.log('config tests passed');
 rmSync(base, { recursive: true, force: true });

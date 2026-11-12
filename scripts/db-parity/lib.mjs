@@ -13,6 +13,7 @@ export const LOCAL_PASSWORD = 'Rmc2Local!2026';
  *  git-ignored CREDENTIALS.txt (never printed). Falls back to the shared local password when the file or the account is missing. */
 let credentialMap;
 export function passwordFor(id) {
+  if (process.env.RMC2_QA_LOCAL_PASSWORDS === '1') return LOCAL_PASSWORD; // a local throwaway database seeded with the shared password (pg-local.mjs)
   if (!credentialMap) {
     credentialMap = {};
     const file = path.join(root, 'test-results', 'online-credentials', 'CREDENTIALS.txt');
@@ -34,6 +35,13 @@ export function databaseUrl() {
   const url = process.env.RMC2_DATABASE_URL || supabaseEnv().RMC2_DATABASE_URL;
   if (!url) throw new Error('RMC2_DATABASE_URL is not set and .env.supabase.test has none.');
   return url;
+}
+/** TLS for the QA scripts' own connections: off only for a localhost database started by pg-local.mjs. */
+export function pgSsl() {
+  if ((process.env.RMC2_DATABASE_SSL || '').toLowerCase() !== 'disable') return 'require';
+  const host = new URL(databaseUrl()).hostname;
+  if (!['127.0.0.1', 'localhost', '::1'].includes(host)) throw new Error('RMC2_DATABASE_SSL=disable is only for a localhost database.');
+  return false;
 }
 /** Masks anything that looks like a connection string, host of the URL, or a secret key. */
 export function maskText(text) {
