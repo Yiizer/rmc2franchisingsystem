@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { db } from './database';
+import { db, jsonParam, tokenHash } from './database';
 import { AppError } from './errors';
 import { deleteQuietly, files, type FileStore } from './file-store';
 import { logFileAccess } from './file-privacy';
@@ -73,6 +73,16 @@ export async function startUpload(user: Staff, input: unknown): Promise<{ mode: 
 }
 
 /** Replaces each "<field>__upload" id with the uploaded file (named from "<field>__name"), and deletes the stored copy. */
+/** An upload is used once. Two parallel requests with the same id both found the file before either deleted it, so the
+ *  first to insert this row wins and the other is refused. The key starts with the upload's own time, so claims older than
+ *  an upload can live are removed by a key range (keys compare byte by byte). */
+const USED_PREFIX = 'upload-used:';
+const usedKey = (stamp: string | number) => USED_PREFIX + String(stamp).padStart(15, '0');
+async function claimUpload(stamp: string, key: string) {
+  const claimed = await db.run('INSERT INTO settings(key,data) VALUES (?,?) ON CONFLICT(key) DO NOTHING', usedKey(stamp) + ':' + tokenHash(key), jsonParam({ at: new Date().toISOString() }));
+  if (!claimed.changes) throw new AppError('This upload was already used. Choose the file again.', 409);
+  if (Math.random() < 0.1) await db.run('DELETE FROM settings WHERE key>=? AND key<?', USED_PREFIX, usedKey(Date.now() - UPLOAD_TTL_MS)).catch(() => {});
+}
 export async function resolveUploads(user: Staff, form: FormData): Promise<FormData> {
   const entries = [...form.entries()];
   if (!entries.some(([name]) => name.endsWith('__upload'))) return form;
@@ -89,6 +99,7 @@ export async function resolveUploads(user: Staff, form: FormData): Promise<FormD
     const stat = await store.stat(key);
     if (!stat) throw new AppError('The upload did not finish. Choose the file again.', 400);
     if (stat.size > MAX_UPLOAD_BYTES) { await deleteQuietly(key); throw new AppError('Files must be smaller than 15 MB.', 413); }
+    await claimUpload(match[1], key);
     const bytes = await store.get(key);
     await deleteQuietly(key);
     // The object could have been replaced between stat and get; check what was actually read.

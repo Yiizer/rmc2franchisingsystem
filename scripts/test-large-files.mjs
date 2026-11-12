@@ -48,6 +48,15 @@ const expired = new FormData(); expired.append('file__upload', String(Date.now()
 const missing = new FormData(); missing.append('file__upload', (await large.startUpload(cryssa, { name: 'c.pdf', size: 5 * MB })).id); await reject(large.resolveUploads(cryssa, missing), 400, /did not finish/);
 t.pass("Someone else's upload id, malformed or path-like ids, expired uploads and uploads that never arrived are refused");
 
+// Two requests with the same upload id at the same moment: exactly one gets the file, the other is refused (409).
+const twice = await large.startUpload(cryssa, { name: 'twice.pdf', size: 5 * MB });
+await local.put('transfer/up/cryssa/' + twice.id, bytes(5 * MB), { contentType: 'application/pdf' });
+const use = () => { const f = new FormData(); f.append('file__upload', twice.id); return large.resolveUploads(cryssa, f).then(r => r.get('file') instanceof File ? 200 : 'no file', e => e.status); };
+const outcomes = (await Promise.all([use(), use(), use()])).sort();
+assert.deepEqual(outcomes, [200, 409, 409], 'one use wins: ' + outcomes);
+assert.equal(await use(), 400, 'a later reuse is refused too (the used copy is already deleted)');
+t.pass('The same upload id sent by parallel requests is used exactly once; the others get 409 "already used"');
+
 const oversize = await large.startUpload(cryssa, { name: 'd.docx', size: 5 * MB });
 await local.put('transfer/up/cryssa/' + oversize.id, bytes(16 * MB), { contentType: 'application/octet-stream' });
 const tooBig = new FormData(); tooBig.append('file__upload', oversize.id); await reject(large.resolveUploads(cryssa, tooBig), 413);

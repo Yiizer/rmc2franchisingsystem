@@ -29,6 +29,10 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
   - with the inbox down the reason changes to "could not be reached".
 - **Days left (fixed):** counted in Manila calendar days to the end date, so clients ending on the same date show the same number at any hour. It is at least 1 while protection runs and 0 once it ends. Tests on reminders, owner view and roles pass.
 - **`PHASE2_UI_SPEC.md`:** the owner status is "Enrolled".
+- **Fixed, from the 4.5 MB work's known list: two parallel requests with one upload id could both use it.**
+  - The first request to insert an `upload-used:` row wins; the others get 409 "already used".
+  - Claims older than an upload's 1-hour life are removed by a key range.
+  - `test-large-files` 11/11 (new check: 3 at once, one gets the file, two get 409).
 
 ## Postgres stress tests on a local copy, two bugs fixed, cutover runbook (2026-11-12)
 
