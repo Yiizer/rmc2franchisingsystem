@@ -22,7 +22,7 @@ production must be fully working by Tuesday 24 Nov.
   - Vercel Hobby is for non-commercial use;
   - the free Supabase project has no backups you can restore, and pauses after 7 idle days;
   - inbox checks run only while someone has the app open; the cron is daily.
-  - Proposed: **dev** writes a nightly backup of the TEST database and files to this PC until production exists.
+  - [x] **Nightly backup of TEST to this PC, set up 2026-11-13** (PO: "Yes, set it up"). The Windows task "RMC2 TEST nightly backup" runs at 23:30 and keeps 14 copies in `D:\Codes\coverdesk-backups\test-online`. A restore into a local PostgreSQL was rehearsed and matched TEST exactly. See `PRODUCTION_RUNBOOK.md`, "Nightly backup". **PO:** leave the PC on, or switch it on, so the copy runs.
 - [x] Test inquiries and test emails cleared from TEST (2026-11-13).
 - [x] Shareable link checked, the live caps made configurable, the runbook schedule set (2026-11-13).
 
