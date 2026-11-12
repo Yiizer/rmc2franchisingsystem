@@ -126,6 +126,7 @@ await check('caps: 5 per hour boundary, 20 per day boundary, old rows pruned, fa
   const ids = []; for (let i = 0; i < 7; i++) ids.push(await fresh());
   for (let i = 0; i < 5; i++) assert.equal((await approve(ids[i])).status, 'Sent');
   const sixth = await approve(ids[5]); assert.equal(sixth.status, 'Approved — email failed'); assert.equal(sixth.mailFailure.code, 'RATE_LIMITED');
+  assert.match(sixth.mailFailure.safeReason, /\(5 per hour, 20 per day\)/, 'the reason names the configured limits');
   assert.equal(sends.length, 5, 'the capped attempt never reached the transport');
   const rows = async () => (await db.get('SELECT COUNT(*) n FROM mail_sends')).n; assert.equal(await rows(), 5);
   // hour window slides: age the rows past 1h but inside the day -> allowed again

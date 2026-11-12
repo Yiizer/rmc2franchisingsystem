@@ -44,7 +44,7 @@ Never show internal status names to Division Heads and SOAs.
 | Preparing proposal, Waiting for agent details, Needs correction, Supervisor editing | In preparation | amber |
 | Awaiting approval | Under review | purple |
 | Approved — sending, Approved — email failed | Being sent | green |
-| Sent | Proposal sent | green |
+| Sent | Enrolled (PO decision Q1, 2026-11-07; was "Proposal sent") | green |
 | Declined | Declined | slate |
 | Transferred | Transferred | slate |
 | Archived / expired | Closed | slate |
@@ -107,7 +107,7 @@ Never show internal status names to Division Heads and SOAs.
 - **Otherwise:** "Your proposal isn't ready yet. You'll get a notification when it is sent."
 - **On a 404:** toast "We couldn't open the proposal. Please try again."
 
-**Timeline ("Progress"):** newest first. Short statuses only: Received, In preparation, Under review, Proposal sent, Report filed, Report approved, Report rejected, Protection extended. Each shows `manilaTime` and age. No staff names and no notes.
+**Timeline ("Progress"):** newest first. Short statuses only: Received, In preparation, Under review, Enrolled, Report filed, Report approved, Report rejected, Protection extended. Each shows `manilaTime` and age. No staff names and no notes.
 
 **Progress reports:** the heading shows the count. A primary "File progress report" button sits on the right, full width on phone.
 - **Disabled while a report is pending:** use `aria-disabled` and `aria-describedby` with "You already have a report under review. You can file another after it is decided."

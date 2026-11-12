@@ -8,6 +8,28 @@ each decision are in `TEAM_DECISIONS.md` ("FINAL-CHECK LIST" and the dated entri
 > work on the other items and test each change as it is built. Nothing goes to production or real staff use
 > without that gate.
 
+## Email edge cases, inbox failures, days left (2026-11-12)
+
+- **Online on TEST** (`scripts/email-edge-online.mjs`, fictional data; 9 test emails sent from the test mailbox to itself, plus 6 details requests to the redirect). 9/9:
+  - **Several attachments:** the form and two PDFs are kept, the Word file is not, and the form imports by itself (`INQ-2026-00281`).
+  - **7 attachments:** 5 are kept.
+  - **A 16 MB email:** skipped with "too large to read here. Open it in the mailbox."
+  - **An 8 MB attachment:** not stored.
+  - **A non-form workbook:** waits on Requests with the layout reason.
+  - **A PDF renamed to .xlsx:** not kept.
+  - **The same client emailed by two agents:** the first is clear, the second is held (`00282` / `00283`).
+  - **An emailed PDF goes to Requests, then an Employee creates the inquiry** (`00284`). The Head is refused (403): creating inquiries is an Employee/Admin step.
+  - **Sending cap:** 6 details requests went through, because TEST still runs the demo-day caps (`RMC2_MAIL_CAP_PER_HOUR=30`, `_PER_DAY=100`, set 2026-11-05). The 5/20 boundary is checked locally (`test-mail-service`). **PO decision open:** keep the raised caps for the dry runs, or go back to 5/20.
+- **Fixed:** the cap refusal always said "5 per hour, 20 per day". It now names the configured limits.
+- **Failed and uncertain sends:** they can't be forced on TEST without changing its mail settings (PO: no). Covered locally by `test-mail-service` 9/9 (fake transport: failed, uncertain, confirm sent, not received, retry).
+- **Inbox down and app password revoked, simulated locally** (`scripts/test-inbound-down.mjs` 4/4, new; a fake IMAP server that refuses the sign-in like Gmail):
+  - the message says the app password may have been revoked, with no credentials in it;
+  - Requests gets the failure count and reason;
+  - after 4 failures the automatic check waits 10 minutes, while "Check mail now" still tries;
+  - with the inbox down the reason changes to "could not be reached".
+- **Days left (fixed):** counted in Manila calendar days to the end date, so clients ending on the same date show the same number at any hour. It is at least 1 while protection runs and 0 once it ends. Tests on reminders, owner view and roles pass.
+- **`PHASE2_UI_SPEC.md`:** the owner status is "Enrolled".
+
 ## Postgres stress tests on a local copy, two bugs fixed, cutover runbook (2026-11-12)
 
 PO decisions 2026-11-12: T4, T5 and T10 run only on a throwaway local database, never on TEST. Email edge cases may run on TEST, to the redirect inbox. The inbox-down cases are simulated locally.

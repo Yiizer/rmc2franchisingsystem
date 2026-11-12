@@ -172,7 +172,8 @@ export async function reserveSend(config:MailConfig,kind:string,outboxId:string)
   await transaction(async()=>{await db.lock('mail-cap'); // the cap check and the insert are one step, across instances
     const now=Date.now(),count=async(span:number)=>((await db.get('SELECT COUNT(*) AS n FROM mail_sends WHERE at>?',new Date(now-span).toISOString())) as {n:number}).n;
     await db.run('DELETE FROM mail_sends WHERE at<?',new Date(now-2*86400000).toISOString());
-    if(await count(3600000)>=config.caps.perHour||await count(86400000)>=config.caps.perDay)throw new MailSendError('RATE_LIMITED',MAIL_REASONS.RATE_LIMITED,true,false);
+    // The reason names the limits actually configured (the test version runs with raised caps), not the defaults.
+    if(await count(3600000)>=config.caps.perHour||await count(86400000)>=config.caps.perDay)throw new MailSendError('RATE_LIMITED',`The sending limit was reached (${config.caps.perHour} per hour, ${config.caps.perDay} per day). Try again later.`,true,false);
     await db.run('INSERT INTO mail_sends (id,at,kind,outbox_id) VALUES (?,?,?,?)',randomUUID(),new Date(now).toISOString(),kind,outboxId);});
 }
 /** Rows stuck in `sending` (crash, lost process) cannot be known to have sent: mark them uncertain, never retry automatically. */

@@ -35,7 +35,10 @@ export function protectionFor(record:InquiryRecord):ClientProtection|null {
 }
 export function isClientArchived(record:InquiryRecord,now=Date.now()){const protection=protectionFor(record);return !!record.closure||!!protection&&protectionExpired(record,protection,now);}
 // Capped: a "now" taken a little before protection started (page opened earlier, or a client clock behind the server) must never show 31.
-export function protectionDaysLeft(protection:ClientProtection,now=Date.now()){return Math.min(CLIENT_PROTECTION_DAYS,Math.max(0,Math.ceil((Date.parse(protection.expiresAt)-now)/86400000)));}
+/** Calendar days in Manila (UTC+8, no daylight saving) until the end date, so two clients ending on the same date always
+ *  show the same number whatever the hour. Never below 1 while protection still runs; 0 once it has ended. */
+const manilaDay=(ms:number)=>Math.floor((ms+8*3600000)/86400000);
+export function protectionDaysLeft(protection:ClientProtection,now=Date.now()){const end=Date.parse(protection.expiresAt);if(!(end>now))return 0;return Math.min(CLIENT_PROTECTION_DAYS,Math.max(1,manilaDay(end)-manilaDay(now)));}
 /** The agent identity a record is registered under: its owner account when linked, otherwise the form's agent. */
 function agentIdentity(record:Pick<InquiryRecord,'source'|'ownerId'|'ownerAgent'>):FormFields{return record.ownerId&&record.ownerAgent?{agentName:record.ownerAgent.name,agentEmail:record.ownerAgent.email,agentPhone:record.ownerAgent.phone}:record.source.fields;}
 /** Two owner-linked records compare by owner account; otherwise by registered agent details. */
