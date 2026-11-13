@@ -21,7 +21,7 @@ export const canManageTemplates = (user: Pick<Staff, 'role'>) => is(user, 'Head'
 export const canSeeSystemHealth = (user: Pick<Staff, 'role'>) => is(user, 'Admin');
 export const canSeeIntegrations = (user: Pick<Staff, 'role'>) => is(user, 'Admin');
 /** Read the "Report a problem" list and set each report's status. Everyone signed in can file one. */
-export const canSeeProblemReports = (user: Pick<Staff, 'role'>) => is(user, 'Head', 'Admin');
+export const canSeeProblemReports = (user: Pick<Staff, 'role'>) => is(user, 'Admin'); // Admin only since 2026-11-13 (PO: not the Head)
 /** Take a lock (inquiry handling) away from a colleague. */
 export const canTakeOver = (user: Pick<Staff, 'role'>) => is(user, 'Head', 'Supervisor');
 export const canSeeAllInquiries = (user: Pick<Staff, 'role'>) => is(user, 'Head', 'Supervisor', 'Employee', 'Admin');

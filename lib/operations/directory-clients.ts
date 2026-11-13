@@ -9,10 +9,10 @@ import {directoryGroups,statusGroup,statusStyles,manilaToday,displayDate,type Di
 import type {InquiryRecord,Staff} from './types';
 import {classifyBranch,categoryForSheet,CATEGORIES,UNASSIGNED,type DivisionTable} from './divisions';
 import {getDivisionTable} from './division-store';
-import {DIVISIONS} from './permissions';
+import {canPrepareProposal} from './permissions';
 /** Division, branch (today's table) and categories for a directory client; the original branch text stays in `branch`. */
 function place(table:DivisionTable,branchText:string,sheets:string[],liveDivision?:string){
- const c=classifyBranch(branchText,table),known=liveDivision&&(DIVISIONS as readonly string[]).includes(liveDivision)?liveDivision:'';
+ const c=classifyBranch(branchText,table),known=liveDivision&&table.divisions.some(d=>d.name===liveDivision)?liveDivision:'';
  const division=known||c.division,branchName=c.division===division?c.branch:null;
  const categories=[...new Set(sheets.filter(Boolean).map(categoryForSheet))];
  return {division,branchName,categories,...(division===UNASSIGNED||['conflict','unknown'].includes(c.basis)||c.labelMismatch||c.unknownPlaces?.length?{branchUnclear:true}:{})};
@@ -33,6 +33,7 @@ export async function directoryRecord(id:string){const record=await historicalDe
 export async function editDirectoryRecord(id:string,user:Staff,input:unknown){
  const body=z.object({field:z.enum(editableDirectoryFields),value:z.string().trim().max(5000),reason:z.string().trim().min(10).max(3000),expectedAt:z.string().max(100)}).strict().parse(input);
  if(!user.active)throw new AppError('Active staff access required.',403);
+ if(!canPrepareProposal(user))throw new AppError('Only franchising staff (Employee, Supervisor or Head) can correct directory records.',403); // not the IT Admin (security review 2026-11-13)
  if(body.field==='status'&&!Object.hasOwn(statusStyles,body.value))throw new AppError('Choose a supported status.');
  if(body.field==='account'&&!body.value)throw new AppError('Account name is required.');
  return await transaction(async()=>{await db.lock('hist:'+id); // edits of one record are read-compare-write: one at a time
@@ -93,7 +94,7 @@ export async function clientDirectory(params:URLSearchParams):Promise<ClientList
  const pages=Math.max(1,Math.ceil(matches.length/50)),page=Math.min(q.page,pages),columns=new Map<string,string>();
  for(const c of scoped)for(const id of c.historicalIds){const r=byId.get(id);if(r&&(!q.sheet||r.sheet===q.sheet))for(const f of r.fields)columns.set(f.key,f.label);}
  const tally=(names:readonly string[],skip:'division'|'category',pick:(c:DirectoryClient)=>string[])=>{const pool=scoped.filter(c=>passes(c,skip));return names.map(name=>({name,count:pool.filter(c=>pick(c).includes(name)).length}));};
- const divisionCounts=tally([...DIVISIONS,UNASSIGNED],'division',c=>[c.division]),categoryCounts=tally([...CATEGORIES,'Current inquiries'],'category',c=>c.categories);
+ const divisionCounts=tally([...(await getDivisionTable()).divisions.map(d=>d.name),UNASSIGNED],'division',c=>[c.division]),categoryCounts=tally([...CATEGORIES,'Current inquiries'],'category',c=>c.categories);
  return {items:matches.slice((page-1)*50,page*50).map(c=>q.sheet?{...c,fields:c.historicalIds.map(id=>byId.get(id)).filter((r):r is RegisterEntry=>!!r&&r.sheet===q.sheet).sort((a,b)=>(b.dateISO||'').localeCompare(a.dateISO||'')||b.source_row-a.source_row)[0]?.fields||c.fields}:c),total:matches.length,page,pages,pageSize:50,divisionCounts,categoryCounts,counts,sheets:all.sheets,agents:[...new Set(scoped.flatMap(c=>c.agents))].sort(),branches:[...new Set(scoped.map(c=>c.branch).filter(Boolean))].sort(),columns:[...columns].map(([key,label])=>({key,label})),asOf:manilaToday()};
 }
 export async function directoryClient(key:string):Promise<ClientDetail>{

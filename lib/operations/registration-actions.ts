@@ -57,6 +57,8 @@ const declineSchema=z.object({revision:z.number().int(),reason:z.string().trim()
  * If the send fails nothing is declined and the error is returned, so staff can retry or untick the box.
  */
 export async function declineInquiry(id:string,user:Staff,input:unknown){
+  // Franchising staff only, with or without the decline email (security review 2026-11-13: the no-email path let the IT Admin decline).
+  if(!canPrepareProposal(user))throw new AppError('Use an Employee, Supervisor or Head account to decline a request.',403);
   const body=declineSchema.parse(input);
   if(!body.email?.send)return await transaction(async()=>{
     const record=await lockedInquiry(id);if(record.revision!==body.revision)throw new AppError('Reload this inquiry before declining it.',409);

@@ -45,6 +45,8 @@
 .ops-app .ops-body .ops-main :is(.dir-status-filters,.ops-oc-filters,.ops-tabs,.ops-report-tabs)>button:hover{color:var(--page-tab-active-ink)}
 .ops-app .ops-body .ops-main :is(.dir-status-filters,.ops-oc-filters,.ops-tabs,.ops-report-tabs)>button:is(.is-active,.active,[aria-pressed=true],[aria-selected=true]){color:var(--page-tab-active-ink);border-bottom-color:var(--page-tab-accent);font-weight:600}
 .ops-app .ops-body .ops-main :is(.dir-status-filters,.ops-oc-filters,.ops-tabs,.ops-report-tabs)>button b{background:transparent;color:inherit;padding:0;margin:0;font-weight:inherit;min-width:0;border:0}
+/* Counts inside a tab take the tab's own (readable) colour; a lighter grey from older rules fell below 4.5:1. */
+.ops-app .ops-body .ops-main :is(.dir-status-filters,.ops-oc-filters,.ops-tabs,.ops-report-tabs)>button>span{color:inherit}
 .ops-app .ops-body .ops-main :is(.dir-status-filters,.ops-oc-filters,.ops-tabs,.ops-report-tabs)>button:focus-visible{outline:3px solid var(--ops-orange);outline-offset:2px}
 
 /* Visually hidden controls stay 1px even where a page styles every input as full width (the portal's upload box

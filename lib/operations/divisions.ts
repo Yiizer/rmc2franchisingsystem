@@ -46,7 +46,7 @@ const ROMAN: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6,
 /** Lower case, punctuation to spaces, single spaces. "La-Union" → "la union", "Q.C." → "q c". */
 export const normalizePlace = (text: string) => (text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const plain = (token: string) => token.replace(/\b(branch|office|area|team)\b/g, ' ').replace(/\s+/g, ' ').trim();
-const LABEL = /\bdiv(?:ision)?[.\s-]*(vii|vi|iv|v|iii|ii|i|[1-7])\b/g;
+const LABEL = /\bdiv(?:ision)?[.\s-]*(vii|vi|iv|v|iii|ii|i|1[0-9]|20|[1-9])\b/g;
 
 export type BranchClass = {
   division: string;                 // 'Division 1'…'Division 7' or UNASSIGNED
@@ -79,7 +79,9 @@ function matchWords(token: string, table: DivisionTable): { hits: Hit[]; unknown
 export function classifyBranch(text: string, table: DivisionTable = DEFAULT_DIVISION_TABLE): BranchClass {
   if (!normalizePlace(text)) return { division: UNASSIGNED, branch: null, basis: 'blank' };
   const labels = new Set<string>();
-  const lower = (text || '').toLowerCase().replace(LABEL, (_m, n: string) => { const num = ROMAN[n] ?? Number(n); if (num >= 1 && num <= 7) labels.add('Division ' + num); return ' | '; });
+  // A label counts only for a division that exists in today's table (the Head may add or delete divisions).
+  const known = new Set(table.divisions.map(d => d.name));
+  const lower = (text || '').toLowerCase().replace(LABEL, (_m, n: string) => { const label = 'Division ' + (ROMAN[n] ?? Number(n)); if (known.has(label)) labels.add(label); return ' | '; });
   // Split multi-branch text: "Cebu | Tanauan", "Antipolo/T1", "Tanauan Branch and Lipa 1"; words inside a token are matched longest-first.
   const tokens = lower.split(/[|/,;&+()]|\band\b|\s-\s/).map(normalizePlace).map(plain).filter(Boolean);
   const found: Hit[] = [], unknown: string[] = [];

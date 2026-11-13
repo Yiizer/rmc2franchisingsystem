@@ -2,7 +2,8 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { allUsers, AppError, checkPassword, db, hashPassword, tokenHash, transaction } from './database';
 import type { Staff } from './types';
-import { DIVISIONS, STAFF_ROLES, canApproveProposal, canBeApprover, canManageAccounts, canResetPassword, isOwnerScoped } from './permissions';
+import { STAFF_ROLES, canApproveProposal, canBeApprover, canManageAccounts, canResetPassword, isOwnerScoped } from './permissions';
+import { divisionNames } from './division-table';
 
 export async function securityEvent(user:Staff,action:string){await db.run('INSERT INTO security_events (id,at,actor_id,action) VALUES (?,?,?,?)',randomUUID(),new Date().toISOString(),user.id,action);}
 export const username=z.string().trim().min(3).max(50).regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,'Use letters, numbers, dots, dashes or underscores.').transform(value=>value.toLowerCase());
@@ -36,7 +37,9 @@ async function refuseIfBlocked(key:string){
   if(row&&Number(row.blocked_until)>Date.now())throw new AppError('Too many attempts. Wait 15 minutes before trying again.',429);
 }
 /** Rows whose window and block are both over carry no information; drop them so the table stays small. */
-export async function pruneAttempts(){const old=Date.now()-RATE_WINDOW_MS;await db.run('DELETE FROM auth_attempts WHERE blocked_until<CAST(? AS BIGINT) AND window_start<CAST(? AS BIGINT)',Date.now(),old);}
+export async function pruneAttempts(){const old=Date.now()-RATE_WINDOW_MS;await db.run('DELETE FROM auth_attempts WHERE blocked_until<CAST(? AS BIGINT) AND window_start<CAST(? AS BIGINT)',Date.now(),old);
+  // Expired sessions were never removed (security review 2026-11-13). `expires` is ISO text, so a text comparison works on both databases.
+  await db.run('DELETE FROM sessions WHERE expires<?',new Date().toISOString());}
 const loginKey=(id:string)=>'login-user:'+id;
 /** `ip` is the caller's address when known (Vercel's x-forwarded-for); locally it is usually absent. */
 export async function authenticate(input:unknown,ip=''){
@@ -78,7 +81,14 @@ export async function updateOwnAccount(user:Staff,input:unknown){
     await securityEvent(user,'Changed own account credentials; all sessions revoked');return updated;
   });
 }
-const divisionField=z.enum(DIVISIONS);
+// Division names come from the saved division table (the Head may add and delete divisions since 2026-11-13). Checked
+// inside the 'users-admin' lock, which saving the table also takes, so a division cannot be deleted while someone is
+// being assigned to it.
+const divisionField=z.string().trim().min(1).max(40);
+async function assertDivision(division:string|undefined,unchanged?:string){
+  if(!division||division===unchanged)return;
+  if(!(await divisionNames()).includes(division))throw new AppError('Choose one of the divisions on the Divisions & Branches page.',400);
+}
 export const phoneField=z.string().trim().max(40).regex(/^[0-9+(). -]*$/,'Use digits, spaces and + ( ) - . only.');
 function roleFields(role:Staff['role'],division:string|undefined,canApprove:boolean){
   if(isOwnerScoped({role})&&!division)throw new AppError('Choose a division for a Division Head or SOA account.',400);
@@ -92,6 +102,7 @@ export async function createAccount(user:Staff,input:unknown){
   await verifyCurrent(user,body.currentPassword);
   return await transaction(async()=>{
     await db.lock('users-admin');
+    await assertDivision(extra.division);
     await unique(body.username);await unique(body.email);
     const temporaryPassword=randomBytes(18).toString('base64url');
     const person:Staff={id:randomUUID(),name:body.name,username:body.username,email:body.email.toLowerCase(),role:body.role,position:body.position,canApprove:extra.canApprove,active:true,mustChangePassword:true,...(extra.division?{division:extra.division}:{}),...(body.phone?{phone:body.phone}:{})};
@@ -115,6 +126,7 @@ export async function updateAccount(user:Staff,input:unknown){
     const users=await allUsers(),target=users.find(u=>u.id===body.id);if(!target)throw new AppError('Staff member not found',404);
     if(body.id===user.id&&(!body.active||body.role!=='Head'))throw new AppError('Keep your current account active as the Head.');
     const extra=roleFields(body.role,body.division===undefined?target.division:body.division??undefined,body.canApprove);
+    await assertDivision(extra.division,target.division);
     const {division:_d,phone:_p,...rest}=target;
     const phone=body.phone===undefined?target.phone:body.phone||undefined;
     const updated:Staff={...rest,role:body.role,active:body.active,canApprove:extra.canApprove,...(body.position!==undefined?{position:body.position}:{}),...(extra.division?{division:extra.division}:{}),...(phone?{phone}:{})};

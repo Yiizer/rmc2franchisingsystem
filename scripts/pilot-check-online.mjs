@@ -131,7 +131,7 @@ try {
     vc('cryssa', 'problem-reports/' + filed.id + '/status', { json: { status: 'fixed' }, expected: 403 });
     const seen = vc('admin', 'problem-reports').reports.find(r => r.id === filed.id);
     assert.ok(seen && seen.role === 'DivisionHead' && seen.status === 'new', 'Admin does not see the new report');
-    vc('emerson', 'problem-reports/' + filed.id + '/status', { json: { status: 'fixed' } });
+    vc('admin', 'problem-reports/' + filed.id + '/status', { json: { status: 'fixed' } });
     return 'filed ' + filed.id.slice(0, 8) + ' · version ' + seen.version + ' · marked fixed by the Head';
   });
   await check('Check mail now runs', () => JSON.stringify(vc('cryssa', 'inbound/check', { json: {} })).slice(0, 200));

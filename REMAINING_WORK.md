@@ -8,6 +8,14 @@ The dated sections below this list are the history of what was done and how it w
 **PO** = Product Owner, **client** = RMC2, **dev** = done in this repo. Monday 16 Nov is a real beta on the test version;
 production must be fully working by Tuesday 24 Nov.
 
+### Done 2026-11-13 (the PO away; see the dated section "Divisions, design check, security fixes…" below)
+- [x] Problem Reports: IT Admin only (the Head no longer sees it).
+- [x] Divisions & Branches redesigned. The Head can add and delete divisions; a division with people assigned cannot be deleted.
+- [x] Every screen checked for layout and contrast, as every role, desktop and phone, light and dark; fixes made.
+- [x] "Create inquiry from this email" on Requests.
+- [x] Security review: Next.js upgraded, push endpoints restricted, tighter role checks, security headers.
+- [x] The move-to-production script, rehearsed on made-up data.
+
 ### A. Before the beta on Monday 16 Nov
 - [ ] **PO:** send the company franchising mailbox (address and app password), due Sat 14 Nov.
 - [ ] **dev:** switch live email on with it:
@@ -68,6 +76,48 @@ production must be fully working by Tuesday 24 Nov.
 - [ ] Watch Problem reports daily for two weeks. Run the stored-files sweep after the first week.
 - [ ] After 30 days, pause the TEST Supabase project, delete or transfer `rmc2-preview` and `rmc2-converter`, and revoke the yiizer17 Gmail app password.
 - [ ] Later: Supabase Auth (self-service password reset, MFA); a "Create inquiry from this email" button for emails with no attachment; font mapping (Arial → Liberation Sans); fix or retire the old tests `test-directory-model` and `test-workspace-advisors`; remove the leftover AI CSS.
+
+## Divisions, design check, security fixes, Create inquiry from email, move script (2026-11-13, PO: "do everything without me")
+
+- **Problem Reports are for the IT Admin only** (PO). Changed in the server (`canSeeProblemReports`), the menu, the confirmation text and the tests. Everyone can still file a report. `test-problem-reports` 11/11; `roles-check-online` now expects the Head to be refused.
+- **Divisions & Branches, redesigned and easier to use** (PO: "more premium… hard to use… divisions can be deleted or added"):
+  - **Layout:** two panes, divisions on the left with branch counts, people assigned and directory clients; the selected division on the right. Summary tiles, branches as rows, other spellings as tags (Enter or comma adds, × removes). Moving or removing a branch from its row, a search across all branches, a save bar only while there are unsaved changes, and a picker on phones.
+  - **Add and delete divisions.** A division keeps its name once saved. It cannot be deleted while a Division Head or SOA belongs to it: the page explains why, and the server refuses (409), under the same lock as account changes. Records filed under a deleted division keep the name as text and sort as Unassigned.
+  - **Division names now come from the saved table everywhere:** account forms, the directory filters and counts, and old-record labels such as "Div 8". The inquiry "Edit details" dropdown used to stop at Division 5; that is fixed too. `scripts/test-division-edit.mjs` 4/4 (new).
+  - **Checked in the browser** (light, dark, 390 px): add Division 8 with a branch and a spelling, save, the delete rules, search, and phone layout without sideways scroll.
+- **Design check of every screen.** An in-page audit covered every menu page for all 6 roles, at 1440 and 390 px, light and dark, plus an open inquiry, Settings and Notifications. It checked for sideways scroll, content off screen, unnamed buttons, broken images, error alerts and WCAG AA contrast.
+  - **Fixed:**
+    - the footer text (2.77:1, 9–10 px), now the muted colour at 11 px;
+    - the "Not started" pill (4.45);
+    - tab counts (4.08);
+    - the Integrations descriptions (3.76);
+    - Monitoring "Connected" (4.47);
+    - **the colour legend ran off the right edge on phones and tablets**, so it now opens as a bottom sheet.
+  - **Not app problems:** flags from paused CSS transitions in the background preview pane (checked by reloading in the theme), screen-reader-only labels, and dropdowns.
+- **Create inquiry from this email** (on Requests, for Employees and the Admin): for an email with the details in its text and no usable form.
+  - **How it works:** it opens the fill-in form with the agent's name and email from the sender, and the email's text beside it. It creates the inquiry through the normal intake (duplicate checks, notifications, origin "email"), and marks the email imported.
+  - **Reply-To handling:** the agent email is pre-filled from the From address. If staff change it, the existing "Reply-To differs from From" warning shows.
+  - New emails keep up to 5,000 characters of text; retention clears it.
+  - `scripts/test-inbound-create.mjs` 3/3 (new): an Employee creates; a second create gives 409; the Head, a Division Head and bad details are refused and the email goes back to "To review". Checked in the browser end to end.
+- **Security review (security-engineer, read-only): no Critical or High in the app code.** Fixed:
+  - **M1:** `next` 16.3.4 → **16.4.3**, which fixes the critical and high advisories; `npm audit fix` covered the build-time packages. **Left on purpose:** `zod` (the fix is the major 4.x rewrite; Vercel's 4.5 MB request cap limits the risk) and `uuid` inside `exceljs` (the affected functions aren't used). Revisit after go-live.
+  - **M2:** phone-notification endpoints are limited to the browsers' push services (FCM, Apple, Mozilla, Windows). `test-push-endpoint` passes.
+  - **L1:** declining needs an Employee, Supervisor or Head even without the decline email, and so does correcting directory records (the IT Admin could do both).
+  - **L3:** expired sessions are now deleted.
+  - **L4:** the error log keeps only the error name and code.
+  - **L6:** security headers on every response: `frame-ancestors 'self'`, X-Frame-Options SAMEORIGIN, nosniff, Referrer-Policy, Permissions-Policy, HSTS. The app still frames its own PDF route.
+  - **Still open:**
+    - **M3:** account lockout and the site-wide pause are known trade-offs; the Vercel Firewall rule at production covers them.
+    - **M4:** the warning for unverified senders is already shown on the To line.
+    - **L2:** a total-bytes cap per inbox check.
+    - **L5:** one app password for sending and reading.
+- **Move to production:** `scripts/move-to-production.mjs` plus `scripts/rehearse-move-local.mjs` (see `PRODUCTION_RUNBOOK.md` §4).
+  - **Rehearsal on made-up data:** 6 inquiries and 12 files moved and verified. The default plan leaves out fictional inquiries and demo accounts, and a second move is refused.
+  - **Fixed in `pg-local.mjs`:** it now refuses to start when its ports are taken. Another server answering on 5190 had made a first rehearsal run against the wrong data.
+- **Tests:**
+  - 38/40 standalone tests pass; `test-directory-model` and `test-workspace-advisors` are old and fail as before.
+  - `test-workflow` 53/53; `test-client-protection` 48/48 and `test-workspace-upgrade` 17/17 (earlier today).
+  - Postgres HTTP 21/21 and concurrency 16/16 (earlier today).
 
 ## Real beta from Monday 2026-11-16, production by 2026-11-24 (PO 2026-11-13)
 

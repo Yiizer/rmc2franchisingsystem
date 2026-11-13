@@ -416,7 +416,9 @@ const manualFieldsSchema=z.object({
  * duplicate checks, division fill, the owner daily cap and notifications are identical to an imported form. The reply address is fields.agentEmail
  * (owner-scoped users: their own account email, as intake forces).
  */
-export async function intakeFields(user:Staff,input:unknown){
+/** `fromEmail`: the details were typed from an agent email on Requests (inbound.createFromInbound); the inquiry records
+ *  it came by email and from which address. */
+export async function intakeFields(user:Staff,input:unknown,fromEmail?:{fromAddress:string}){
   const body=manualFieldsSchema.parse(input),scoped=isOwnerScoped(user);
   const {agentEmail,...cells}=body.fields;
   if(!scoped&&!canImportInquiry(user))throw new AppError('Use an employee or admin account to import an inquiry.',403);
@@ -424,7 +426,7 @@ export async function intakeFields(user:Staff,input:unknown){
   const company=cells.company.trim().replace(/[\\/:*?"<>|\r\n]+/g,' ').slice(0,80).replace(/[\s.]+$/,'').trim()||'Account';
   const bytes=await sampleForm({...cells,sector:cells.sector||'Private'});
   const file=new File([new Uint8Array(bytes)],'Manual entry – '+company+'.xlsx',{type:MIME.xlsx});
-  return await intake(user,file,(agentEmail||'').trim(),{ownerId:body.ownerId,origin:'manual',idempotencyKey:'intake_key:'+user.id+':'+body.idempotencyKey});
+  return await intake(user,file,(agentEmail||'').trim(),{ownerId:body.ownerId,origin:fromEmail?'email':'manual',...(fromEmail?{fromAddress:fromEmail.fromAddress}:{}),idempotencyKey:'intake_key:'+user.id+':'+body.idempotencyKey});
 }
 
 /** Sets fields.division (and the canonical branch name) from the form's branch when the table settles it. */

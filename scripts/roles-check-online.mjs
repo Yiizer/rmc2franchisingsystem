@@ -15,7 +15,7 @@ function call(route, json, cookie) {
 const plan = {
   cryssa: [['workspace', 'directory?q=a', 'divisions', 'email-templates'], ['monitoring/proposals?range=week', 'problem-reports', 'create-account-get-guard']],
   zeo: [['workspace', 'directory?q=a', 'monitoring/proposals?range=week', 'inbound'], ['problem-reports']],
-  emerson: [['workspace', 'directory?q=a', 'monitoring/proposals?range=week', 'inbound', 'divisions', 'email-templates', 'problem-reports', 'template-history'], []],
+  emerson: [['workspace', 'directory?q=a', 'monitoring/proposals?range=week', 'inbound', 'divisions', 'email-templates', 'template-history'], ['problem-reports']], // problem reports: Admin only since 2026-11-13
   admin: [['bootstrap', 'monitoring', 'problem-reports'], ['monitoring/proposals?range=week']],
   divisionhead: [['session', 'my-clients', 'my-team'], ['workspace', 'inbound', 'directory?q=a', 'problem-reports']],
   soa: [['session', 'my-clients'], ['workspace', 'my-team', 'inbound', 'directory?q=a']],

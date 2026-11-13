@@ -70,6 +70,8 @@ try {
   const env = { ...process.env, RMC2_DB: 'postgres', RMC2_DATABASE_URL: url('rmc2_app', appPw, 'rmc2_qa'), RMC2_DATABASE_SSL: 'disable', RMC2_SEED_DEMO: '1', RMC2_STORAGE: 'local', RMC2_DATA_DIR: appData, RMC2_QA_LOCAL_PASSWORDS: '1', VERCEL_DEPLOYMENT_ID: 'pg-local-' + stamp /* one deployment, like Vercel's instances */ };
   for (const key of Object.keys(env)) if (/^RMC2_(MAIL_|SMTP_|SUPABASE_|STORAGE_BUCKET|DATABASE_ADMIN|DATABASE_CA)/.test(key) || key === 'VERCEL') delete env[key];
   const next = path.join(root, 'node_modules', 'next', 'dist', 'bin', 'next');
+  // Another server on these ports would answer the readiness check and the tests would run against IT (seen 2026-11-13).
+  for (const port of [5190, 5191]) { const busy = await fetch(`http://127.0.0.1:${port}/`).then(() => true, () => false); assert.ok(!busy, 'Port ' + port + ' is already in use: stop that server first.'); }
   for (const port of [5190, 5191]) {
     const child = spawn(process.execPath, [next, 'start', '-p', String(port), '-H', '127.0.0.1'], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
     const log = createWriteStream(path.join(appData, 'server-' + port + '.log')); // kept under test-results/pg-local/ for diagnosis
@@ -83,7 +85,7 @@ try {
   }
   console.log('Two app instances on 127.0.0.1:5190 and :5191, sharing the local database');
   if (command.length) {
-    const run = spawn(command[0], command.slice(1), { cwd: root, env: { ...env, RMC2_TEST_URL: 'http://127.0.0.1:5190', RMC2_TEST_URL2: 'http://127.0.0.1:5191' }, stdio: 'inherit', shell: process.platform === 'win32' && command[0] !== process.execPath });
+    const run = spawn(command[0], command.slice(1), { cwd: root, env: { ...env, RMC2_TEST_URL: 'http://127.0.0.1:5190', RMC2_TEST_URL2: 'http://127.0.0.1:5191', RMC2_LOCAL_OWNER_URL: url('postgres', superPw, 'rmc2_qa'), RMC2_LOCAL_PROD_URL: url('postgres', superPw, 'rmc2_runbook'), RMC2_LOCAL_DATA_DIR: appData /* rehearsals: scripts/rehearse-move-local.mjs */ }, stdio: 'inherit', shell: process.platform === 'win32' && command[0] !== process.execPath });
     exitCode = await new Promise(resolve => run.on('exit', code => resolve(code ?? 1)));
   } else exitCode = 0;
 } finally {

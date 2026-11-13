@@ -23,7 +23,7 @@ export function ReportProblemButton({ page }: { page: string }) {
     event.preventDefault(); setBusy(true); setError('');
     try {
       await api('problem-reports', { description: text, page, ...(inquiryId ? { inquiryId } : {}), ...(viewport() ? { viewport: viewport() } : {}) });
-      setText(''); setOpen(false); toast.success('Thanks. Your report was sent to the Head.');
+      setText(''); setOpen(false); toast.success('Thanks. Your report was sent to the IT Admin.');
     } catch (failure) { setError((failure as Error).message); } finally { setBusy(false); }
   }
   return <>

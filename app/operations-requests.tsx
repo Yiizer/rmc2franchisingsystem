@@ -1,14 +1,16 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Download, FileSpreadsheet, FileText, MailCheck, RefreshCw, ShieldAlert, X } from 'lucide-react';
+import { Download, FilePlus2, FileSpreadsheet, FileText, MailCheck, RefreshCw, ShieldAlert, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { ageLabel, manilaTime } from '@/lib/operations/types';
 import type { InquiryRecord } from '@/lib/operations/types';
 import type { InboundMessage, InboxHealth } from '@/lib/operations/inbound';
-import { api, endpoint } from './operations-common';
+import { api, endpoint, Modal } from './operations-common';
+import InquiryEntry from './operations-inquiry-entry';
 
 // Requests: emails read from the test inbox. Staff decide; nothing becomes an inquiry on its own.
-export default function RequestsPage({ now, onOpen }: { now: number; onOpen: (record: InquiryRecord) => void }) {
+export default function RequestsPage({ now, onOpen, canCreate = false }: { now: number; onOpen: (record: InquiryRecord) => void; canCreate?: boolean }) {
+  const [typing, setTyping] = useState<InboundMessage | null>(null); // "Create inquiry from this email"
   const [data, setData] = useState<{ messages: InboundMessage[]; checkedAt: string; connected: boolean; health?: InboxHealth } | null>(null);
   const [busy, setBusy] = useState(''), [show, setShow] = useState<'new' | 'all'>('new'), [error, setError] = useState('');
   // Polls can overlap on a slow connection: only the newest answer is shown, so an older list never replaces a newer one.
@@ -57,8 +59,25 @@ export default function RequestsPage({ now, onOpen }: { now: number; onOpen: (re
           <a className="ops-btn" href={endpoint + '/inbound/' + m.id + '/attachment/' + i}><Download size={14} />Open</a>
           {m.state === 'new' && <button className="ops-btn primary" disabled={!!busy} onClick={() => void importForm(m, i)}>{busy === m.id ? 'Creating…' : 'Create inquiry'}</button>}</div>)
           : <small>No Excel or PDF form attached.</small>}</div>
+        {m.state === 'new' && canCreate && <div className="ops-request-type"><button className="ops-btn" disabled={!!busy} onClick={() => setTyping(m)}><FilePlus2 size={15} />Create inquiry from this email</button><small>{m.attachments.length ? 'If the form will not import, type the details instead.' : 'For details written in the email itself.'}</small></div>}
         <div className="ops-request-foot">{m.state === 'new' ? <button className="ops-btn" disabled={!!busy} onClick={() => void dismiss(m)}><X size={14} />Dismiss</button>
           : m.state === 'imported' ? <span className="ops-badge green">{m.handledBy === 'email-intake' ? 'Imported automatically as ' : 'Imported as '}{m.inquiryId}</span> : <span className="ops-badge">{m.handledBy === 'email-filter' ? 'Skipped automatically · newsletter or notification' : 'Dismissed'}</span>}</div>
       </article>)}</div>}</section>
+    {typing && <Modal title="Create inquiry from this email" wide onClose={() => { if (!busy) setTyping(null); }}>
+      <div className="ops-pad ops-request-compose">
+        <aside className="ops-request-source" aria-label="The agent's email">
+          <p className="ops-request-source-label">From the email</p>
+          <b>{typing.subject}</b>
+          <small>{typing.fromName ? typing.fromName + ' · ' : ''}{typing.from} · {manilaTime(typing.receivedAt)}</small>
+          {typing.replyTo && typing.replyTo !== typing.from && <p className="ops-message amber" role="note">This email asks for replies to {typing.replyTo}, a different address from the sender. The form uses the sender’s address; change it only if you have confirmed it with the agent.</p>}
+          <pre className="ops-request-body">{typing.text || typing.snippet || 'This email has no text.'}</pre>
+          {!typing.text && typing.snippet && <small>Only the start of this older email was kept. Open it in the mailbox for the rest.</small>}
+        </aside>
+        <div className="ops-request-entry">
+          <InquiryEntry variant="staff" endpoint={'inbound/' + typing.id + '/create'} initial={{ agentEmail: typing.from, ...(typing.fromName ? { agentName: typing.fromName } : {}) }} submitLabel="Create inquiry" onCancel={() => setTyping(null)}
+            onCreated={async result => { const record = (result as { inquiry: InquiryRecord }).inquiry; setTyping(null); toast.success('Inquiry ' + record.id + ' created from the email.'); await load(); onOpen(record); }} />
+        </div>
+      </div>
+    </Modal>}
   </>;
 }

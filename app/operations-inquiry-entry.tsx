@@ -37,10 +37,10 @@ const uuid = (): string => {
 };
 
 /** Without `upload`, only the fill-in form is shown (no tabs), as on the Division Head / SOA Submit inquiry page. */
-type Props = { variant: 'staff' | 'owner'; upload?: ReactNode; onCreated: (result: unknown) => void | Promise<void>; ownerId?: string | null; extra?: ReactNode; onCancel?: () => void; onBusyChange?: (busy: boolean) => void; submitLabel?: string };
+type Props = { variant: 'staff' | 'owner'; upload?: ReactNode; onCreated: (result: unknown) => void | Promise<void>; ownerId?: string | null; extra?: ReactNode; onCancel?: () => void; onBusyChange?: (busy: boolean) => void; submitLabel?: string; initial?: Record<string, string>; endpoint?: string };
 
-export default function InquiryEntry({ variant, upload, onCreated, ownerId, extra, onCancel, onBusyChange, submitLabel }: Props) {
-  const [tab, setTab] = useState<'upload' | 'fill'>(upload ? 'upload' : 'fill'), [values, setValues] = useState<Record<string, string>>(() => ({ requestDate: manilaToday() })), [shown, setShown] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
+export default function InquiryEntry({ variant, upload, onCreated, ownerId, extra, onCancel, onBusyChange, submitLabel, initial, endpoint = 'intake-fields' }: Props) {
+  const [tab, setTab] = useState<'upload' | 'fill'>(upload ? 'upload' : 'fill'), [values, setValues] = useState<Record<string, string>>(() => ({ requestDate: manilaToday(), ...initial })), [shown, setShown] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [key] = useState(uuid); // once per time the form is opened: a double click or a retry replays the same inquiry
   const base = useId(), form = useRef<HTMLFormElement>(null), owner = variant === 'owner';
   const groups = useMemo(() => GROUPS.map(g => ({ ...g, fields: g.fields.filter(f => !(owner && f.key === 'agentEmail')) })), [owner]);
@@ -64,7 +64,7 @@ export default function InquiryEntry({ variant, upload, onCreated, ownerId, extr
     setBusy(true);
     try {
       const fields = Object.fromEntries(Object.entries(values).map(([k, v]) => [k, v.trim()]).filter(([k, v]) => v && !(owner && k === 'agentEmail')));
-      const result = await api<unknown>('intake-fields', { fields, ...(!owner && ownerId ? { ownerId } : {}), idempotencyKey: key });
+      const result = await api<unknown>(endpoint, { fields, ...(!owner && ownerId ? { ownerId } : {}), idempotencyKey: key });
       await onCreated(result);
     } catch (e) {
       const status = (e as { status?: number }).status;

@@ -108,8 +108,7 @@ Since the 16 Nov beta, **the source is the TEST Supabase project**, not the PC c
 the beta, their notifications, history and stored files, the client directory, the Divisions & Branches table, email
 templates and the staff accounts.
 
-1. **Build the move script before the rehearsals.** It copies TEST to production table by table (schema `rmc2`), with
-   these rules:
+1. **The move script is `scripts/move-to-production.mjs`** (built 2026-11-13). It is configured by `SRC_*` and `DST_*` env vars (the header lists them) and only plans unless given `--apply`. It refuses a target that isn't `environment=production` or that already holds inquiries. It was rehearsed on made-up data on two local PostgreSQL 17 databases (`node scripts/pg-local.mjs --pg-dir <dir> -- node scripts/rehearse-move-local.mjs`): plan, move, every count and file SHA-256 verified, and a second move refused. It copies TEST to production table by table (schema `rmc2`), with these rules:
    - leave out fictional records (the same rules as `scripts/clear-test-inquiries-online.mjs`; anything unclear is
      listed for the PO);
    - leave out the demo accounts and `check.` accounts, sessions and sign-in attempts;

@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { CheckCircle2, KeyRound, LockOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Staff } from '@/lib/operations/types';
-import { canManageAccounts, canResetPassword, DIVISIONS, isOwnerScoped } from '@/lib/operations/permissions';
+import { useDivisionNames } from './use-division-names';
+import { canManageAccounts, canResetPassword, isOwnerScoped } from '@/lib/operations/permissions';
 import { api, initials, Modal, PasswordInput } from './operations-common';
 import { CreateAccount } from './operations-administration';
 import './operations-report-queue.css';
@@ -31,6 +32,7 @@ function useUnlock() {
 
 /** Head: edit role, division, phone, status. */
 function UserEditor({ person, me, onRefresh, onReset }: { person: Staff; me: Staff; onRefresh: () => Promise<void>; onReset: (p: Staff) => void }) {
+  const divisionNames = useDivisionNames(); // a person already in a deleted division keeps it listed
   const [role, setRole] = useState(person.role), [active, setActive] = useState(person.active), [division, setDivision] = useState(person.division || ''), [phone, setPhone] = useState(person.phone || ''), [position, setPosition] = useState(person.position || ''), [busy, setBusy] = useState(false);
   const { busy: unlocking, unlock } = useUnlock();
   const self = person.id === me.id, owner = isOwnerScoped({ role }), needDivision = owner && !division;
@@ -46,7 +48,7 @@ function UserEditor({ person, me, onRefresh, onReset }: { person: Staff; me: Sta
     <div><b>{person.name}</b><small>{person.email}</small><small>{person.username ? '@' + person.username : ''}</small></div>
     <div className="ops-user-extra">
       <select aria-label={'Role for ' + person.name} value={role} disabled={self} onChange={e => setRole(e.target.value as Staff['role'])}>{HEAD_ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select>
-      {owner && <select aria-label={'Division for ' + person.name} value={division} required aria-invalid={needDivision} onChange={e => setDivision(e.target.value)}><option value="">Choose a division…</option>{DIVISIONS.map(d => <option key={d}>{d}</option>)}</select>}
+      {owner && <select aria-label={'Division for ' + person.name} value={division} required aria-invalid={needDivision} onChange={e => setDivision(e.target.value)}><option value="">Choose a division…</option>{[...new Set([...divisionNames, ...(person.division ? [person.division] : [])])].map(d => <option key={d}>{d}</option>)}</select>}
       <input aria-label={'Position for ' + person.name} value={position} maxLength={200} placeholder="Position" onChange={e => setPosition(e.target.value)} />
       <input aria-label={'Phone for ' + person.name} type="tel" value={phone} maxLength={40} placeholder="Phone (optional)" onChange={e => setPhone(e.target.value)} />
     </div>

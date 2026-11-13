@@ -13,7 +13,7 @@ import { deleteUnusedFiles, scanFiles, sweepStatus } from '@/lib/operations/file
 import { proposalEmployee, proposalStats } from '@/lib/operations/proposal-stats';
 import { createSoa, deactivateSoa, listTeam, resetSoaPassword } from '@/lib/operations/division-team';
 import { getEmailTemplates, saveEmailTemplates } from '@/lib/operations/email-templates';
-import { checkInbox, claimInboxCheck, runClaimedInboxCheck, cronAllowed, dismissInbound, importInbound, inboundAttachment, listInbound } from '@/lib/operations/inbound';
+import { checkInbox, claimInboxCheck, runClaimedInboxCheck, cronAllowed, createFromInbound, dismissInbound, importInbound, inboundAttachment, listInbound } from '@/lib/operations/inbound';
 import { chosen } from '@/lib/operations/service';
 import { NextRequest, NextResponse, after } from 'next/server';
 import { clientStates } from '@/lib/operations/client-rules';
@@ -60,7 +60,7 @@ async function staff(request:NextRequest):Promise<Staff> {
   const user=(await allUsers()).find(u=>u.id===session.user_id&&u.active);if(!user)throw new AppError('This staff account is inactive.',401);return user;
 }
 function response(data:unknown,status=200){return NextResponse.json(data,{status,headers:{'Cache-Control':'no-store'}});}
-function errorResponse(error:unknown){if(error instanceof ZodError)return response({error:error.issues.map(i=>i.path.join('.')+': '+i.message).join('; ')},400);if(isStorageError(error))return response({error:error.message},error.status);if(isAppError(error)){if(error.status>=500){console.error('Operations service error',error);return response({error:'We could not complete this request. Please try again. If it continues, contact your administrator.'},error.status);}return response({error:error.message},error.status);}console.error('Operations error',error);return response({error:'We could not complete this request. Please try again. If it continues, contact your administrator.'},500);}
+function errorResponse(error:unknown){if(error instanceof ZodError)return response({error:error.issues.map(i=>i.path.join('.')+': '+i.message).join('; ')},400);if(isStorageError(error))return response({error:error.message},error.status);if(isAppError(error)){if(error.status>=500){console.error('Operations service error',(error as {name?:string;code?:string})?.name||'Error',(error as {code?:string})?.code||'');return response({error:'We could not complete this request. Please try again. If it continues, contact your administrator.'},error.status);}return response({error:error.message},error.status);}console.error('Operations error',(error as {name?:string;code?:string})?.name||'Error',(error as {code?:string})?.code||'') /* name and code only: library errors can carry user text (security review 2026-11-13) */;return response({error:'We could not complete this request. Please try again. If it continues, contact your administrator.'},500);}
 /** Large files (phase 5): a 60-second signed storage link instead of the function body. The link is never cached or sent on as a referrer. */
 function signedRedirect(url:string){return new NextResponse(null,{status:302,headers:{Location:url,'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});}
 /** A private file after the route's permission check: bytes when small (or on this computer), a signed link when large. Logs the access either way. */
@@ -143,6 +143,7 @@ export async function POST(request:NextRequest,context:Context){try{
   if(route[0]==='uploads'&&route[1]==='start'&&route.length===2)return response(await startUpload(user,await request.json()));
   if(route[0]==='inbound'&&route[1]==='check'){await listInbound(user);return response(await checkInbox());}
   if(route[0]==='inbound'&&route[1]&&route[2]==='import'){const body=z.object({index:z.number().int().min(0).max(50)}).parse(await request.json());return response({inquiry:await importInbound(user,route[1],body.index)},201);}
+  if(route[0]==='inbound'&&route[1]&&route[2]==='create'&&route.length===3)return response({inquiry:await createFromInbound(user,route[1],await request.json())},201);
   if(route[0]==='inbound'&&route[1]&&route[2]==='dismiss'){await dismissInbound(user,route[1]);return response({ok:true});}
   if(route[0]==='account-settings'){const updated=await updateOwnAccount(user,await request.json());const result=response({user:updated});result.cookies.delete('rmc2_session');return result;}
   if(route[0]==='directory'&&route[1]&&route[2]==='edit')return response({record:await editDirectoryRecord(route[1],user,await request.json())});

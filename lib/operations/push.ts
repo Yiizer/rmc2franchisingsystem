@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { AppError, db } from './database';
 import { isOwnerScoped } from './permissions';
 import type { Staff } from './types';
+import { pushHostAllowed } from './push-hosts';
 
 // Phone notifications (Web Push, iPhone first: the app must be added to the Home Screen on iOS 16.4+).
 // Keys are our own VAPID pair from env (no third-party service). The lock screen shows the event and the client name only,
@@ -35,7 +36,7 @@ export function pushTypeForTitle(title: string): PushType | null {
 }
 
 const subscriptionSchema = z.object({
-  endpoint: z.string().url().max(2000).refine(url => url.startsWith('https://'), 'Use an https push endpoint.'),
+  endpoint: z.string().url().max(2000).refine(pushHostAllowed, 'Use the browser’s own push service.'),
   keys: z.object({ p256dh: z.string().min(20).max(400), auth: z.string().min(8).max(200) }),
   label: z.string().trim().max(80).optional(),
 }).passthrough();

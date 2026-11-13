@@ -4,7 +4,7 @@ import { simpleParser } from 'mailparser';
 import { AppError, db, jsonParam, transaction } from './database';
 import { deleteQuietly, files } from './file-store';
 import { isSafeEmail } from './mail-config';
-import { intake } from './service';
+import { intake, intakeFields } from './service';
 import { canReviewInbound } from './permissions';
 import { ownerForEmail } from './owners';
 import type { InquiryRecord, Staff } from './types';
@@ -46,6 +46,8 @@ export type InboundMessage = {
   state: 'new' | 'imported' | 'dismissed'; inquiryId?: string; handledBy?: string; handledAt?: string; importError?: string;
   /** When this app stored the email. `receivedAt` comes from the sender's Date header, so retention never relies on it alone. */
   storedAt?: string;
+  /** Plain-text body (newer emails only), shown when staff create an inquiry from an email without a form. */
+  text?: string;
 };
 
 /** Retention (PO 2026-11-11): the app's own copy of an email, with its stored attachments, is cleared 30 days after it was
@@ -200,6 +202,9 @@ export async function checkInbox(): Promise<{ added: number; imported: number; c
       const record: InboundMessage = {
         id, messageId, receivedAt: (parsed.date ?? new Date()).toISOString(), from: (from?.address || '').toLowerCase(), fromName: from?.name || '',
         replyTo: replyTo.toLowerCase(), subject: (parsed.subject || '(no subject)').slice(0, 300), snippet: (parsed.text || '').replace(/\s+/g, ' ').trim().slice(0, 400),
+        // The body as plain text (line breaks kept, at most 5,000 characters) so staff can type an inquiry from an email that
+        // has the details in it instead of a form ("Create inquiry from this email"). Retention clears it with the rest.
+        text: (parsed.text || '').replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').replace(/\n{3,}/g, '\n\n').trim().slice(0, 5000),
         attachments, auth: readAuthResults(authHeader, (from?.address || '').toLowerCase()), state: 'new', storedAt: new Date().toISOString(),
       };
       // Newsletters and notifications (no-reply senders, mailing lists, bulk mail) with no form attached are never agent
@@ -306,6 +311,23 @@ export async function importInbound(user: Staff, id: string, index: number, auto
     // When linked, replies go to the owner's account address, never to a header the sender chose.
     const sender = autoOwner ? autoOwner.email : [record.replyTo, record.from].find(address => isSafeEmail(address)) || '';
     const inquiry = await intake(user, new File([new Uint8Array(bytes)], attachment.name, { type: FORM_TYPES[attachment.type] }), sender, { ownerId, origin: 'email', fromAddress: record.from });
+    await finish(id, { ...record, state: 'imported', inquiryId: inquiry.id, handledBy: user.id, handledAt: new Date().toISOString(), importError: undefined });
+    return inquiry;
+  } catch (error) {
+    await db.run("UPDATE inbound_messages SET state='new' WHERE id=? AND state='importing'", id);
+    throw error;
+  }
+}
+
+/** "Create inquiry from this email": staff type the details from an email that has no usable form (details in the body,
+ *  a scan, a letter). The same checks as the fill-in form apply (intakeFields: duplicates, divisions, notifications), the
+ *  inquiry is marked as having come by email, and the email is marked imported so nobody handles it twice. The agent
+ *  email is whatever staff confirm in the form; Requests pre-fills the From address, not a Reply-To the sender chose. */
+export async function createFromInbound(user: Staff, id: string, input: unknown): Promise<InquiryRecord> {
+  requireStaff(user);
+  const record = await claim(id, 'new', 'importing');
+  try {
+    const inquiry = await intakeFields(user, input, { fromAddress: record.from });
     await finish(id, { ...record, state: 'imported', inquiryId: inquiry.id, handledBy: user.id, handledAt: new Date().toISOString(), importError: undefined });
     return inquiry;
   } catch (error) {

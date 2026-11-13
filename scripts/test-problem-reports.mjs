@@ -11,11 +11,11 @@ const filed = await reports.submitProblemReport(cryssa, { description: '  I clic
 assert.ok(filed.id && filed.at);
 t.pass('An employee files a report; the server returns its id and time');
 
-const { reports: list } = await reports.listProblemReports(head);
+const { reports: list } = await reports.listProblemReports(admin);
 const mine = list.find(r => r.id === filed.id);
 assert.equal(mine.description, 'I clicked Generate PDF and nothing happened.');
 assert.deepEqual([mine.status, mine.page, mine.role, mine.inquiryId, mine.viewport, mine.browser, mine.version, mine.userId], ['new', 'Inquiry Workspace', 'Employee', 'INQ-2026-00129', '1366x768', 'Mozilla/5.0 Test', 'local', 'cryssa']);
-t.pass('The Head sees it with the captured context (page, role, inquiry, window, browser, version) and control characters removed');
+t.pass('The Admin sees it with the captured context (page, role, inquiry, window, browser, version) and control characters removed');
 
 await reject(reports.submitProblemReport(cryssa, { description: 'too short', page: 'Dashboard' }), null, /at least 10 characters/);
 await reject(reports.submitProblemReport(cryssa, { description: 'Long enough description here', page: 'Dashboard', inquiryId: '../../etc' }));
@@ -31,16 +31,17 @@ t.pass('A Division Head can file a report, but the owner whitelist blocks readin
 
 await reject(reports.listProblemReports(cryssa), 403);
 await reject(reports.listProblemReports(zeo), 403);
+await reject(reports.listProblemReports(head), 403); await reject(reports.updateProblemReport(head, filed.id, { status: 'fixed' }), 403); // Admin only since 2026-11-13
 await reject(reports.updateProblemReport(cryssa, filed.id, { status: 'fixed' }), 403);
 assert.equal((await reports.listProblemReports(admin)).reports.length, 2);
-t.pass('Only the Head and Admin read the list; an Employee and a Supervisor are refused (403)');
+t.pass('Only the IT Admin reads the list (since 2026-11-13); the Head, an Employee and a Supervisor are refused (403)');
 
-const { report: progressed } = await reports.updateProblemReport(head, filed.id, { status: 'in-progress' });
-assert.equal(progressed.status, 'in-progress'); assert.equal(progressed.updatedBy, 'emerson'); assert.ok(progressed.updatedAt);
+const { report: progressed } = await reports.updateProblemReport(admin, filed.id, { status: 'in-progress' });
+assert.equal(progressed.status, 'in-progress'); assert.equal(progressed.updatedBy, 'admin'); assert.ok(progressed.updatedAt);
 const { report: fixed } = await reports.updateProblemReport(admin, filed.id, { status: 'fixed', note: 'Converter restarted.' });
 assert.equal(fixed.status, 'fixed'); assert.equal(fixed.note, 'Converter restarted.'); assert.equal(fixed.description, mine.description);
-await reject(reports.updateProblemReport(head, filed.id, { status: 'closed' }));
-await reject(reports.updateProblemReport(head, 'missing-id', { status: 'fixed' }), 404);
+await reject(reports.updateProblemReport(admin, filed.id, { status: 'closed' }));
+await reject(reports.updateProblemReport(admin, 'missing-id', { status: 'fixed' }), 404);
 t.pass('Status moves new → in progress → fixed with who and when; unknown statuses and ids are refused');
 
 for (let i = 2; i < reports.PROBLEM_REPORTS_PER_DAY; i++) await reports.submitProblemReport(cryssa, { description: 'Repeated report number ' + i, page: 'Dashboard' }, '');
@@ -55,14 +56,14 @@ const first = await reports.submitProblemReport(cryssa, crash, 'Mozilla/5.0 Phon
 assert.equal(first.repeat, false); assert.match(first.id, /^err-[0-9a-f]{24}$/);
 const again = await reports.submitProblemReport(zeo, { ...crash, inquiryId: 'INQ-2026-00131' }, 'Mozilla/5.0 Phone');
 assert.equal(again.id, first.id); assert.equal(again.repeat, true);
-let logged = (await reports.listProblemReports(head)).reports.find(r => r.id === first.id);
+let logged = (await reports.listProblemReports(admin)).reports.find(r => r.id === first.id);
 assert.deepEqual([logged.kind, logged.count, logged.userIds, logged.inquiryId, logged.status, logged.role], ['error', 2, ['cryssa', 'zeo'], 'INQ-2026-00131', 'new', 'Employee']);
 assert.ok(!/example\.test|dpl=/.test(logged.stack) && logged.stack.includes('/_next/static/chunks/app.js:1:200'));
 t.pass('The same crash from two people is one entry with a count of 2; the stack keeps paths without the site address or query strings');
 
-await reports.updateProblemReport(head, first.id, { status: 'fixed' });
+await reports.updateProblemReport(admin, first.id, { status: 'fixed' });
 await reports.submitProblemReport(cryssa, crash, '');
-logged = (await reports.listProblemReports(head)).reports.find(r => r.id === first.id);
+logged = (await reports.listProblemReports(admin)).reports.find(r => r.id === first.id);
 assert.deepEqual([logged.status, logged.count, logged.reopened], ['new', 3, true]);
 t.pass('A crash marked fixed that happens again is reopened as new');
 

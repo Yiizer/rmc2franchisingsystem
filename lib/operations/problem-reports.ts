@@ -79,13 +79,13 @@ async function submitCrash(user: Staff, input: unknown, userAgent: string) {
 }
 
 export async function listProblemReports(user: Staff): Promise<{ reports: (ProblemReport | CrashReport)[] }> {
-  if (!canSeeProblemReports(user)) throw new AppError('Only the Head and Admin can read problem reports.', 403);
+  if (!canSeeProblemReports(user)) throw new AppError('Only the IT Admin can read problem reports.', 403);
   const rows = await db.all<Row>('SELECT id,at,user_id,status,data FROM problem_reports ORDER BY at DESC LIMIT 300');
   return { reports: rows.map(toReport) };
 }
 
 export async function updateProblemReport(user: Staff, id: string, input: unknown): Promise<{ report: ProblemReport | CrashReport }> {
-  if (!canSeeProblemReports(user)) throw new AppError('Only the Head and Admin can update problem reports.', 403);
+  if (!canSeeProblemReports(user)) throw new AppError('Only the IT Admin can update problem reports.', 403);
   const body = statusSchema.parse(input);
   const row = await db.get<Row>('SELECT id,at,user_id,status,data FROM problem_reports WHERE id=?', id);
   if (!row) throw new AppError('Problem report not found.', 404);
